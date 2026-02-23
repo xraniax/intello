@@ -4,4 +4,4 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 EXPOSE 5000
-CMD ["node", "index.js"]  # or your main backend file
+CMD ["node", "index.js"]  
