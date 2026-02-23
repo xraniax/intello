@@ -1,0 +1,17 @@
+# Node/Vite
+node_modules/
+dist/
+npm-debug.log
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+*.sqlite3
+
+# Docker
+*.env
