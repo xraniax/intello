@@ -15,3 +15,21 @@ venv/
 
 # Docker
 *.env
+# Node
+node_modules
+frontend/node_modules
+backend/node_modules
+
+# Env files
+.env
+*.env
+backend/.env
+engine/.env
+db.env
+
+# Build
+frontend/build
+frontend/dist
+
+# Docker
+postgres_data
