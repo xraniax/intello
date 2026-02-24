@@ -1,7 +1,7 @@
 -- ============================================
 -- EXTENSIONS
 -- ============================================
-
+CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================
@@ -9,13 +9,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================
 
 CREATE TYPE user_role AS ENUM ('user', 'admin');
-
 CREATE TYPE subject_level AS ENUM ('Beginner', 'Intermediate', 'Advanced');
-
 CREATE TYPE upload_type AS ENUM ('PDF', 'ScannedDoc');
-
 CREATE TYPE source_type AS ENUM ('Note', 'Upload', 'Video');
-
 CREATE TYPE chat_type AS ENUM ('text', 'voice');
 
 -- ============================================
@@ -45,7 +41,7 @@ CREATE TABLE subjects (
 );
 
 -- ============================================
--- USER-SUBJECT PROGRESS (CORE ADAPTIVE TABLE)
+-- USER-SUBJECT PROGRESS
 -- ============================================
 
 CREATE TABLE user_subjects (
@@ -74,7 +70,7 @@ CREATE TABLE uploads (
 
     type upload_type NOT NULL,
     temp_file_path TEXT,
-    embeddings JSONB,
+    embedding vector(1536),  -- PGVector column
 
     processed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
@@ -91,7 +87,7 @@ CREATE TABLE videos (
 
     video_url TEXT NOT NULL,
     transcript TEXT,
-    embeddings JSONB,
+    embedding vector(1536),  -- PGVector column
 
     processed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
@@ -107,7 +103,7 @@ CREATE TABLE notes (
     subject_id UUID REFERENCES subjects(id) ON DELETE CASCADE,
 
     content TEXT NOT NULL,
-    embeddings JSONB,
+    embedding vector(1536),  -- PGVector column
 
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
@@ -125,6 +121,7 @@ CREATE TABLE quizzes (
     questions JSONB NOT NULL,
     score FLOAT,
     metrics JSONB,
+    embedding vector(1536), -- PGVector column for quiz embeddings if needed
 
     completed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
@@ -160,6 +157,8 @@ CREATE TABLE summaries (
     source_id UUID NOT NULL,
 
     summary_text TEXT NOT NULL,
+    embedding vector(1536),  -- PGVector column for summary embeddings
+
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -175,7 +174,7 @@ CREATE TABLE chat_history (
     type chat_type NOT NULL,
     query TEXT NOT NULL,
     response TEXT NOT NULL,
-    embeddings JSONB,
+    embedding vector(1536),  -- PGVector column for chat embeddings
 
     created_at TIMESTAMP DEFAULT NOW()
 );
