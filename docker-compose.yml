@@ -34,10 +34,11 @@ services:
       - ./engine:/app
 
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
+    container_name: intello-db-1
     restart: always
     env_file:
-      - .env
+      - ./db.env
     ports:
       - "5432:5432"
     volumes:
