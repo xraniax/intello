@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import pg from "pg";
 import dotenv from "dotenv";
+import { searchController , usernameController} from "./controller.js";
 
 dotenv.config();
 
@@ -38,8 +39,15 @@ pool.connect((err, client, release) => {
 
 // Health check
 app.get('/', (req, res) => {
-  res.send('COGNIFY BACKEND 🚀');
+  res.send('Hello RRANIA!!!');
 });
+
+// Dynamic route example /hi/rania
+app.get('/hi/:username', usernameController);
+
+
+// search ?keyword=express
+app.get('/search', searchController);
 
 // Create a new subject
 app.post("/subjects", async (req, res) => {
@@ -69,7 +77,4 @@ app.get("/subjects", async (req, res) => {
 
 
 // Start server
-
-app.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
-});
+app.listen(5000, '0.0.0.0', () => console.log('Server running'));
