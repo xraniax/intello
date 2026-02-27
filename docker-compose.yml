@@ -25,7 +25,7 @@ services:
       - engine
     volumes:
       - ./backend:/app
-    command: npm start
+    command: npm run dev
 
   engine:
     build:
@@ -41,7 +41,6 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
-    container_name: intello-db-1
     restart: always
     env_file:
       - ./db.env

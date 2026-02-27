@@ -32,13 +32,13 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// ====================
+
 // Routes
-// ====================
+ 
 
 // Health check
-app.get("/", (req, res) => {
-  res.json({ status: "ok", message: "Backend is running!" });
+app.get('/', (req, res) => {
+  res.send('COGNIFY BACKEND 🚀');
 });
 
 // Create a new subject
@@ -67,9 +67,9 @@ app.get("/subjects", async (req, res) => {
   }
 });
 
-// ====================
+
 // Start server
-// ====================
+
 app.listen(PORT, () => {
   console.log(`Backend server running on port ${PORT}`);
 });
