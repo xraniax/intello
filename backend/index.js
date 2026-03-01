@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import pg from "pg";
 import dotenv from "dotenv";
-import { searchController , usernameController} from "./controller.js";
+import router from "./routes.js";
 
 dotenv.config();
 
@@ -42,12 +42,27 @@ app.get('/', (req, res) => {
   res.send('Hello RRANIA!!!');
 });
 
-// Dynamic route example /hi/rania
-app.get('/hi/:username', usernameController);
+app.use('/api', router);1
 
+// posted json from json body
+app.post('/api/signup', (req, res) => {
+  const { name, password } = req.body;
+  res.json({ message: `Signup of ${name} was successful` });
 
-// search ?keyword=express
-app.get('/search', searchController);
+});
+
+// put from params
+app.put('/api/signin/:id', (req, res) => {
+  const id = req.params.id;
+  const { name, password } = req.body;
+  res.json({ message: `${name}'s id now is: ${id}` });
+});
+
+// delete from params
+app.delete('/api/signin/:id', (req, res) => {
+  const id = req.params.id;
+  res.json({ message: `User with id ${id} has been deleted` });
+});
 
 // Create a new subject
 app.post("/subjects", async (req, res) => {
