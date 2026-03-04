@@ -8,9 +8,13 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    env_file:
+      - .env
     environment:
+      - HOST=0.0.0.0
+      - PORT=3000
       - CHOKIDAR_USEPOLLING=true
-    command: npm start
+    command: npm run dev
 
   backend:
     build:
@@ -21,8 +25,10 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
-      - engine
+      db:
+        condition: service_healthy
+      engine:
+        condition: service_started
     volumes:
       - ./backend:/app
       - backend_node_modules:/app/node_modules
@@ -44,12 +50,17 @@ services:
     image: pgvector/pgvector:pg16
     restart: always
     env_file:
-      - ./db.env
+      - .env
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d intello_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   backend_node_modules:
