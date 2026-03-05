@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { materialService } from '../services/api';
-import { FileText, Clock, Trash2, ChevronRight, Check } from 'lucide-react';
+import { FileText, Clock, Trash2, ChevronRight, Folder } from 'lucide-react';
 
 const History = () => {
+    const location = useLocation();
     const [materials, setMaterials] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState(null);
@@ -11,7 +13,16 @@ const History = () => {
         const fetchHistory = async () => {
             try {
                 const res = await materialService.getHistory();
-                setMaterials(Array.isArray(res.data.data) ? res.data.data : []);
+                const historyData = Array.isArray(res.data.data) ? res.data.data : [];
+                setMaterials(historyData);
+
+                // If we came from SubjectDetail with a selectedId, find and select it
+                if (location.state?.selectedId) {
+                    const found = historyData.find(m => m.id === location.state.selectedId);
+                    if (found) setSelected(found);
+                } else if (historyData.length > 0) {
+                    setSelected(historyData[0]);
+                }
             } catch (error) {
                 console.error('Failed to fetch history', error);
             } finally {
@@ -19,7 +30,7 @@ const History = () => {
             }
         };
         fetchHistory();
-    }, []);
+    }, [location.state]);
 
     if (loading) {
         return <div className="container">Loading your history...</div>;
@@ -59,9 +70,10 @@ const History = () => {
                                         </div>
                                         <div>
                                             <h4 style={{ fontSize: '1rem', margin: 0 }}>{m.title}</h4>
-                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                {new Date(m.created_at).toLocaleDateString()}
-                                            </span>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Folder size={12} />
+                                                <span>{m.subject_name || 'Imported'}</span>
+                                            </div>
                                         </div>
                                     </div>
                                     <ChevronRight size={20} className="text-muted" />
@@ -77,9 +89,14 @@ const History = () => {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
                                 <div>
                                     <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{selected.title}</h2>
-                                    <span className="bg-primary" style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', background: 'var(--primary)' }}>
-                                        {selected.type.toUpperCase()}
-                                    </span>
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
+                                        <span className="bg-primary" style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', background: 'var(--primary)' }}>
+                                            {selected.type.toUpperCase()}
+                                        </span>
+                                        <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', background: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}>
+                                            {selected.subject_name || 'Imported Materials'}
+                                        </span>
+                                    </div>
                                 </div>
                                 <button className="btn btn-outline" style={{ color: '#ef4444', borderColor: '#ef4444', padding: '6px' }}>
                                     <Trash2 size={18} />
@@ -109,7 +126,7 @@ const History = () => {
                                             </div>
                                         )
                                     ) : (
-                                        <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>No AI results generated još.</span>
+                                        <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>No AI results generated yet.</span>
                                     )}
                                 </div>
                             </div>

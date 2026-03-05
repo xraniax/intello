@@ -23,9 +23,11 @@ app.use('/uploads', express.static('storage'));
 // Routes
 import authRoutes from './routes/auth.routes.js';
 import materialRoutes from './routes/material.routes.js';
+import subjectRoutes from './routes/subject.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
+app.use('/api/subjects', subjectRoutes);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Cognify Backend is healthy' });

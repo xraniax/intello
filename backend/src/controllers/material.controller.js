@@ -3,14 +3,18 @@ import MaterialService from '../services/material.service.js';
 class MaterialController {
     static async upload(req, res, next) {
         try {
-            const { title, content, type } = req.body;
+            if (!req.user || !req.user.id) {
+                return res.status(401).json({ status: 'error', message: 'User not authenticated' });
+            }
+
+            const { title, content, type, subjectId } = req.body;
             const userId = req.user.id;
 
             if (!content || !type) {
                 return res.status(400).json({ status: 'error', message: 'Content and type are required' });
             }
 
-            const material = await MaterialService.processMaterial(userId, title || 'Untitled', content, type);
+            const material = await MaterialService.processMaterial(userId, title || 'Untitled', content, type, subjectId);
 
             res.status(201).json({
                 status: 'success',
@@ -23,6 +27,10 @@ class MaterialController {
 
     static async getHistory(req, res, next) {
         try {
+            if (!req.user || !req.user.id) {
+                return res.status(401).json({ status: 'error', message: 'User not authenticated' });
+            }
+
             const history = await MaterialService.getUserHistory(req.user.id);
             res.status(200).json({
                 status: 'success',

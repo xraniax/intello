@@ -4,10 +4,10 @@ class Material {
     /**
      * Store new material and AI processing intention
      */
-    static async create(userId, title, content, type) {
+    static async create(userId, subjectId, title, content, type) {
         const result = await query(
-            'INSERT INTO materials (user_id, title, content, type) VALUES ($1, $2, $3, $4) RETURNING *',
-            [userId, title, content, type]
+            'INSERT INTO materials (user_id, subject_id, title, content, type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [userId, subjectId, title, content, type]
         );
         return result.rows[0];
     }
@@ -24,22 +24,45 @@ class Material {
     }
 
     /**
-     * Get all materials for a specific user
+     * Get all materials for a specific user with subject info
      */
     static async findByUserId(userId) {
         const result = await query(
-            'SELECT * FROM materials WHERE user_id = $1 ORDER BY created_at DESC',
+            `SELECT m.*, s.name as subject_name,
+            json_build_object('id', s.id, 'name', s.name) as subject
+            FROM materials m
+            LEFT JOIN subjects s ON m.subject_id = s.id
+            WHERE m.user_id = $1 
+            ORDER BY m.created_at DESC`,
             [userId]
         );
         return result.rows;
     }
 
     /**
-     * Fetch a single material by ID
+     * Fetch a single material by ID (Security: check user_id if needed in service)
      */
     static async findById(id) {
-        const result = await query('SELECT * FROM materials WHERE id = $1', [id]);
+        const result = await query(
+            `SELECT m.*, s.name as subject_name,
+            json_build_object('id', s.id, 'name', s.name) as subject
+            FROM materials m
+            LEFT JOIN subjects s ON m.subject_id = s.id
+            WHERE m.id = $1`,
+            [id]
+        );
         return result.rows[0];
+    }
+
+    /**
+     * Get materials by subject ID
+     */
+    static async findBySubjectId(subjectId, userId) {
+        const result = await query(
+            'SELECT * FROM materials WHERE subject_id = $1 AND user_id = $2 ORDER BY created_at DESC',
+            [subjectId, userId]
+        );
+        return result.rows;
     }
 
     /**

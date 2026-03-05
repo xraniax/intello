@@ -35,4 +35,12 @@ export const materialService = {
     generate: (id, taskType) => api.post(`/materials/${id}/generate`, { taskType }),
 };
 
+export const subjectService = {
+    getAll: () => api.get('/subjects'),
+    getOne: (id) => api.get(`/subjects/${id}`),
+    create: (name, description) => api.post('/subjects', { name, description }),
+    rename: (id, name) => api.patch(`/subjects/${id}`, { name }),
+    delete: (id) => api.delete(`/subjects/${id}`),
+};
+
 export default api;
