@@ -66,6 +66,18 @@ class Material {
     }
 
     /**
+     * Find multiple materials by IDs for context grounding
+     */
+    static async findByIds(ids, userId) {
+        if (!ids || ids.length === 0) return [];
+        const result = await query(
+            'SELECT * FROM materials WHERE id = ANY($1) AND user_id = $2 ORDER BY created_at DESC',
+            [ids, userId]
+        );
+        return result.rows;
+    }
+
+    /**
      * Remove a material
      */
     static async delete(id) {

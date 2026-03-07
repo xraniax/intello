@@ -40,6 +40,34 @@ class MaterialController {
             next(error);
         }
     }
+
+    static async chatCombined(req, res, next) {
+        try {
+            const { materialIds, question } = req.body;
+            if (!materialIds || !question) {
+                return res.status(400).json({ status: 'error', message: 'materialIds and question are required' });
+            }
+
+            const result = await MaterialService.chatWithContext(req.user.id, materialIds, question);
+            res.status(200).json({ status: 'success', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async generateCombined(req, res, next) {
+        try {
+            const { materialIds, taskType } = req.body;
+            if (!materialIds || !taskType) {
+                return res.status(400).json({ status: 'error', message: 'materialIds and taskType are required' });
+            }
+
+            const result = await MaterialService.generateWithContext(req.user.id, materialIds, taskType);
+            res.status(200).json({ status: 'success', data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 export default MaterialController;

@@ -9,5 +9,7 @@ router.use(protect);
 
 router.post('/upload', MaterialController.upload);
 router.get('/history', MaterialController.getHistory);
+router.post('/chat-combined', MaterialController.chatCombined);
+router.post('/generate-combined', MaterialController.generateCombined);
 
 export default router;

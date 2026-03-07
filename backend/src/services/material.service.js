@@ -39,6 +39,41 @@ class MaterialService {
     static async getUserHistory(userId) {
         return await Material.findByUserId(userId);
     }
+
+    /**
+     * AI Chat grounded in specific material IDs
+     */
+    static async chatWithContext(userId, materialIds, question) {
+        const materials = await Material.findByIds(materialIds, userId);
+        if (materials.length === 0) return { result: "No source materials selected for context." };
+
+        // Combine content from selected materials
+        const context = materials.map(m => `--- SOURCE: ${m.title} ---\n${m.content}`).join('\n\n');
+
+        const aiResponse = await axios.post(`${process.env.ENGINE_URL}/chat`, {
+            context: context,
+            question: question
+        });
+
+        return aiResponse.data;
+    }
+
+    /**
+     * Generate study materials grounded in specific material IDs
+     */
+    static async generateWithContext(userId, materialIds, taskType) {
+        const materials = await Material.findByIds(materialIds, userId);
+        if (materials.length === 0) return { result: "No source materials selected for context." };
+
+        const context = materials.map(m => `--- SOURCE: ${m.title} ---\n${m.content}`).join('\n\n');
+
+        const aiResponse = await axios.post(`${process.env.ENGINE_URL}/generate`, {
+            content: context,
+            task_type: taskType
+        });
+
+        return aiResponse.data;
+    }
 }
 
 export default MaterialService;
