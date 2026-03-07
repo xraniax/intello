@@ -1,27 +1,28 @@
-# Use an official Node.js image
-FROM node:20-alpine
-
-# Set working directory
+# Stage 1: Base - Setup and Dependency Installation
+FROM node:20-alpine AS base
 WORKDIR /app
+ENV NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false
 
-# Copy package files and install dependencies
-# We copy package.json and package-lock.json first to leverage Docker cache
 COPY package*.json ./
 RUN npm install
 
-# Copy all frontend source files
+# Stage 2: Development - Dev server with HMR
+FROM base AS development
+ENV NODE_ENV=development
 COPY . .
+EXPOSE 3000
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
 
-# Build the React app
-# Note: For Vite projects, the build output is in the 'dist' folder
+# Stage 3: Build - Production bundle generation
+FROM base AS build
+COPY . .
 RUN npm run build
 
-# Install 'serve' package to serve the static build
+# Stage 4: Production - Serving the static build
+FROM node:20-alpine AS production
+WORKDIR /app
 RUN npm install -g serve
-
-# Expose port 3000
+COPY --from=build /app/dist ./dist
 EXPOSE 3000
-
-# Start the frontend in production mode
-# We use -s for single-page app routing and -l to specify the port
 CMD ["serve", "-s", "dist", "-l", "3000"]

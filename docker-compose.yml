@@ -3,6 +3,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: development
     ports:
       - "3000:3000"
     volumes:
@@ -11,10 +12,8 @@ services:
     env_file:
       - .env
     environment:
-      - HOST=0.0.0.0
-      - PORT=3000
+      - VITE_API_URL=${REACT_APP_API_BASE}
       - CHOKIDAR_USEPOLLING=true
-    command: npm run dev
 
   backend:
     build:

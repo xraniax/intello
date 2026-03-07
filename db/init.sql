@@ -34,6 +34,7 @@ CREATE TABLE users (
 
 CREATE TABLE subjects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -169,6 +170,7 @@ CREATE TABLE summaries (
 CREATE TABLE materials (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    subject_id UUID REFERENCES subjects(id) ON DELETE SET NULL,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     type VARCHAR(50) NOT NULL, -- 'summary', 'quiz', etc.
