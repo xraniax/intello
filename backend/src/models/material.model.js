@@ -13,12 +13,23 @@ class Material {
     }
 
     /**
-     * Update material with results from AI engine
+     * Update material with results from AI engine and set status to completed
      */
-    static async updateAIResult(materialId, aiResult) {
+    static async updateAIResult(materialId, userId, aiResult) {
         const result = await query(
-            'UPDATE materials SET ai_generated_content = $2, processed_at = NOW() WHERE id = $1 RETURNING *',
-            [materialId, aiResult]
+            'UPDATE materials SET ai_generated_content = $2, processed_at = NOW(), status = \'completed\' WHERE id = $1 AND user_id = $3 RETURNING *',
+            [materialId, aiResult, userId]
+        );
+        return result.rows[0];
+    }
+
+    /**
+     * Update only the status of a material (for failure handling)
+     */
+    static async updateStatus(materialId, userId, status) {
+        const result = await query(
+            'UPDATE materials SET status = $2 WHERE id = $1 AND user_id = $3 RETURNING *',
+            [materialId, status, userId]
         );
         return result.rows[0];
     }
@@ -40,16 +51,16 @@ class Material {
     }
 
     /**
-     * Fetch a single material by ID (Security: check user_id if needed in service)
+     * Fetch a single material by ID (Security: enforce user_id)
      */
-    static async findById(id) {
+    static async findById(id, userId) {
         const result = await query(
             `SELECT m.*, s.name as subject_name,
             json_build_object('id', s.id, 'name', s.name) as subject
             FROM materials m
             LEFT JOIN subjects s ON m.subject_id = s.id
-            WHERE m.id = $1`,
-            [id]
+            WHERE m.id = $1 AND m.user_id = $2`,
+            [id, userId]
         );
         return result.rows[0];
     }
@@ -78,11 +89,11 @@ class Material {
     }
 
     /**
-     * Remove a material
+     * Remove a material (Security: enforce user_id)
      */
-    static async delete(id) {
-        await query('DELETE FROM materials WHERE id = $1', [id]);
-        return true;
+    static async delete(id, userId) {
+        const result = await query('DELETE FROM materials WHERE id = $1 AND user_id = $2 RETURNING *', [id, userId]);
+        return result.rowCount > 0;
     }
 }
 

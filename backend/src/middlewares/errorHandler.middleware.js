@@ -1,14 +1,15 @@
+/**
+ * Centralized error handling middleware for standard JSON responses
+ */
 const errorHandler = (err, req, res, next) => {
-    console.error(err.stack);
+    const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
 
-    const statusCode = err.statusCode || 500;
-    const message = err.message || 'Internal Server Error';
+    console.error(`[Error] ${err.stack}`);
 
     res.status(statusCode).json({
         status: 'error',
-        statusCode,
-        message,
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+        message: err.message || 'Internal Server Error',
+        stack: process.env.NODE_ENV === 'production' ? null : err.stack,
     });
 };
 

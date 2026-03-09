@@ -3,6 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import errorHandler from './middlewares/errorHandler.middleware.js';
+import { apiLimiter } from './middlewares/rateLimiter.middleware.js';
 
 dotenv.config();
 
@@ -16,6 +17,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Apply rate limiter to all api routes
+app.use('/api/', apiLimiter);
 
 // Static files (for uploads)
 app.use('/uploads', express.static('storage'));

@@ -1,91 +1,55 @@
 import SubjectService from '../services/subject.service.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 class SubjectController {
-    static async create(req, res, next) {
-        try {
-            if (!req.user || !req.user.id) {
-                return res.status(401).json({ status: 'error', message: 'User not authenticated' });
-            }
-
-            const { name, description } = req.body;
-            const userId = req.user.id;
-
-            if (!name) {
-                return res.status(400).json({ status: 'error', message: 'Subject name is required' });
-            }
-
-            const subject = await SubjectService.createSubject(userId, name, description);
-            res.status(201).json({ status: 'success', data: subject });
-        } catch (error) {
-            next(error);
+    static create = asyncHandler(async (req, res) => {
+        const { name, description } = req.body;
+        if (!name) {
+            res.status(400);
+            throw new Error('Subject name is required');
         }
-    }
 
-    static async getAll(req, res, next) {
-        try {
-            if (!req.user || !req.user.id) {
-                return res.status(401).json({ status: 'error', message: 'User not authenticated' });
-            }
+        const subject = await SubjectService.createSubject(req.user.id, name, description);
+        res.status(201).json({ status: 'success', data: subject });
+    });
 
-            const subjects = await SubjectService.getAllSubjects(req.user.id);
-            res.status(200).json({ status: 'success', data: subjects });
-        } catch (error) {
-            next(error);
+    static getAll = asyncHandler(async (req, res) => {
+        const subjects = await SubjectService.getAllSubjects(req.user.id);
+        res.status(200).json({ status: 'success', data: subjects });
+    });
+
+    static getOne = asyncHandler(async (req, res) => {
+        const subject = await SubjectService.getSubjectDetails(req.user.id, req.params.id);
+        if (!subject) {
+            res.status(404);
+            throw new Error('Subject not found');
         }
-    }
+        res.status(200).json({ status: 'success', data: subject });
+    });
 
-    static async getOne(req, res, next) {
-        try {
-            if (!req.user || !req.user.id) {
-                return res.status(401).json({ status: 'error', message: 'User not authenticated' });
-            }
-
-            const subject = await SubjectService.getSubjectDetails(req.user.id, req.params.id);
-            if (!subject) {
-                return res.status(404).json({ status: 'error', message: 'Subject not found' });
-            }
-            res.status(200).json({ status: 'success', data: subject });
-        } catch (error) {
-            next(error);
+    static rename = asyncHandler(async (req, res) => {
+        const { name } = req.body;
+        if (!name) {
+            res.status(400);
+            throw new Error('New name is required');
         }
-    }
 
-    static async rename(req, res, next) {
-        try {
-            if (!req.user || !req.user.id) {
-                return res.status(401).json({ status: 'error', message: 'User not authenticated' });
-            }
-
-            const { name } = req.body;
-            if (!name) {
-                return res.status(400).json({ status: 'error', message: 'New name is required' });
-            }
-
-            const subject = await SubjectService.renameSubject(req.user.id, req.params.id, name);
-            if (!subject) {
-                return res.status(404).json({ status: 'error', message: 'Subject not found' });
-            }
-            res.status(200).json({ status: 'success', data: subject });
-        } catch (error) {
-            next(error);
+        const subject = await SubjectService.renameSubject(req.user.id, req.params.id, name);
+        if (!subject) {
+            res.status(404);
+            throw new Error('Subject not found');
         }
-    }
+        res.status(200).json({ status: 'success', data: subject });
+    });
 
-    static async delete(req, res, next) {
-        try {
-            if (!req.user || !req.user.id) {
-                return res.status(401).json({ status: 'error', message: 'User not authenticated' });
-            }
-
-            const deleted = await SubjectService.deleteSubject(req.user.id, req.params.id);
-            if (!deleted) {
-                return res.status(404).json({ status: 'error', message: 'Subject not found' });
-            }
-            res.status(200).json({ status: 'success', message: 'Subject deleted successfully' });
-        } catch (error) {
-            next(error);
+    static delete = asyncHandler(async (req, res) => {
+        const deleted = await SubjectService.deleteSubject(req.user.id, req.params.id);
+        if (!deleted) {
+            res.status(404);
+            throw new Error('Subject not found');
         }
-    }
+        res.status(200).json({ status: 'success', message: 'Subject deleted successfully' });
+    });
 }
 
 export default SubjectController;
