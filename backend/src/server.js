@@ -7,5 +7,5 @@ validateEnv();
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Cognify Backend running on port ${PORT}`);
+  console.log(` Cognify Backend running on port ${PORT}`);
 });

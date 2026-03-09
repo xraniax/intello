@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { materialService } from '../services/api';
-import { FileText, Clock, Trash2, ChevronRight, Folder } from 'lucide-react';
 
 const History = () => {
     const location = useLocation();
@@ -33,115 +32,95 @@ const History = () => {
     }, [location.state]);
 
     if (loading) {
-        return <div className="container">Loading your history...</div>;
+        return <div className="p-8 text-center text-gray-500">Loading your history...</div>;
     }
 
     return (
-        <div className="container animate-fade-in">
-            <div className="mb-8">
-                <h1 style={{ fontSize: '2rem', fontWeight: 'bold' }}>Study History</h1>
-                <p style={{ color: 'var(--text-muted)' }}>Review your learning materials and AI-generated insights</p>
+        <div className="max-w-6xl mx-auto">
+            <div className="mb-6">
+                <h1 className="text-2xl font-bold">Study History</h1>
+                <p className="text-gray-600">Review your learning materials and AI-generated insights</p>
             </div>
 
-            <div className="grid-cols-2" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div className="flex flex-col md:flex-row gap-6">
+                <div className="w-full md:w-1/3 flex flex-col gap-2">
                     {materials.length === 0 ? (
-                        <div className="glass-card text-center">
-                            <Clock size={32} className="text-muted" style={{ margin: '0 auto 1rem' }} />
-                            <p>No materials found. Start by uploading content!</p>
+                        <div className="p-6 border border-gray-200 bg-gray-50 text-center rounded">
+                            <p className="text-gray-600">No materials found. Start by uploading content!</p>
                         </div>
                     ) : (
                         materials.map((m) => (
                             <div
                                 key={m.id}
-                                className={`glass-card ${selected?.id === m.id ? 'active' : ''}`}
+                                className={`p-3 border rounded cursor-pointer ${selected?.id === m.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                                 onClick={() => setSelected(m)}
-                                style={{
-                                    padding: '1rem',
-                                    cursor: 'pointer',
-                                    border: selected?.id === m.id ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                                    background: selected?.id === m.id ? 'rgba(99, 102, 241, 0.1)' : 'var(--bg-card)'
-                                }}
                             >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <div className="bg-primary p-2 rounded" style={{ background: 'var(--primary)', padding: '6px', borderRadius: '4px' }}>
-                                            <FileText size={16} color="white" />
-                                        </div>
-                                        <div>
-                                            <h4 style={{ fontSize: '1rem', margin: 0 }}>{m.title}</h4>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <Folder size={12} />
-                                                <span>{m.subject_name || 'Imported'}</span>
-                                            </div>
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <h4 className="font-semibold text-gray-900">{m.title}</h4>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            {m.subject_name || 'Imported'}
                                         </div>
                                     </div>
-                                    <ChevronRight size={20} className="text-muted" />
+                                    <span className="text-gray-400">&gt;</span>
                                 </div>
                             </div>
                         ))
                     )}
                 </div>
 
-                <div className="glass-card" style={{ minHeight: '600px' }}>
+                <div className="w-full md:w-2/3 border border-gray-200 bg-white rounded p-6 min-h-[500px]">
                     {selected ? (
-                        <div className="animate-fade-in">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
+                        <div>
+                            <div className="flex justify-between items-start mb-6">
                                 <div>
-                                    <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{selected.title}</h2>
-                                    <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
-                                        <span className="bg-primary" style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', background: 'var(--primary)' }}>
-                                            {selected.type.toUpperCase()}
+                                    <h2 className="text-xl font-bold">{selected.title}</h2>
+                                    <div className="flex gap-2 mt-2 text-xs">
+                                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded uppercase font-medium">
+                                            {selected.type}
                                         </span>
-                                        <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', background: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}>
+                                        <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded">
                                             {selected.subject_name || 'Imported Materials'}
                                         </span>
                                     </div>
                                 </div>
-                                <button className="btn btn-outline" style={{ color: '#ef4444', borderColor: '#ef4444', padding: '6px' }}>
-                                    <Trash2 size={18} />
+                                <button className="text-sm text-red-600 border border-red-200 hover:bg-red-50 px-2 py-1 rounded">
+                                    Delete
                                 </button>
                             </div>
 
-                            <div style={{ marginBottom: '2rem' }}>
-                                <h4 style={{ marginBottom: '0.75rem', color: 'var(--primary)' }}>AI Generated Insights</h4>
-                                <div style={{
-                                    background: 'rgba(15, 23, 42, 0.5)',
-                                    padding: '1.5rem',
-                                    borderRadius: '12px',
-                                    borderLeft: '4px solid var(--primary)',
-                                    whiteSpace: 'pre-wrap'
-                                }}>
+                            <div className="mb-8">
+                                <h4 className="font-semibold text-gray-800 mb-2">AI Generated Insights</h4>
+                                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded text-sm text-gray-800 whitespace-pre-wrap">
                                     {selected.ai_generated_content?.result ? (
                                         typeof selected.ai_generated_content.result === 'string' ? (
                                             selected.ai_generated_content.result
                                         ) : (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                            <div className="flex flex-col gap-4">
                                                 {selected.ai_generated_content.result.map((q, i) => (
-                                                    <div key={i} style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                                                        <p style={{ fontWeight: '600' }}>Q: {q.question}</p>
-                                                        <p style={{ color: 'var(--primary)', marginTop: '0.5rem' }}>A: {q.answer}</p>
+                                                    <div key={i} className="pb-4 border-b border-blue-200 last:border-0 last:pb-0">
+                                                        <p className="font-semibold text-gray-900">Q: {q.question}</p>
+                                                        <p className="text-blue-800 mt-1">A: {q.answer}</p>
                                                     </div>
                                                 ))}
                                             </div>
                                         )
                                     ) : (
-                                        <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>No AI results generated yet.</span>
+                                        <span className="italic text-gray-500">No AI results generated yet.</span>
                                     )}
                                 </div>
                             </div>
 
                             <div>
-                                <h4 style={{ marginBottom: '0.75rem', color: 'var(--text-muted)' }}>Source Content Clip</h4>
-                                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.8' }}>
+                                <h4 className="font-semibold text-gray-700 mb-2">Source Content Clip</h4>
+                                <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded border border-gray-200">
                                     {selected.content.substring(0, 500)}...
                                 </p>
                             </div>
                         </div>
                     ) : (
-                        <div className="flex-center" style={{ height: '100%', flexDirection: 'column', color: 'var(--text-muted)' }}>
-                            <FileText size={48} style={{ marginBottom: '1rem', opacity: 0.3 }} />
-                            <p>Select a material from the list to view insights</p>
+                        <div className="h-full flex items-center justify-center text-gray-500">
+                            Select a material from the list to view insights
                         </div>
                     )}
                 </div>

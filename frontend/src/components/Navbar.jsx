@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, BookOpen, User, PlusCircle, History } from 'lucide-react';
 
 const Navbar = () => {
     const { user, logout } = useAuth();
@@ -13,45 +12,37 @@ const Navbar = () => {
     };
 
     return (
-        <nav className="glass sticky top-0 z-50 py-4 mb-8">
-            <div className="container flex justify-between items-center" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Link to="/" className="flex items-center gap-2 text-xl font-bold" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit' }}>
-                    <div className="bg-primary p-1.5 rounded-lg" style={{ background: 'var(--primary)', padding: '6px', borderRadius: '8px' }}>
-                        <BookOpen size={24} color="white" />
-                    </div>
-                    <span>Cognify</span>
+        <header className="bg-gray-100 border-b border-gray-200 p-4">
+            <div className="max-w-6xl mx-auto flex justify-between items-center">
+                <Link to="/" className="text-xl font-bold text-blue-600">
+                    Cognify
                 </Link>
 
-                <div className="flex items-center gap-6" style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                <nav className="flex items-center gap-4">
                     {user ? (
                         <>
-                            <Link to="/upload" className="text-muted hover:text-white flex items-center gap-1" style={{ textDecoration: 'none', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <PlusCircle size={18} />
-                                <span>Upload</span>
-                            </Link>
-                            <Link to="/history" className="text-muted hover:text-white flex items-center gap-1" style={{ textDecoration: 'none', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <History size={18} />
-                                <span>History</span>
-                            </Link>
-                            <div className="flex items-center gap-3 pl-4 border-l" style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '1px solid var(--border-color)', paddingLeft: '16px' }}>
-                                <div className="flex items-center gap-2">
-                                    <User size={18} className="text-primary" />
-                                    <span className="font-medium">{user.name}</span>
-                                </div>
-                                <button onClick={handleLogout} className="btn-outline" style={{ padding: '6px 12px', borderRadius: '6px', fontSize: '0.875rem' }}>
-                                    <LogOut size={16} />
+                            <Link to="/upload" className="text-sm font-medium hover:underline">Upload</Link>
+                            <Link to="/history" className="text-sm font-medium hover:underline">History</Link>
+
+                            <div className="flex items-center gap-3 border-l border-gray-300 pl-4 ml-2">
+                                <span className="text-sm text-gray-700">{user.name}</span>
+                                <button
+                                    onClick={handleLogout}
+                                    className="text-sm text-red-600 hover:text-red-800 hover:underline"
+                                >
+                                    Log out
                                 </button>
                             </div>
                         </>
                     ) : (
                         <>
-                            <Link to="/login" className="text-muted hover:text-white" style={{ textDecoration: 'none', color: 'var(--text-muted)' }}>Login</Link>
-                            <Link to="/register" className="btn btn-primary">Get Started</Link>
+                            <Link to="/login" className="text-sm font-medium hover:underline">Login</Link>
+                            <Link to="/register" className="btn-primary text-sm">Register</Link>
                         </>
                     )}
-                </div>
+                </nav>
             </div>
-        </nav>
+        </header>
     );
 };
 

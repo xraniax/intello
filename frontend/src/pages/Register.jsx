@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { UserPlus, Mail, Lock, User } from 'lucide-react';
 
 const Register = () => {
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });
@@ -27,78 +26,62 @@ const Register = () => {
     };
 
     return (
-        <div className="container flex-center" style={{ minHeight: 'calc(100vh - 150px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '450px' }}>
-                <div className="text-center mb-8" style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                    <div className="bg-primary w-12 h-12 rounded-xl flex-center mx-auto mb-4" style={{ background: 'var(--primary)', width: '3rem', height: '3rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
-                        <UserPlus color="white" size={28} />
-                    </div>
-                    <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold' }}>Create Account</h1>
-                    <p style={{ color: 'var(--text-muted)' }}>Start your personalized learning experience</p>
+        <div className="flex flex-col items-center justify-center min-h-[50vh] p-4">
+            <div className="w-full max-w-sm border border-gray-200 p-6 rounded shadow-sm bg-white">
+                <div className="mb-6">
+                    <h1 className="text-2xl font-bold mb-1">Create Account</h1>
+                    <p className="text-gray-600 text-sm">Register to start your learning journey</p>
                 </div>
 
                 {err && (
-                    <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
+                    <div className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm border border-red-200">
                         {err}
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit}>
-                    <div className="input-group">
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
                         <label className="input-label">Full Name</label>
-                        <div style={{ position: 'relative' }}>
-                            <User size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                            <input
-                                type="text"
-                                className="input-field"
-                                placeholder="John Doe"
-                                required
-                                style={{ paddingLeft: '40px' }}
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            />
-                        </div>
+                        <input
+                            type="text"
+                            className="input-field"
+                            placeholder="Your name here.."
+                            required
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        />
                     </div>
 
-                    <div className="input-group">
+                    <div>
                         <label className="input-label">Email Address</label>
-                        <div style={{ position: 'relative' }}>
-                            <Mail size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                            <input
-                                type="email"
-                                className="input-field"
-                                placeholder="name@example.com"
-                                required
-                                style={{ paddingLeft: '40px' }}
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                            />
-                        </div>
+                        <input
+                            type="email"
+                            className="input-field"
+                            placeholder="name@example.com"
+                            required
+                            value={formData.email}
+                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        />
                     </div>
 
-                    <div className="input-group">
+                    <div>
                         <label className="input-label">Password</label>
-                        <div style={{ position: 'relative' }}>
-                            <Lock size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                            <input
-                                type="password"
-                                className="input-field"
-                                placeholder="••••••••"
-                                required
-                                style={{ paddingLeft: '40px' }}
-                                value={formData.password}
-                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                            />
-                        </div>
+                        <input
+                            type="password"
+                            className="input-field"
+                            required
+                            value={formData.password}
+                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        />
                     </div>
 
-                    <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={sending}>
+                    <button type="submit" className="btn-primary w-full mt-2" disabled={sending}>
                         {sending ? 'Creating account...' : 'Sign Up'}
                     </button>
                 </form>
 
-                <p className="text-center mt-6" style={{ textAlign: 'center', marginTop: '1.5rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                    Already have an account? <Link to="/login" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 'bold' }}>Log in</Link>
+                <p className="text-center mt-4 text-sm text-gray-600">
+                    Already have an account? <Link to="/login" className="text-blue-600 hover:underline">Log in</Link>
                 </p>
             </div>
         </div>

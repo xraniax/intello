@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Book, Plus, Edit2, Trash2, ChevronRight, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { subjectService } from '../services/api';
 
@@ -65,83 +64,68 @@ const Dashboard = () => {
     };
 
     return (
-        <div className="container animate-fade-in">
-            <div className="glass-card mb-8" style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(15, 23, 42, 0) 100%)' }}>
-                <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>Hello, {user?.name || 'Scholar'}!</h1>
-                <p style={{ color: 'var(--text-muted)', fontSize: '1.125rem', maxWidth: '600px' }}>
-                    Manage your subjects and course materials below. Click on a subject to view its contents.
-                </p>
+        <div className="max-w-6xl mx-auto">
+            <div className="mb-8 p-6 bg-blue-50 border border-blue-200 rounded">
+                <h1 className="text-2xl font-bold mb-2">Hello, {user?.name || 'Scholar'}!</h1>
+                <p className="text-gray-700">Manage your subjects and course materials below.</p>
             </div>
 
-            <div className="grid mb-6" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: '600' }}>Your Subjects</h2>
-                <form onSubmit={handleCreateSubject} style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">Your Subjects</h2>
+                <form onSubmit={handleCreateSubject} className="flex gap-2">
                     <input
                         type="text"
                         placeholder="New Subject Name..."
                         className="input-field"
-                        style={{ width: '250px', marginBottom: 0 }}
                         value={newSubjectName}
                         onChange={(e) => setNewSubjectName(e.target.value)}
                         disabled={creating}
                     />
-                    <button type="submit" className="btn btn-primary" disabled={creating}>
-                        {creating ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-                        Add
+                    <button type="submit" className="btn-primary whitespace-nowrap" disabled={creating}>
+                        {creating ? 'Adding...' : 'Add Subject'}
                     </button>
                 </form>
             </div>
 
             {loading ? (
-                <div className="flex-center" style={{ height: '200px' }}>
-                    <Loader2 className="animate-spin text-primary" size={48} />
-                </div>
+                <div className="p-8 text-center text-gray-500">Loading subjects...</div>
             ) : subjects.length === 0 ? (
-                <div className="glass-card text-center" style={{ padding: '4rem' }}>
-                    <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>You haven't created any subjects yet.</p>
-                    <Link to="/upload" className="btn btn-primary">
-                        Upload First Material
-                        <ChevronRight size={20} />
-                    </Link>
+                <div className="p-8 border border-dashed border-gray-300 text-center rounded">
+                    <p className="mb-4 text-gray-600">You haven't created any subjects yet.</p>
+                    <Link to="/upload" className="btn-primary inline-block">Upload First Material</Link>
                 </div>
             ) : (
-                <div className="grid-cols-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {subjects.map((subject) => (
-                        <div key={subject.id} className="glass-card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                                <Book className="text-primary" size={32} />
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <div key={subject.id} className="border border-gray-200 p-4 rounded bg-white flex flex-col">
+                            <div className="flex justify-between items-start mb-2">
+                                <h3 className="text-lg font-bold">{subject.name}</h3>
+                                <div className="flex gap-2">
                                     <button
                                         onClick={() => handleRenameSubject(subject.id, subject.name)}
-                                        className="btn btn-outline"
-                                        style={{ padding: '0.4rem', borderRadius: '6px' }}
-                                        title="Rename"
+                                        className="text-sm text-blue-600 hover:underline"
                                     >
-                                        <Edit2 size={14} />
+                                        Rename
                                     </button>
                                     <button
                                         onClick={() => handleDeleteSubject(subject.id, subject.name)}
-                                        className="btn btn-outline"
-                                        style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid #ef4444', color: '#ef4444' }}
-                                        title="Delete"
+                                        className="text-sm text-red-600 hover:underline"
                                     >
-                                        <Trash2 size={14} />
+                                        Delete
                                     </button>
                                 </div>
                             </div>
-                            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>{subject.name}</h3>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem', flexGrow: 1 }}>
+                            <p className="text-sm text-gray-500 mb-4 flex-grow">
                                 {subject.material_count || 0} Materials associated
                             </p>
-                            <Link to={`/subjects/${subject.id}`} className="btn btn-outline" style={{ width: '100%' }}>
-                                View Materials
-                                <ChevronRight size={16} />
+                            <Link to={`/subjects/${subject.id}`} className="btn-secondary text-center text-sm">
+                                Open Workspace
                             </Link>
                         </div>
                     ))}
-                    <Link to="/upload" className="glass-card" style={{ borderStyle: 'dashed', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', background: 'transparent' }}>
-                        <Plus size={48} className="text-muted" />
-                        <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Upload New Content</span>
+
+                    <Link to="/upload" className="border border-dashed border-gray-300 p-4 rounded flex flex-col items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors min-h-[150px]">
+                        <span className="font-medium">+ Upload New Content</span>
                     </Link>
                 </div>
             )}

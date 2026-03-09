@@ -1,8 +1,4 @@
 import React from 'react';
-import { motion } from 'framer-motion';
-import {
-    MessageSquare, Send, Mic, Volume2
-} from 'lucide-react';
 
 const AITutor = ({
     messages,
@@ -17,78 +13,60 @@ const AITutor = ({
     contextInfo
 }) => {
     return (
-        <div className="glass-card bg-slate-900/30 flex flex-col h-[600px] border-slate-800/80 shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-slate-800/50 bg-slate-900/50 flex justify-between items-center">
+        <div className="border border-gray-200 rounded bg-white flex flex-col h-[600px]">
+            <div className="p-3 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                 <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${isThinking ? 'bg-secondary animate-pulse' : 'bg-green-500'}`} />
-                    <h3 className="text-xs font-black uppercase tracking-widest">AI Subject Tutor</h3>
+                    <span className="font-bold">AI Subject Tutor</span>
+                    {isThinking && <span className="text-xs text-blue-600 bg-blue-100 px-1 rounded">Thinking...</span>}
                 </div>
-                <span className="text-[10px] text-slate-500 italic">
+                <span className="text-xs text-gray-500">
                     {contextInfo}
                 </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.length === 0 && (
-                    <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
-                        <div className="p-4 bg-slate-800/50 rounded-full mb-4">
-                            <MessageSquare size={32} />
-                        </div>
-                        <p className="max-w-xs text-sm">Ask me anything about these resources. Dictate your question or type below.</p>
+                    <div className="h-full flex items-center justify-center text-gray-500 text-sm">
+                        Ask a question about your selected resources.
                     </div>
                 )}
 
                 {messages.map((msg, i) => (
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        key={i}
-                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                        <div className={`relative max-w-[80%] p-4 rounded-2xl text-sm shadow-xl ${msg.role === 'user'
-                                ? 'bg-primary text-white ml-12 rounded-tr-none'
-                                : 'bg-slate-800 text-slate-100 mr-12 rounded-tl-none border border-slate-700/50'
+                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] p-3 rounded text-sm ${msg.role === 'user'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 border border-gray-300 text-black'
                             }`}>
-                            {msg.content}
+                            <div className="whitespace-pre-wrap">{msg.content}</div>
                             {msg.role === 'ai' && (
                                 <button
                                     onClick={() => handleTTS(msg.content)}
-                                    className="absolute -bottom-6 right-0 text-slate-500 hover:text-secondary transition-all"
-                                    title="Read AI response"
+                                    className="text-xs text-blue-600 hover:underline mt-2 block"
                                 >
-                                    <Volume2 size={14} />
+                                    Read Aloud
                                 </button>
                             )}
                         </div>
-                    </motion.div>
+                    </div>
                 ))}
 
-                {isThinking && (
-                    <div className="flex justify-start">
-                        <div className="bg-slate-800/50 p-4 rounded-2xl rounded-tl-none flex gap-2">
-                            <div className="w-1.5 h-1.5 bg-secondary rounded-full animate-bounce [animation-delay:-0.3s]" />
-                            <div className="w-1.5 h-1.5 bg-secondary rounded-full animate-bounce [animation-delay:-0.15s]" />
-                            <div className="w-1.5 h-1.5 bg-secondary rounded-full animate-bounce" />
-                        </div>
-                    </div>
-                )}
                 <div ref={chatEndRef} />
             </div>
 
-            <div className="p-4 bg-slate-900/80 border-t border-slate-800/50">
+            <div className="p-3 border-t border-gray-200 bg-gray-50">
                 <form onSubmit={handleChat} className="flex gap-2">
                     <button
                         type="button"
                         onClick={handleVoiceInput}
-                        className={`p-3 rounded-xl transition-all ${isListening
-                                ? 'bg-red-500 text-white shadow-lg shadow-red-500/20 animate-pulse'
-                                : 'bg-slate-800 text-slate-400 hover:text-secondary hover:bg-slate-700'
+                        className={`px-3 py-2 border rounded text-sm ${isListening
+                            ? 'bg-red-600 border-red-700 text-white'
+                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
                             }`}
                     >
-                        <Mic size={20} />
+                        {isListening ? 'Listening...' : 'Mic'}
                     </button>
                     <input
-                        className="flex-1 bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:border-primary outline-none transition-all placeholder:text-slate-600"
+                        className="input-field"
                         placeholder="Ask a question..."
                         value={currentQuestion}
                         onChange={(e) => setCurrentQuestion(e.target.value)}
@@ -96,9 +74,9 @@ const AITutor = ({
                     <button
                         type="submit"
                         disabled={isThinking || !currentQuestion.trim()}
-                        className="bg-primary hover:bg-primary-dark text-white p-3 rounded-xl transition-all disabled:opacity-50 disabled:grayscale shadow-lg shadow-primary/20"
+                        className="btn-primary"
                     >
-                        <Send size={20} />
+                        Send
                     </button>
                 </form>
             </div>

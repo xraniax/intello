@@ -1,13 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { subjectService, materialService } from '../services/api';
-import {
-    Book, Loader2, ArrowLeft
-} from 'lucide-react';
-import toast from 'react-hot-toast';
 import { useSpeech } from '../hooks/useSpeech';
 
-// Subcomponents
 import ResourceLibrary from '../components/Subject/ResourceLibrary';
 import AITutor from '../components/Subject/AITutor';
 import StudyGenerator from '../components/Subject/StudyGenerator';
@@ -18,27 +13,21 @@ const SubjectDetail = () => {
     const [materials, setMaterials] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // AI Suite State
     const [selectedMaterials, setSelectedMaterials] = useState([]);
-    const [activeTab, setActiveTab] = useState('resources'); // resources, chat, generator
-
-    // Upload State
     const [uploading, setUploading] = useState(false);
     const [newUploadTitle, setNewUploadTitle] = useState('');
     const [newUploadContent, setNewUploadContent] = useState('');
+    const [uploadFile, setUploadFile] = useState(null);
 
-    // Chat State
     const [chatMessages, setChatMessages] = useState([]);
     const [currentQuestion, setCurrentQuestion] = useState('');
     const [isThinking, setIsThinking] = useState(false);
     const chatEndRef = useRef(null);
 
-    // Generator State
     const [genType, setGenType] = useState('summary');
     const [isGenerating, setIsGenerating] = useState(false);
     const [genResult, setGenResult] = useState('');
 
-    // Hooks
     const { isListening, speak, listen } = useSpeech();
 
     useEffect(() => {
@@ -55,7 +44,7 @@ const SubjectDetail = () => {
             setSubject(res.data.data.subject);
             setMaterials(res.data.data.materials);
         } catch (err) {
-            toast.error('Failed to fetch subject details');
+            alert('Failed to fetch subject details');
         } finally {
             setLoading(false);
         }
@@ -63,21 +52,38 @@ const SubjectDetail = () => {
 
     const handleUpload = async (e) => {
         e.preventDefault();
-        if (!newUploadContent.trim()) return;
+        if (!newUploadContent.trim() && !uploadFile) {
+            alert('Please provide either text content or a PDF document.');
+            return;
+        }
+
         setUploading(true);
         try {
-            await materialService.upload({
-                title: newUploadTitle || 'New Resource',
-                content: newUploadContent,
-                type: 'note',
-                subjectId: id
-            });
+            if (uploadFile) {
+                const formData = new FormData();
+                formData.append('file', uploadFile);
+                if (newUploadTitle) formData.append('title', newUploadTitle);
+                if (newUploadContent) formData.append('content', newUploadContent);
+                formData.append('type', 'note');
+                formData.append('subjectId', id);
+
+                await materialService.upload(formData);
+            } else {
+                await materialService.upload({
+                    title: newUploadTitle || 'New Resource',
+                    content: newUploadContent,
+                    type: 'note',
+                    subjectId: id
+                });
+            }
+
             setNewUploadTitle('');
             setNewUploadContent('');
-            toast.success('Material uploaded and processing...');
+            setUploadFile(null);
+            alert('Material uploaded and processing...');
             await fetchDetails();
         } catch (err) {
-            toast.error('Upload failed');
+            alert('Upload failed: ' + (err.response?.data?.message || err.message));
         } finally {
             setUploading(false);
         }
@@ -97,7 +103,7 @@ const SubjectDetail = () => {
             const res = await materialService.chatCombined(contextIds, userMsg.content);
             setChatMessages(prev => [...prev, { role: 'ai', content: res.data.data.result }]);
         } catch (err) {
-            toast.error('AI error');
+            alert('AI error');
             setChatMessages(prev => [...prev, { role: 'ai', content: "Error: AI engine unreachable." }]);
         } finally {
             setIsThinking(false);
@@ -106,7 +112,7 @@ const SubjectDetail = () => {
 
     const handleGenerate = async () => {
         if (selectedMaterials.length === 0) {
-            toast.error('Select at least one material.');
+            alert('Select at least one material.');
             return;
         }
         setIsGenerating(true);
@@ -114,9 +120,9 @@ const SubjectDetail = () => {
         try {
             const res = await materialService.generateCombined(selectedMaterials, genType);
             setGenResult(res.data.data.result);
-            toast.success('Study material generated!');
+            alert('Study material generated!');
         } catch (err) {
-            toast.error('Generation failed.');
+            alert('Generation failed.');
         } finally {
             setIsGenerating(false);
         }
@@ -124,53 +130,36 @@ const SubjectDetail = () => {
 
     if (loading) {
         return (
-            <div className="flex justify-center items-center h-screen bg-slate-950">
-                <Loader2 className="animate-spin text-primary" size={48} />
+            <div className="flex justify-center p-8">
+                <span className="text-gray-500">Loading subject details...</span>
             </div>
         );
     }
 
     return (
-        <div className="container mx-auto px-4 py-8 max-w-7xl animate-fade-in text-slate-100 min-h-screen">
-            <Link to="/dashboard" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-8 transition-colors">
-                <ArrowLeft size={18} />
-                Back to Dashboard
+        <div className="max-w-6xl mx-auto">
+            <Link to="/dashboard" className="text-blue-600 hover:underline mb-4 inline-block">
+                &larr; Back to Dashboard
             </Link>
 
-            <header className="glass-card mb-8 border-l-4 border-l-primary relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8 opacity-5">
-                    <Book size={120} />
-                </div>
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <header className="mb-6 p-6 border border-gray-200 bg-white rounded">
+                <div className="flex justify-between items-start">
                     <div>
-                        <h1 className="text-4xl font-black tracking-tighter mb-2">{subject?.name}</h1>
-                        <p className="text-slate-400 max-w-2xl">{subject?.description || 'Your specialized learning workspace.'}</p>
+                        <h1 className="text-2xl font-bold mb-2">{subject?.name}</h1>
+                        <p className="text-gray-600">{subject?.description || 'Your specialized learning workspace.'}</p>
                     </div>
-                    <div className="flex gap-2">
-                        <span className="bg-slate-800 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest text-slate-500">
-                            {materials.length} Resources
-                        </span>
-                        <span className="bg-primary/20 text-primary px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
-                            AI Active
-                        </span>
+                    <div className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded">
+                        {materials.length} Resources
                     </div>
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div className="lg:col-span-4 space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div className="lg:col-span-1 space-y-6">
                     <ResourceLibrary
                         materials={materials}
                         selectedMaterials={selectedMaterials}
-                        toggleSelection={(id) => setSelectedMaterials(prev => prev.includes(id) ? prev.filter(mid => mid !== id) : [...prev, id])}
-                        handleUpload={handleUpload}
-                        uploadState={{
-                            uploading,
-                            title: newUploadTitle,
-                            setTitle: setNewUploadTitle,
-                            content: newUploadContent,
-                            setContent: setNewUploadContent
-                        }}
+                        toggleSelection={(mid) => setSelectedMaterials(prev => prev.includes(mid) ? prev.filter(id => id !== mid) : [...prev, mid])}
                     />
 
                     <StudyGenerator
@@ -184,19 +173,71 @@ const SubjectDetail = () => {
                     />
                 </div>
 
-                <div className="lg:col-span-8">
-                    <AITutor
-                        messages={chatMessages}
-                        currentQuestion={currentQuestion}
-                        setCurrentQuestion={setCurrentQuestion}
-                        handleChat={handleChat}
-                        handleVoiceInput={() => listen((transcript) => setCurrentQuestion(transcript))}
-                        handleTTS={speak}
-                        isThinking={isThinking}
-                        isListening={isListening}
-                        chatEndRef={chatEndRef}
-                        contextInfo={selectedMaterials.length > 0 ? "Grounded in selected context" : "Using all subject data"}
-                    />
+                <div className="lg:col-span-3 space-y-6">
+                    <section className="bg-white p-6 border border-gray-200 rounded">
+                        <h3 className="text-lg font-bold mb-4">Upload Document</h3>
+                        <form onSubmit={handleUpload} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="input-label">Title (Optional)</label>
+                                    <input
+                                        type="text"
+                                        className="input-field text-sm"
+                                        placeholder="e.g. Chapter 1 Notes"
+                                        value={newUploadTitle}
+                                        onChange={(e) => setNewUploadTitle(e.target.value)}
+                                        disabled={uploading}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="input-label">PDF File</label>
+                                    <input
+                                        type="file"
+                                        accept=".pdf,application/pdf"
+                                        className="input-field text-sm"
+                                        onChange={(e) => setUploadFile(e.target.files[0])}
+                                        disabled={uploading}
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-4 flex flex-col">
+                                <div className="flex-1">
+                                    <label className="input-label">Text Content (Optional if PDF provided)</label>
+                                    <textarea
+                                        className="input-field text-sm h-[114px] resize-none"
+                                        placeholder="Paste notes, raw text, or summaries here..."
+                                        value={newUploadContent}
+                                        onChange={(e) => setNewUploadContent(e.target.value)}
+                                        disabled={uploading}
+                                    />
+                                </div>
+                            </div>
+                            <div className="md:col-span-2 flex justify-end mt-2">
+                                <button
+                                    type="submit"
+                                    disabled={uploading}
+                                    className="btn-primary w-full md:w-auto"
+                                >
+                                    {uploading ? 'Processing with AI...' : 'Upload to Subject'}
+                                </button>
+                            </div>
+                        </form>
+                    </section>
+
+                    <section className="bg-white border border-gray-200 rounded">
+                        <AITutor
+                            messages={chatMessages}
+                            currentQuestion={currentQuestion}
+                            setCurrentQuestion={setCurrentQuestion}
+                            handleChat={handleChat}
+                            handleVoiceInput={() => listen((transcript) => setCurrentQuestion(transcript))}
+                            handleTTS={speak}
+                            isThinking={isThinking}
+                            isListening={isListening}
+                            chatEndRef={chatEndRef}
+                            contextInfo={selectedMaterials.length > 0 ? "Grounded in selected context" : "Using all subject data"}
+                        />
+                    </section>
                 </div>
             </div>
         </div>

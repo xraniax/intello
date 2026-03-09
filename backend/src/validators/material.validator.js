@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
 export const uploadMaterialSchema = z.object({
-    title: z.string().optional(),
-    content: z.string().min(1, { message: 'Content is required' }),
+    content: z.string().optional(),
     type: z.enum(['summary', 'quiz', 'note'], { required_error: 'Valid task type is required' }),
     subjectId: z.coerce.number().optional(),
 });

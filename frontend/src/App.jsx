@@ -22,16 +22,10 @@ const ProtectedRoute = ({ children }) => {
 const App = () => {
   return (
     <AuthProvider>
-      <Toaster position="top-right" toastOptions={{
-        style: {
-          background: '#1e293b',
-          color: '#f8fafc',
-          border: '1px solid rgba(255,255,255,0.1)'
-        }
-      }} />
+      <Toaster position="top-right" />
       <Router>
         <Navbar />
-        <main style={{ paddingBottom: '3rem' }}>
+        <main className="p-4 flex-1 h-full">
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />

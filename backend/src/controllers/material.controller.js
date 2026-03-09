@@ -1,19 +1,48 @@
 import MaterialService from '../services/material.service.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
+import fs from 'fs';
 
 class MaterialController {
     static upload = asyncHandler(async (req, res) => {
         const { title, content, type, subjectId } = req.body;
+        const file = req.file;
 
-        if (!content || !type) {
+        let finalContent = content || '';
+
+        // If a file is uploaded, parse it
+        if (file) {
+            if (file.mimetype !== 'application/pdf') {
+                fs.unlinkSync(file.path);
+                res.status(400);
+                throw new Error('Only PDF files are allowed');
+            }
+
+            try {
+                const dataBuffer = fs.readFileSync(file.path);
+                const data = await pdfParse(dataBuffer);
+                finalContent += '\n\n' + data.text; // Append parsed text
+                fs.unlinkSync(file.path); // Clean up
+            } catch (err) {
+                if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+                res.status(500);
+                throw new Error('Failed to parse PDF file');
+            }
+        }
+
+        finalContent = finalContent.trim();
+
+        if (!finalContent || !type) {
             res.status(400);
-            throw new Error('Content and type are required');
+            throw new Error('Either file or text content is required, along with task type');
         }
 
         const material = await MaterialService.processMaterial(
             req.user.id,
-            title || 'Untitled',
-            content,
+            title || req.file?.originalname || 'Untitled',
+            finalContent,
             type,
             subjectId
         );
