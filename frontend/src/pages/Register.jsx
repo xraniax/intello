@@ -13,13 +13,13 @@ const Register = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSending(true);
-        setErr('');
+        setError(''); // Renamed from 'setErr' to 'setError'
 
         try {
             await register(formData);
             navigate('/dashboard');
-        } catch (error) {
-            setErr(error.message);
+        } catch (err) { // Changed 'error' to 'err' to match the instruction's usage
+            setError(err.message || 'Registration failed.');
         } finally {
             setSending(false);
         }

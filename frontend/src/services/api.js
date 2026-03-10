@@ -18,8 +18,22 @@ api.interceptors.request.use(
         }
         return config;
     },
+    (error) => Promise.reject(error)
+);
+
+// Add a response interceptor to normalize errors
+api.interceptors.response.use(
+    (response) => response,
     (error) => {
-        return Promise.reject(error);
+        // Build a standardized error object
+        const customError = new Error(
+            error.response?.data?.message || error.message || 'An unexpected error occurred'
+        );
+        customError.code = error.response?.data?.code || 'NETWORK_ERROR';
+        customError.status = error.response?.status;
+        customError.validationErrors = error.response?.data?.errors || {}; // For Zod flat errors
+
+        return Promise.reject(customError);
     }
 );
 

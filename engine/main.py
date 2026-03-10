@@ -1,19 +1,35 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, constr
+from typing import Literal
 
 app = FastAPI()
 
 class GenerateRequest(BaseModel):
-    content: str
-    task_type: str
+    content: constr(min_length=1) = Field(..., description="The content to process")
+    task_type: Literal["summary", "quiz", "notes", "flashcards"]
 
 class ChatRequest(BaseModel):
-    context: str
-    question: str
+    context: constr(min_length=1) = Field(..., description="The context text")
+    question: constr(min_length=1) = Field(..., description="The user's question")
 
-@app.get("/")
-def read_root():
-    return {"message": "Hello from Cognify AI Engine!"}
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = {}
+    for error in exc.errors():
+        # Build field path string from loc tuple (skipping 'body')
+        field = ".".join([str(x) for x in error["loc"] if x != "body"])
+        errors[field] = error["msg"]
+        
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"status": "error", "code": "VALIDATION_ERROR", "message": "Engine validation failed", "errors": errors},
+    )
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
 
 @app.post("/generate")
 def generate(request: GenerateRequest):

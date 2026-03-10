@@ -20,7 +20,7 @@ const Login = () => {
             await login(email, password);
             navigate('/dashboard');
         } catch (error) {
-            setErr(error.message);
+            setErr(error.message || 'Login failed. Please check your credentials.');
         } finally {
             setSending(false);
         }

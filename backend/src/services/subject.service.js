@@ -17,6 +17,10 @@ class SubjectService {
      * Create a new subject
      */
     static async createSubject(userId, name, description) {
+        const existing = await Subject.findByName(userId, name);
+        if (existing) {
+            throw Object.assign(new Error(`A subject named "${name}" already exists.`), { statusCode: 409, code: 'DUPLICATE_SUBJECT' });
+        }
         return await Subject.create(userId, name, description);
     }
 
@@ -45,6 +49,10 @@ class SubjectService {
      * Rename a subject
      */
     static async renameSubject(userId, subjectId, newName) {
+        const existing = await Subject.findByName(userId, newName);
+        if (existing && existing.id !== parseInt(subjectId, 10)) {
+            throw Object.assign(new Error(`A subject named "${newName}" already exists.`), { statusCode: 409, code: 'DUPLICATE_SUBJECT' });
+        }
         return await Subject.update(subjectId, userId, newName);
     }
 

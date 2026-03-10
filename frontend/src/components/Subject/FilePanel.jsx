@@ -14,6 +14,7 @@ const FilePanel = ({
     handleFileChange,
     uploadFileError,
     uploadError,
+    uploadValidationErrors = {},
     uploadSuccess,
 }) => {
     const [showUpload, setShowUpload] = useState(false);
@@ -61,6 +62,9 @@ const FilePanel = ({
                                 />
                                 {uploadFileError && (
                                     <p className="text-red-600 text-xs mt-1">{uploadFileError}</p>
+                                )}
+                                {uploadValidationErrors.file && (
+                                    <p className="text-red-500 text-xs mt-1">{uploadValidationErrors.file}</p>
                                 )}
                             </div>
                             <div>

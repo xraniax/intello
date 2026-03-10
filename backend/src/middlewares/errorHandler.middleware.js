@@ -4,7 +4,7 @@
  * - Returns a clean JSON body to the client without internal details in production.
  */
 const errorHandler = (err, req, res, next) => {
-    const statusCode = res.statusCode && res.statusCode !== 200 ? res.statusCode : 500;
+    const statusCode = err.statusCode || (res.statusCode && res.statusCode !== 200 ? res.statusCode : 500);
 
     // Always log the full error server-side for observability
     if (statusCode >= 500) {
@@ -15,6 +15,7 @@ const errorHandler = (err, req, res, next) => {
 
     res.status(statusCode).json({
         status: 'error',
+        code: err.code || statusCode || 'UNKNOWN_ERROR',
         message:
             statusCode >= 500 && process.env.NODE_ENV === 'production'
                 ? 'An unexpected server error occurred. Please try again later.'

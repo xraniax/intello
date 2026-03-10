@@ -52,12 +52,24 @@ class MaterialService {
         // Combine content from selected materials
         const context = materials.map(m => `--- SOURCE: ${m.title} ---\n${m.content}`).join('\n\n');
 
-        const aiResponse = await axios.post(`${process.env.ENGINE_URL}/chat`, {
-            context: context,
-            question: question
-        }, { timeout: 5000 });
+        try {
+            const endpoint = `${process.env.ENGINE_URL}/chat`;
+            const payload = { context, question };
+            const options = { timeout: 15000 };
 
-        return aiResponse.data;
+            const aiResponse = process.env.NODE_ENV === 'test' && global.__mockAxiosPost
+                ? await global.__mockAxiosPost(endpoint, payload, options)
+                : await axios.post(endpoint, payload, options);
+
+            return aiResponse.data;
+        } catch (error) {
+            console.error('[MaterialService] Engine Chat Error:', error.message);
+            const isTimeout = error.code === 'ECONNABORTED';
+            const enhancedError = new Error(isTimeout ? 'AI engine timed out. Try with fewer documents or shorter questions.' : 'AI engine is currently unavailable. Please try again later.');
+            enhancedError.statusCode = 503;
+            enhancedError.code = isTimeout ? 'ENGINE_TIMEOUT' : 'ENGINE_UNAVAILABLE';
+            throw enhancedError;
+        }
     }
 
     /**
@@ -69,12 +81,24 @@ class MaterialService {
 
         const context = materials.map(m => `--- SOURCE: ${m.title} ---\n${m.content}`).join('\n\n');
 
-        const aiResponse = await axios.post(`${process.env.ENGINE_URL}/generate`, {
-            content: context,
-            task_type: taskType
-        }, { timeout: 5000 });
+        try {
+            const endpoint = `${process.env.ENGINE_URL}/generate`;
+            const payload = { content: context, task_type: taskType };
+            const options = { timeout: 30000 };
 
-        return aiResponse.data;
+            const aiResponse = process.env.NODE_ENV === 'test' && global.__mockAxiosPost
+                ? await global.__mockAxiosPost(endpoint, payload, options)
+                : await axios.post(endpoint, payload, options);
+
+            return aiResponse.data;
+        } catch (error) {
+            console.error('[MaterialService] Engine Generate Error:', error.message);
+            const isTimeout = error.code === 'ECONNABORTED';
+            const enhancedError = new Error(isTimeout ? 'AI engine took too long to generate content.' : 'AI engine generation failed.');
+            enhancedError.statusCode = 503;
+            enhancedError.code = isTimeout ? 'ENGINE_TIMEOUT' : 'ENGINE_UNAVAILABLE';
+            throw enhancedError;
+        }
     }
 }
 

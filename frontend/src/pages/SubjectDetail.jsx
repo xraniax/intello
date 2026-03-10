@@ -18,6 +18,7 @@ const SubjectDetail = () => {
     const [selectedMaterials, setSelectedMaterials] = useState([]);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState('');
+    const [uploadValidationErrors, setUploadValidationErrors] = useState({});
     const [uploadSuccess, setUploadSuccess] = useState('');
     const [newUploadTitle, setNewUploadTitle] = useState('');
     const [newUploadContent, setNewUploadContent] = useState('');
@@ -81,7 +82,9 @@ const SubjectDetail = () => {
             setUploadError('Please provide either text content or a PDF document.');
             return;
         }
+
         setUploading(true);
+        setUploadValidationErrors({}); // clear previous Zod errors
         try {
             if (uploadFile) {
                 const formData = new FormData();
@@ -105,7 +108,12 @@ const SubjectDetail = () => {
             setUploadSuccess('Material uploaded — AI is processing it.');
             await fetchDetails();
         } catch (err) {
-            setUploadError(err.response?.data?.message || 'Upload failed. Please try again.');
+            if (err.code === 'VALIDATION_ERROR') {
+                setUploadValidationErrors(err.validationErrors || {});
+                setUploadError('Please check the form for errors.');
+            } else {
+                setUploadError(err.message);
+            }
         } finally {
             setUploading(false);
         }
@@ -124,8 +132,8 @@ const SubjectDetail = () => {
             const res = await materialService.chatCombined(contextIds, userMsg.content);
             setChatMessages(prev => [...prev, { role: 'ai', content: res.data.data.result }]);
         } catch (err) {
-            setChatError('AI engine is unreachable. Please try again.');
-            setChatMessages(prev => [...prev, { role: 'ai', content: 'Error: AI engine unreachable.' }]);
+            setChatError(err.message || 'AI engine is unreachable. Please try again.');
+            setChatMessages(prev => [...prev, { role: 'ai', content: `Error: ${err.message}` }]);
         } finally {
             setIsThinking(false);
         }
@@ -143,7 +151,7 @@ const SubjectDetail = () => {
             const res = await materialService.generateCombined(selectedMaterials, genType);
             setGenResult(res.data.data.result);
         } catch (err) {
-            setGenError('Generation failed. Please try again.');
+            setGenError(err.message || 'Generation failed. Please try again.');
         } finally {
             setIsGenerating(false);
         }
@@ -193,6 +201,7 @@ const SubjectDetail = () => {
                         handleFileChange={handleFileChange}
                         uploadFileError={uploadFileError}
                         uploadError={uploadError}
+                        uploadValidationErrors={uploadValidationErrors}
                         uploadSuccess={uploadSuccess}
                     />
                 }
