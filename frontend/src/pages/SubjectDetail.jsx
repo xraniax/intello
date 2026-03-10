@@ -3,9 +3,10 @@ import { useParams, Link } from 'react-router-dom';
 import { subjectService, materialService } from '../services/api';
 import { useSpeech } from '../hooks/useSpeech';
 
-import ResourceLibrary from '../components/Subject/ResourceLibrary';
-import AITutor from '../components/Subject/AITutor';
-import StudyGenerator from '../components/Subject/StudyGenerator';
+import WorkspaceLayout from '../components/Subject/WorkspaceLayout';
+import FilePanel from '../components/Subject/FilePanel';
+import MaterialsPanel from '../components/Subject/MaterialsPanel';
+import ChatPanel from '../components/Subject/ChatPanel';
 
 const SubjectDetail = () => {
     const { id } = useParams();
@@ -13,26 +14,32 @@ const SubjectDetail = () => {
     const [materials, setMaterials] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    // Upload state
     const [selectedMaterials, setSelectedMaterials] = useState([]);
     const [uploading, setUploading] = useState(false);
+    const [uploadError, setUploadError] = useState('');
+    const [uploadSuccess, setUploadSuccess] = useState('');
     const [newUploadTitle, setNewUploadTitle] = useState('');
     const [newUploadContent, setNewUploadContent] = useState('');
     const [uploadFile, setUploadFile] = useState(null);
+    const [uploadFileError, setUploadFileError] = useState('');
 
+    // Chat state
+    const [chatError, setChatError] = useState('');
     const [chatMessages, setChatMessages] = useState([]);
     const [currentQuestion, setCurrentQuestion] = useState('');
     const [isThinking, setIsThinking] = useState(false);
     const chatEndRef = useRef(null);
 
+    // Generation state
+    const [genError, setGenError] = useState('');
     const [genType, setGenType] = useState('summary');
     const [isGenerating, setIsGenerating] = useState(false);
     const [genResult, setGenResult] = useState('');
 
     const { isListening, speak, listen } = useSpeech();
 
-    useEffect(() => {
-        fetchDetails();
-    }, [id]);
+    useEffect(() => { fetchDetails(); }, [id]);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -44,19 +51,36 @@ const SubjectDetail = () => {
             setSubject(res.data.data.subject);
             setMaterials(res.data.data.materials);
         } catch (err) {
-            alert('Failed to fetch subject details');
+            console.error('Failed to fetch subject details:', err);
         } finally {
             setLoading(false);
         }
     };
 
+    const validatePdfFile = (file) => {
+        if (!file) return null;
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext !== 'pdf' || file.type !== 'application/pdf') return 'Only .pdf files are accepted.';
+        if (file.size > 10 * 1024 * 1024) return 'File must be under 10 MB.';
+        return null;
+    };
+
+    const handleFileChange = (e) => {
+        const selected = e.target.files[0] || null;
+        const err = validatePdfFile(selected);
+        setUploadFileError(err || '');
+        setUploadFile(err ? null : selected);
+    };
+
     const handleUpload = async (e) => {
         e.preventDefault();
+        setUploadError('');
+        setUploadSuccess('');
+        if (uploadFileError) return;
         if (!newUploadContent.trim() && !uploadFile) {
-            alert('Please provide either text content or a PDF document.');
+            setUploadError('Please provide either text content or a PDF document.');
             return;
         }
-
         setUploading(true);
         try {
             if (uploadFile) {
@@ -66,24 +90,22 @@ const SubjectDetail = () => {
                 if (newUploadContent) formData.append('content', newUploadContent);
                 formData.append('type', 'note');
                 formData.append('subjectId', id);
-
                 await materialService.upload(formData);
             } else {
                 await materialService.upload({
                     title: newUploadTitle || 'New Resource',
                     content: newUploadContent,
                     type: 'note',
-                    subjectId: id
+                    subjectId: id,
                 });
             }
-
             setNewUploadTitle('');
             setNewUploadContent('');
             setUploadFile(null);
-            alert('Material uploaded and processing...');
+            setUploadSuccess('Material uploaded — AI is processing it.');
             await fetchDetails();
         } catch (err) {
-            alert('Upload failed: ' + (err.response?.data?.message || err.message));
+            setUploadError(err.response?.data?.message || 'Upload failed. Please try again.');
         } finally {
             setUploading(false);
         }
@@ -92,27 +114,27 @@ const SubjectDetail = () => {
     const handleChat = async (e) => {
         e.preventDefault();
         if (!currentQuestion.trim() || isThinking) return;
-
+        setChatError('');
         const userMsg = { role: 'user', content: currentQuestion };
         setChatMessages(prev => [...prev, userMsg]);
         setCurrentQuestion('');
         setIsThinking(true);
-
         try {
             const contextIds = selectedMaterials.length > 0 ? selectedMaterials : materials.map(m => m.id);
             const res = await materialService.chatCombined(contextIds, userMsg.content);
             setChatMessages(prev => [...prev, { role: 'ai', content: res.data.data.result }]);
         } catch (err) {
-            alert('AI error');
-            setChatMessages(prev => [...prev, { role: 'ai', content: "Error: AI engine unreachable." }]);
+            setChatError('AI engine is unreachable. Please try again.');
+            setChatMessages(prev => [...prev, { role: 'ai', content: 'Error: AI engine unreachable.' }]);
         } finally {
             setIsThinking(false);
         }
     };
 
     const handleGenerate = async () => {
+        setGenError('');
         if (selectedMaterials.length === 0) {
-            alert('Select at least one material.');
+            setGenError('Select at least one document from the Files panel first.');
             return;
         }
         setIsGenerating(true);
@@ -120,49 +142,62 @@ const SubjectDetail = () => {
         try {
             const res = await materialService.generateCombined(selectedMaterials, genType);
             setGenResult(res.data.data.result);
-            alert('Study material generated!');
         } catch (err) {
-            alert('Generation failed.');
+            setGenError('Generation failed. Please try again.');
         } finally {
             setIsGenerating(false);
         }
     };
 
+    const toggleSelection = (mid) =>
+        setSelectedMaterials(prev =>
+            prev.includes(mid) ? prev.filter(id => id !== mid) : [...prev, mid]
+        );
+
     if (loading) {
         return (
-            <div className="flex justify-center p-8">
-                <span className="text-gray-500">Loading subject details...</span>
+            <div style={{ padding: '2rem', color: '#6b7280' }}>
+                Loading subject details...
             </div>
         );
     }
 
     return (
-        <div className="max-w-6xl mx-auto">
-            <Link to="/dashboard" className="text-blue-600 hover:underline mb-4 inline-block">
-                &larr; Back to Dashboard
-            </Link>
-
-            <header className="mb-6 p-6 border border-gray-200 bg-white rounded">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <h1 className="text-2xl font-bold mb-2">{subject?.name}</h1>
-                        <p className="text-gray-600">{subject?.description || 'Your specialized learning workspace.'}</p>
-                    </div>
-                    <div className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded">
-                        {materials.length} Resources
-                    </div>
+        <div className="subject-page">
+            {/* Page Header */}
+            <div className="subject-header">
+                <Link to="/dashboard" className="back-link">← Dashboard</Link>
+                <div className="subject-header__info">
+                    <h1 className="subject-title">{subject?.name}</h1>
+                    <span className="subject-description">
+                        {subject?.description || 'Your learning workspace.'}
+                    </span>
                 </div>
-            </header>
+                <span className="subject-meta">{materials.length} documents</span>
+            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                <div className="lg:col-span-1 space-y-6">
-                    <ResourceLibrary
+            {/* Three-Panel Workspace */}
+            <WorkspaceLayout
+                leftPanel={
+                    <FilePanel
                         materials={materials}
                         selectedMaterials={selectedMaterials}
-                        toggleSelection={(mid) => setSelectedMaterials(prev => prev.includes(mid) ? prev.filter(id => id !== mid) : [...prev, mid])}
+                        toggleSelection={toggleSelection}
+                        handleUpload={handleUpload}
+                        uploading={uploading}
+                        uploadFile={uploadFile}
+                        newUploadTitle={newUploadTitle}
+                        setNewUploadTitle={setNewUploadTitle}
+                        newUploadContent={newUploadContent}
+                        setNewUploadContent={setNewUploadContent}
+                        handleFileChange={handleFileChange}
+                        uploadFileError={uploadFileError}
+                        uploadError={uploadError}
+                        uploadSuccess={uploadSuccess}
                     />
-
-                    <StudyGenerator
+                }
+                middlePanel={
+                    <MaterialsPanel
                         genType={genType}
                         setGenType={setGenType}
                         handleGenerate={handleGenerate}
@@ -170,76 +205,25 @@ const SubjectDetail = () => {
                         selectedCount={selectedMaterials.length}
                         genResult={genResult}
                         setGenResult={setGenResult}
+                        genError={genError}
                     />
-                </div>
-
-                <div className="lg:col-span-3 space-y-6">
-                    <section className="bg-white p-6 border border-gray-200 rounded">
-                        <h3 className="text-lg font-bold mb-4">Upload Document</h3>
-                        <form onSubmit={handleUpload} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="input-label">Title (Optional)</label>
-                                    <input
-                                        type="text"
-                                        className="input-field text-sm"
-                                        placeholder="e.g. Chapter 1 Notes"
-                                        value={newUploadTitle}
-                                        onChange={(e) => setNewUploadTitle(e.target.value)}
-                                        disabled={uploading}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="input-label">PDF File</label>
-                                    <input
-                                        type="file"
-                                        accept=".pdf,application/pdf"
-                                        className="input-field text-sm"
-                                        onChange={(e) => setUploadFile(e.target.files[0])}
-                                        disabled={uploading}
-                                    />
-                                </div>
-                            </div>
-                            <div className="space-y-4 flex flex-col">
-                                <div className="flex-1">
-                                    <label className="input-label">Text Content (Optional if PDF provided)</label>
-                                    <textarea
-                                        className="input-field text-sm h-[114px] resize-none"
-                                        placeholder="Paste notes, raw text, or summaries here..."
-                                        value={newUploadContent}
-                                        onChange={(e) => setNewUploadContent(e.target.value)}
-                                        disabled={uploading}
-                                    />
-                                </div>
-                            </div>
-                            <div className="md:col-span-2 flex justify-end mt-2">
-                                <button
-                                    type="submit"
-                                    disabled={uploading}
-                                    className="btn-primary w-full md:w-auto"
-                                >
-                                    {uploading ? 'Processing with AI...' : 'Upload to Subject'}
-                                </button>
-                            </div>
-                        </form>
-                    </section>
-
-                    <section className="bg-white border border-gray-200 rounded">
-                        <AITutor
-                            messages={chatMessages}
-                            currentQuestion={currentQuestion}
-                            setCurrentQuestion={setCurrentQuestion}
-                            handleChat={handleChat}
-                            handleVoiceInput={() => listen((transcript) => setCurrentQuestion(transcript))}
-                            handleTTS={speak}
-                            isThinking={isThinking}
-                            isListening={isListening}
-                            chatEndRef={chatEndRef}
-                            contextInfo={selectedMaterials.length > 0 ? "Grounded in selected context" : "Using all subject data"}
-                        />
-                    </section>
-                </div>
-            </div>
+                }
+                rightPanel={
+                    <ChatPanel
+                        messages={chatMessages}
+                        currentQuestion={currentQuestion}
+                        setCurrentQuestion={setCurrentQuestion}
+                        handleChat={handleChat}
+                        handleVoiceInput={() => listen((transcript) => setCurrentQuestion(transcript))}
+                        handleTTS={speak}
+                        isThinking={isThinking}
+                        isListening={isListening}
+                        chatEndRef={chatEndRef}
+                        contextInfo={selectedMaterials.length > 0 ? 'Grounded in selected context' : 'Using all subject data'}
+                        chatError={chatError}
+                    />
+                }
+            />
         </div>
     );
 };
