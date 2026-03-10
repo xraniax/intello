@@ -146,6 +146,7 @@ const UploadPage = () => {
                         >
                             <option value="summary">Generate Summary</option>
                             <option value="quiz">Generate Quiz</option>
+                            <option value="note">Generate Notes</option>
                         </select>
                     </div>
 

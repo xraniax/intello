@@ -31,12 +31,11 @@ export const authService = {
 
 export const materialService = {
     upload: (data) => {
-        // Data can be FormData or regular object depending on if there is a file
+        // Data can be FormData (with file) or plain object (text-only)
         const config = data instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
         return api.post('/materials/upload', data, config);
     },
     getHistory: () => api.get('/materials/history'),
-    generate: (id, taskType) => api.post(`/materials/${id}/generate`, { taskType }),
     chatCombined: (materialIds, question) => api.post('/materials/chat-combined', { materialIds, question }),
     generateCombined: (materialIds, taskType) => api.post('/materials/generate-combined', { materialIds, taskType }),
 };

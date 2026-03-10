@@ -15,15 +15,10 @@ class AuthController {
     static register = asyncHandler(async (req, res) => {
         const { email, password, name } = req.body;
 
-        if (!email || !password || !name) {
-            res.status(400); // errorHandler will pick this up
-            throw new Error('Please provide email, password and name');
-        }
-
         const userExists = await User.findByEmail(email);
         if (userExists) {
-            res.status(400);
-            throw new Error('User already exists');
+            res.status(409);
+            throw new Error('An account with that email already exists.');
         }
 
         const user = await User.create(email, password, name);
@@ -41,11 +36,6 @@ class AuthController {
 
     static login = asyncHandler(async (req, res) => {
         const { email, password } = req.body;
-
-        if (!email || !password) {
-            res.status(400);
-            throw new Error('Please provide email and password');
-        }
 
         const user = await User.findByEmail(email);
         if (user && (await User.comparePassword(password, user.password_hash))) {
