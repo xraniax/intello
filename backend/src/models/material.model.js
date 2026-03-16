@@ -25,6 +25,17 @@ class Material {
     }
 
     /**
+     * Update only the content of a material.
+     */
+    static async updateContent(materialId, userId, content) {
+        const result = await query(
+            'UPDATE materials SET content = $2 WHERE id = $1 AND user_id = $3 RETURNING *',
+            [materialId, content, userId]
+        );
+        return result.rows[0];
+    }
+
+    /**
      * Update only the status of a material (for failure handling).
      * user_id enforced to prevent IDOR.
      */

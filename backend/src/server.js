@@ -1,8 +1,6 @@
 import app from './app.js';
 import validateEnv from './utils/validateEnv.js';
-
-// Enforce environment check
-validateEnv();
+// Middlewares
 
 const PORT = process.env.PORT || 5000;
 

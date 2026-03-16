@@ -1,9 +1,16 @@
 import axios from 'axios';
+import fs from 'fs';
+import FormData from 'form-data';
 import Material from '../models/material.model.js';
 import SubjectService from './subject.service.js';
 
 class MaterialService {
-    static async processMaterial(userId, title, content, type, subjectId = null) {
+    /**
+     * processDocument passes the entire upload payload (PDF + text) to the Python AI engine.
+     * The Python engine handles ALL extraction, chunking, and AI processing, completely
+     * removing the load from the Node.js backend.
+     */
+    static async processDocument(userId, file, title, content, type, subjectId = null) {
         // 1. Resolve subject
         let finalSubjectId = subjectId;
         if (!finalSubjectId) {
@@ -11,29 +18,51 @@ class MaterialService {
             finalSubjectId = importedSubject.id;
         }
 
-        // 2. Save original material
+        // 2. Save original placeholder material
         const material = await Material.create(userId, finalSubjectId, title, content, type);
-
-        // 3. Fetch full material details (with subject join) for consistent return
         const fullMaterial = await Material.findById(material.id, userId);
 
         try {
-            // 4. Send to AI Engine
-            const aiResponse = await axios.post(`${process.env.ENGINE_URL}/generate`, {
-                content: content,
-                task_type: type // e.g., 'summary', 'quiz'
-            }, { timeout: 5000 });
+            // 3. Construct multipart/form-data payload for Python Engine
+            const formData = new FormData();
+            formData.append('content', content || '');
+            formData.append('task_type', type || 'upload');
 
-            // 5. Update with AI result (Enforce Ownership & Status)
-            const updatedMaterial = await Material.updateAIResult(material.id, userId, { result: aiResponse.data.result });
+            if (file) {
+                formData.append('file', fs.createReadStream(file.path), file.originalname);
+            }
 
-            // Return updated with subject info
+            // 4. Send directly to Python Engine's process-document route
+            const aiResponse = await axios.post(`${process.env.ENGINE_URL}/process-document`, formData, {
+                headers: {
+                    ...formData.getHeaders()
+                },
+                timeout: 30000 // PDF parsing and AI might take a while
+            });
+
+            // 5. Update DB with Extracted Text and AI result
+            const aiData = aiResponse.data.data;
+
+            // We update the content column in case Python pulled text from the PDF
+            await Material.updateContent(material.id, userId, aiData.extracted_text);
+
+            const updatedMaterial = await Material.updateAIResult(material.id, userId, {
+                result: aiData.result,
+                chunks: aiData.chunks,
+                embeddings: aiData.embeddings
+            });
+
+            // Return fully populated material record
             return await Material.findById(updatedMaterial.id, userId);
         } catch (error) {
-            console.error('AI Processing Error:', error.message);
+            console.error('[MaterialService] AI Processing Error:', error.message);
+            if (error.response) {
+                console.error('Engine Payload:', error.response.data);
+            }
+
             // 6. Mark as failed in DB
             await Material.updateStatus(material.id, userId, 'failed');
-            // Return the initial material (with subject info) even if AI fails
+            // Return placeholder on fail so the frontend still shows the attempt
             return fullMaterial;
         }
     }
@@ -99,6 +128,13 @@ class MaterialService {
             enhancedError.code = isTimeout ? 'ENGINE_TIMEOUT' : 'ENGINE_UNAVAILABLE';
             throw enhancedError;
         }
+    }
+    /**
+     * Delete a material by ID.
+     * Enforces user_id for security.
+     */
+    static async deleteMaterial(materialId, userId) {
+        return await Material.delete(materialId, userId);
     }
 }
 

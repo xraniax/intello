@@ -22,8 +22,10 @@ CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT, -- Nullable for social login users
     role user_role DEFAULT 'user',
+    auth_provider VARCHAR(20) DEFAULT 'local',
+    provider_id VARCHAR(255) UNIQUE,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -175,6 +177,7 @@ CREATE TABLE materials (
     content TEXT NOT NULL,
     type VARCHAR(50) NOT NULL, -- 'summary', 'quiz', etc.
     ai_generated_content JSONB,
+    status VARCHAR(20) DEFAULT 'processing',
     processed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
 );

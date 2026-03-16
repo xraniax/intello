@@ -9,7 +9,12 @@ const validateEnv = () => {
         'DB_PASSWORD',
         'DB_NAME',
         'JWT_SECRET',
-        'ENGINE_URL'
+        'ENGINE_URL',
+        'GOOGLE_CLIENT_ID',
+        'GOOGLE_CLIENT_SECRET',
+        'GITHUB_CLIENT_ID',
+        'GITHUB_CLIENT_SECRET',
+        'SESSION_SECRET'
     ];
 
     const missing = required.filter(key => !process.env[key]);

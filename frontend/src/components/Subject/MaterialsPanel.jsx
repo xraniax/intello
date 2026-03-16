@@ -1,6 +1,6 @@
 import React from 'react';
 
-const MATERIAL_TYPES = ['summary', 'quiz', 'notes', 'flashcards'];
+const MATERIAL_TYPES = ['flashcards', 'summary', 'quiz', 'mock_exam'];
 
 const MaterialsPanel = ({
     genType,
@@ -16,7 +16,7 @@ const MaterialsPanel = ({
         <div className="panel-inner">
             {/* Panel Header */}
             <div className="panel-header">
-                <span className="panel-title">Study Materials</span>
+                <span className="panel-title">AI Study Tools</span>
                 {genResult && (
                     <button
                         className="text-xs text-gray-500 hover:text-red-600"
@@ -30,7 +30,7 @@ const MaterialsPanel = ({
             <div className="panel-body">
                 {/* Generation Controls */}
                 <section className="materials-controls">
-                    <p className="section-label">Material Type</p>
+                    <p className="section-label">Select Tool</p>
                     <div className="type-selector">
                         {MATERIAL_TYPES.map(type => (
                             <button
@@ -38,7 +38,7 @@ const MaterialsPanel = ({
                                 onClick={() => setGenType(type)}
                                 className={`type-btn ${genType === type ? 'type-btn--active' : ''}`}
                             >
-                                {type}
+                                {type.replace('_', ' ')}
                             </button>
                         ))}
                     </div>

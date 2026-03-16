@@ -14,16 +14,16 @@ const StudyGenerator = ({
             <h3 className="text-lg font-bold mb-4">Study Generator</h3>
 
             <div className="grid grid-cols-2 gap-2 mb-4">
-                {['summary', 'quiz', 'notes', 'flashcards'].map(type => (
+                {['flashcards', 'summary', 'quiz', 'mock_exam'].map(type => (
                     <button
                         key={type}
                         onClick={() => setGenType(type)}
-                        className={`px-2 py-1 border rounded text-sm ${genType === type
+                        className={`px-2 py-1 border rounded text-sm capitalize ${genType === type
                             ? 'bg-blue-100 border-blue-500 text-blue-800 font-medium'
                             : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                             }`}
                     >
-                        {type}
+                        {type.replace('_', ' ')}
                     </button>
                 ))}
             </div>

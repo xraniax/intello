@@ -20,8 +20,8 @@ const pool = isTest ? { on: () => { } } : new Pool({
 });
 
 if (!isTest) {
-    pool.on('connect', () => console.log('✅ Connected to PostgreSQL'));
-    pool.on('error', (err) => console.error('❌ Unexpected PostgreSQL idle client error:', err.message));
+    pool.on('connect', () => console.log('Connected to PostgreSQL'));
+    pool.on('error', (err) => console.error('Unexpected PostgreSQL idle client error:', err.message));
 }
 
 /**

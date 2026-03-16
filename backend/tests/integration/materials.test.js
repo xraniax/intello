@@ -99,8 +99,10 @@ describe('Materials API Integration', () => {
             global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 10, title: 'Text Note' }] });
 
             // Mock Engine AI Processing
-            global.__mockAxiosPost.mockResolvedValueOnce({ data: { result: 'Generated Notes' } });
+            global.__mockAxiosPost.mockResolvedValueOnce({ data: { data: { result: 'Generated Notes', extracted_text: 'This is my manual note', chunks: [], embeddings: [] } } });
 
+            // Mock Material.updateContent
+            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 10, title: 'Text Note' }] });
             // Mock Material.updateAIResult
             global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 10, result: 'Generated Notes' }] });
             // Mock final Material.findById
@@ -112,7 +114,7 @@ describe('Materials API Integration', () => {
                 .send({
                     title: 'Text Note',
                     content: 'This is my manual note',
-                    type: 'note'
+                    type: 'upload'
                 });
 
             expect(res.status).toBe(201);
@@ -123,7 +125,7 @@ describe('Materials API Integration', () => {
             const res = await request(app)
                 .post('/api/materials/upload')
                 .set('Authorization', `Bearer ${token}`)
-                .send({ title: 'A', type: 'note' }); // missing content
+                .send({ title: 'A', type: 'upload' }); // missing content
 
             expect(res.status).toBe(400);
             expect(res.body.message).toContain('Content is required');

@@ -7,15 +7,16 @@ import WorkspaceLayout from '../components/Subject/WorkspaceLayout';
 import FilePanel from '../components/Subject/FilePanel';
 import MaterialsPanel from '../components/Subject/MaterialsPanel';
 import ChatPanel from '../components/Subject/ChatPanel';
+import UploadModal from '../components/Subject/UploadModal';
 
 const SubjectDetail = () => {
     const { id } = useParams();
     const [subject, setSubject] = useState(null);
-    const [materials, setMaterials] = useState([]);
+    const [uploads, setUploads] = useState([]);
     const [loading, setLoading] = useState(true);
 
     // Upload state
-    const [selectedMaterials, setSelectedMaterials] = useState([]);
+    const [selectedUploads, setSelectedUploads] = useState([]);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState('');
     const [uploadValidationErrors, setUploadValidationErrors] = useState({});
@@ -24,6 +25,7 @@ const SubjectDetail = () => {
     const [newUploadContent, setNewUploadContent] = useState('');
     const [uploadFile, setUploadFile] = useState(null);
     const [uploadFileError, setUploadFileError] = useState('');
+    const [showUploadModal, setShowUploadModal] = useState(false);
 
     // Chat state
     const [chatError, setChatError] = useState('');
@@ -50,7 +52,7 @@ const SubjectDetail = () => {
         try {
             const res = await subjectService.getOne(id);
             setSubject(res.data.data.subject);
-            setMaterials(res.data.data.materials);
+            setUploads(res.data.data.materials);
         } catch (err) {
             console.error('Failed to fetch subject details:', err);
         } finally {
@@ -78,6 +80,17 @@ const SubjectDetail = () => {
         setUploadError('');
         setUploadSuccess('');
         if (uploadFileError) return;
+
+        // Handle title logic for validation
+        const titleToValidate = (newUploadTitle && newUploadTitle.trim()) || (uploadFile ? uploadFile.name : '');
+
+        // Check for duplicate titles
+        const isDuplicate = uploads.some(m => m.title.toLowerCase() === titleToValidate.toLowerCase());
+        if (isDuplicate) {
+            setUploadError(`A material with the title "${titleToValidate}" already exists in this workspace.`);
+            return;
+        }
+
         if (!newUploadContent.trim() && !uploadFile) {
             setUploadError('Please provide either text content or a PDF document.');
             return;
@@ -91,14 +104,14 @@ const SubjectDetail = () => {
                 formData.append('file', uploadFile);
                 if (newUploadTitle) formData.append('title', newUploadTitle);
                 if (newUploadContent) formData.append('content', newUploadContent);
-                formData.append('type', 'note');
+                formData.append('type', 'upload');
                 formData.append('subjectId', id);
                 await materialService.upload(formData);
             } else {
                 await materialService.upload({
                     title: newUploadTitle || 'New Resource',
                     content: newUploadContent,
-                    type: 'note',
+                    type: 'upload',
                     subjectId: id,
                 });
             }
@@ -106,16 +119,29 @@ const SubjectDetail = () => {
             setNewUploadContent('');
             setUploadFile(null);
             setUploadSuccess('Material uploaded — AI is processing it.');
+            setShowUploadModal(false); // Close modal on success
             await fetchDetails();
         } catch (err) {
             if (err.code === 'VALIDATION_ERROR') {
                 setUploadValidationErrors(err.validationErrors || {});
                 setUploadError('Please check the form for errors.');
             } else {
-                setUploadError(err.message);
+                setUploadError('Upload failed. Please try again.');
             }
         } finally {
             setUploading(false);
+        }
+    };
+
+    const handleDeleteUpload = async (materialId) => {
+        if (!window.confirm('Are you sure you want to delete this file? This cannot be undone.')) return;
+        try {
+            await materialService.delete(materialId);
+            setUploads(prev => prev.filter(m => m.id !== materialId));
+            setSelectedUploads(prev => prev.filter(id => id !== materialId));
+        } catch (err) {
+            console.error('Failed to delete material:', err);
+            alert('Failed to delete material. Please try again.');
         }
     };
 
@@ -128,7 +154,7 @@ const SubjectDetail = () => {
         setCurrentQuestion('');
         setIsThinking(true);
         try {
-            const contextIds = selectedMaterials.length > 0 ? selectedMaterials : materials.map(m => m.id);
+            const contextIds = selectedUploads.length > 0 ? selectedUploads : uploads.map(m => m.id);
             const res = await materialService.chatCombined(contextIds, userMsg.content);
             setChatMessages(prev => [...prev, { role: 'ai', content: res.data.data.result }]);
         } catch (err) {
@@ -139,16 +165,18 @@ const SubjectDetail = () => {
         }
     };
 
-    const handleGenerate = async () => {
+    const handleGenerate = async (singleId = null) => {
         setGenError('');
-        if (selectedMaterials.length === 0) {
-            setGenError('Select at least one document from the Files panel first.');
+        const targets = singleId ? [singleId] : selectedUploads;
+
+        if (targets.length === 0) {
+            setGenError('Select at least one document from the Source Files panel first.');
             return;
         }
         setIsGenerating(true);
         setGenResult('');
         try {
-            const res = await materialService.generateCombined(selectedMaterials, genType);
+            const res = await materialService.generateCombined(targets, genType);
             setGenResult(res.data.data.result);
         } catch (err) {
             setGenError(err.message || 'Generation failed. Please try again.');
@@ -158,7 +186,7 @@ const SubjectDetail = () => {
     };
 
     const toggleSelection = (mid) =>
-        setSelectedMaterials(prev =>
+        setSelectedUploads(prev =>
             prev.includes(mid) ? prev.filter(id => id !== mid) : [...prev, mid]
         );
 
@@ -181,28 +209,24 @@ const SubjectDetail = () => {
                         {subject?.description || 'Your learning workspace.'}
                     </span>
                 </div>
-                <span className="subject-meta">{materials.length} documents</span>
+                <span className="subject-meta">{uploads.length} documents</span>
             </div>
 
             {/* Three-Panel Workspace */}
             <WorkspaceLayout
                 leftPanel={
                     <FilePanel
-                        materials={materials}
-                        selectedMaterials={selectedMaterials}
+                        materials={uploads}
+                        selectedMaterials={selectedUploads}
                         toggleSelection={toggleSelection}
-                        handleUpload={handleUpload}
-                        uploading={uploading}
-                        uploadFile={uploadFile}
-                        newUploadTitle={newUploadTitle}
-                        setNewUploadTitle={setNewUploadTitle}
-                        newUploadContent={newUploadContent}
-                        setNewUploadContent={setNewUploadContent}
-                        handleFileChange={handleFileChange}
-                        uploadFileError={uploadFileError}
-                        uploadError={uploadError}
-                        uploadValidationErrors={uploadValidationErrors}
-                        uploadSuccess={uploadSuccess}
+                        onDelete={handleDeleteUpload}
+                        onGenerate={handleGenerate}
+                        onOpenUpload={() => {
+                            setUploadError('');
+                            setUploadSuccess('');
+                            setUploadValidationErrors({});
+                            setShowUploadModal(true);
+                        }}
                     />
                 }
                 middlePanel={
@@ -211,7 +235,7 @@ const SubjectDetail = () => {
                         setGenType={setGenType}
                         handleGenerate={handleGenerate}
                         isGenerating={isGenerating}
-                        selectedCount={selectedMaterials.length}
+                        selectedCount={selectedUploads.length}
                         genResult={genResult}
                         setGenResult={setGenResult}
                         genError={genError}
@@ -228,10 +252,27 @@ const SubjectDetail = () => {
                         isThinking={isThinking}
                         isListening={isListening}
                         chatEndRef={chatEndRef}
-                        contextInfo={selectedMaterials.length > 0 ? 'Grounded in selected context' : 'Using all subject data'}
+                        contextInfo={selectedUploads.length > 0 ? 'Grounded in selected context' : 'Using all subject data'}
                         chatError={chatError}
                     />
                 }
+            />
+
+            <UploadModal
+                isOpen={showUploadModal}
+                onClose={() => setShowUploadModal(false)}
+                handleUpload={handleUpload}
+                uploading={uploading}
+                newUploadTitle={newUploadTitle}
+                setNewUploadTitle={setNewUploadTitle}
+                newUploadContent={newUploadContent}
+                setNewUploadContent={setNewUploadContent}
+                handleFileChange={handleFileChange}
+                uploadFile={uploadFile}
+                uploadFileError={uploadFileError}
+                uploadError={uploadError}
+                uploadValidationErrors={uploadValidationErrors}
+                uploadSuccess={uploadSuccess}
             />
         </div>
     );

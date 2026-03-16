@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+import passport from './config/passport.js';
 import errorHandler from './middlewares/errorHandler.middleware.js';
 import { apiLimiter } from './middlewares/rateLimiter.middleware.js';
 
@@ -17,6 +18,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(passport.initialize());
 
 // Apply rate limiter to all api routes
 app.use('/api/', apiLimiter);

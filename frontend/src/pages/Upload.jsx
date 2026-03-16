@@ -13,6 +13,7 @@ const UploadPage = () => {
     const [sending, setSending] = useState(false);
     const [success, setSuccess] = useState(false);
     const [err, setErr] = useState('');
+    const [validationErrors, setValidationErrors] = useState({});
 
     // Client-side PDF validation (mirrors backend constraints)
     const MAX_FILE_SIZE_MB = 10;
@@ -51,6 +52,7 @@ const UploadPage = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setValidationErrors({});
 
         // Re-run validation before submit in case state is stale
         if (file) {
@@ -72,7 +74,7 @@ const UploadPage = () => {
                 formData.append('file', file);
                 formData.append('title', title);
                 formData.append('content', content);
-                formData.append('type', type);
+                formData.append('type', 'upload'); // Terminology cleanup: source is 'upload'
                 if (subjectId) formData.append('subjectId', subjectId);
 
                 await materialService.upload(formData);
@@ -80,14 +82,19 @@ const UploadPage = () => {
                 await materialService.upload({
                     title,
                     content,
-                    type,
+                    type: 'upload',
                     subjectId: subjectId || undefined
                 });
             }
             setSuccess(true);
             setTimeout(() => navigate('/history'), 2000);
         } catch (error) {
-            setErr(error.response?.data?.message || 'Failed to upload material');
+            if (error.code === 'VALIDATION_ERROR') {
+                setValidationErrors(error.validationErrors || {});
+                setErr('Please review the highlighted fields below.');
+            } else {
+                setErr(error.message || 'Failed to upload material');
+            }
         } finally {
             setSending(false);
         }
@@ -105,8 +112,8 @@ const UploadPage = () => {
     return (
         <div className="max-w-3xl mx-auto p-4 md:p-6">
             <div className="mb-6">
-                <h1 className="text-2xl font-bold">Upload Material</h1>
-                <p className="text-gray-600">Provide a PDF file or text content for AI processing.</p>
+                <h1 className="text-2xl font-bold">Upload Source Material</h1>
+                <p className="text-gray-600">Provide a PDF or text to generate study materials later.</p>
             </div>
 
             <div className="border border-gray-200 p-6 rounded bg-white">
@@ -117,10 +124,12 @@ const UploadPage = () => {
                             type="text"
                             className="input-field"
                             placeholder="e.g. Introduction to Neural Networks"
-                            required
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                         />
+                        {validationErrors.title && (
+                            <p className="text-red-500 text-xs mt-1">{validationErrors.title}</p>
+                        )}
                     </div>
 
                     <div>
@@ -135,19 +144,9 @@ const UploadPage = () => {
                                 <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                         </select>
-                    </div>
-
-                    <div>
-                        <label className="input-label">AI Task</label>
-                        <select
-                            className="input-field bg-white"
-                            value={type}
-                            onChange={(e) => setType(e.target.value)}
-                        >
-                            <option value="summary">Generate Summary</option>
-                            <option value="quiz">Generate Quiz</option>
-                            <option value="note">Generate Notes</option>
-                        </select>
+                        {validationErrors.subjectId && (
+                            <p className="text-red-500 text-xs mt-1">{validationErrors.subjectId}</p>
+                        )}
                     </div>
 
                     <div>
@@ -161,6 +160,9 @@ const UploadPage = () => {
                         {fileError && (
                             <p className="text-red-600 text-xs mt-1">{fileError}</p>
                         )}
+                        {validationErrors.file && (
+                            <p className="text-red-500 text-xs mt-1">{validationErrors.file}</p>
+                        )}
                     </div>
 
                     <div>
@@ -172,13 +174,16 @@ const UploadPage = () => {
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
                         ></textarea>
+                        {validationErrors.content && (
+                            <p className="text-red-500 text-xs mt-1">{validationErrors.content}</p>
+                        )}
                     </div>
 
-                    {err && <div className="text-red-600 bg-red-50 p-3 rounded text-sm">{err}</div>}
+                    {err && <div className="text-red-600 bg-red-50 p-3 rounded text-sm mb-4">{err}</div>}
 
                     <div className="pt-2 border-t border-gray-200">
                         <button type="submit" className="btn-primary flex ml-auto" disabled={sending}>
-                            {sending ? 'Processing with AI...' : 'Submit Material'}
+                            {sending ? 'Processing...' : 'Submit Material'}
                         </button>
                     </div>
                 </form>

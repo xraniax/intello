@@ -7,15 +7,48 @@ const BCRYPT_ROUNDS = 12;
 
 class User {
     /**
-     * Create a new user with a securely hashed password (bcrypt, salt auto-generated).
+     * Create a new user. password_hash is optional for social login users.
      */
-    static async create(email, password, name, role = 'user') {
-        const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    static async create(email, password = null, name, role = 'user', authProvider = 'local', providerId = null) {
+        let hashedPassword = null;
+        if (password) {
+            hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+        }
+
         const result = await query(
-            'INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role, created_at',
-            [email, hashedPassword, name, role]
+            'INSERT INTO users (email, password_hash, name, role, auth_provider, provider_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, role, created_at',
+            [email, hashedPassword, name, role, authProvider, providerId]
         );
         return result.rows[0];
+    }
+
+    /**
+     * Find or create a user by their social provider ID.
+     */
+    static async findOrCreateByProvider(email, name, provider, providerId) {
+        // Try finding by provider details first
+        const existingByProvider = await query(
+            'SELECT * FROM users WHERE auth_provider = $1 AND provider_id = $2',
+            [provider, providerId]
+        );
+
+        if (existingByProvider.rows[0]) {
+            return existingByProvider.rows[0];
+        }
+
+        // If not found by provider, check by email (to link accounts)
+        const existingByEmail = await this.findByEmail(email);
+        if (existingByEmail) {
+            // Link existing account to this provider
+            const result = await query(
+                'UPDATE users SET auth_provider = $1, provider_id = $2 WHERE id = $3 RETURNING id, email, name, role, created_at',
+                [provider, providerId, existingByEmail.id]
+            );
+            return result.rows[0];
+        }
+
+        // Otherwise create new user
+        return await this.create(email, null, name, 'user', provider, providerId);
     }
 
     /**

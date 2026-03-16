@@ -64,6 +64,21 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const loginWithToken = async (token) => {
+        setLoading(true);
+        localStorage.setItem('token', token);
+        try {
+            const res = await authService.getMe();
+            setUser(res.data.data);
+            return res.data;
+        } catch (err) {
+            localStorage.removeItem('token');
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const logout = () => {
         localStorage.removeItem('token');
         setUser(null);
@@ -75,6 +90,7 @@ export const AuthProvider = ({ children }) => {
         error,
         login,
         register,
+        loginWithToken,
         logout
     };
 

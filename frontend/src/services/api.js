@@ -52,6 +52,7 @@ export const materialService = {
     getHistory: () => api.get('/materials/history'),
     chatCombined: (materialIds, question) => api.post('/materials/chat-combined', { materialIds, question }),
     generateCombined: (materialIds, taskType) => api.post('/materials/generate-combined', { materialIds, taskType }),
+    delete: (id) => api.delete(`/materials/${id}`),
 };
 
 export const subjectService = {

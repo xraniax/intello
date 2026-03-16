@@ -61,6 +61,23 @@ class AuthController {
             data: user,
         });
     });
+
+    /**
+     * Successful social auth callback.
+     * Generates a token and redirects back to frontend with the token.
+     */
+    static socialAuthCallback = asyncHandler(async (req, res) => {
+        if (!req.user) {
+            return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+        }
+
+        const user = req.user;
+        const token = generateToken(user.id);
+
+        // Redirect to frontend with token in URL (Login.jsx will handle it)
+        const redirectUrl = `${process.env.FRONTEND_URL}/login?token=${token}`;
+        res.redirect(redirectUrl);
+    });
 }
 
 export default AuthController;

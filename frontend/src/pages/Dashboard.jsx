@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { subjectService } from '../services/api';
+import { Search, Filter, SortAsc, SortDesc, Clock, Plus, X, Edit2, Trash2 } from 'lucide-react';
 
 const Dashboard = () => {
     const { user } = useAuth();
@@ -9,6 +10,11 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [newSubjectName, setNewSubjectName] = useState('');
     const [creating, setCreating] = useState(false);
+
+    // Search & Filter State
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterType, setFilterType] = useState('recent_opened'); // recent_opened, recent_created, alpha_asc, alpha_desc
+    const [isAdding, setIsAdding] = useState(false);
 
     useEffect(() => {
         fetchSubjects();
@@ -25,6 +31,39 @@ const Dashboard = () => {
         }
     };
 
+    // Client-side filtering and sorting
+    const filteredAndSortedSubjects = React.useMemo(() => {
+        let result = [...subjects];
+
+        // 1. Search Filter
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            result = result.filter(s =>
+                s.name.toLowerCase().includes(query) ||
+                (s.description && s.description.toLowerCase().includes(query))
+            );
+        }
+
+        // 2. Sorting Logic
+        result.sort((a, b) => {
+            switch (filterType) {
+                case 'alpha_asc':
+                    return a.name.localeCompare(b.name);
+                case 'alpha_desc':
+                    return b.name.localeCompare(a.name);
+                case 'recent_created':
+                    // Assuming higher ID means more recent or use created_at if available
+                    return (b.created_at || b.id) > (a.created_at || a.id) ? 1 : -1;
+                case 'recent_opened':
+                default:
+                    // Sort by updated_at (or id as fallback)
+                    return (b.updated_at || b.id) > (a.updated_at || a.id) ? 1 : -1;
+            }
+        });
+
+        return result;
+    }, [subjects, searchQuery, filterType]);
+
     const handleCreateSubject = async (e) => {
         e.preventDefault();
         if (!newSubjectName.trim()) return;
@@ -32,6 +71,7 @@ const Dashboard = () => {
         try {
             await subjectService.create(newSubjectName);
             setNewSubjectName('');
+            setIsAdding(false);
             await fetchSubjects();
         } catch (err) {
             alert('Failed to create subject');
@@ -70,21 +110,81 @@ const Dashboard = () => {
                 <p className="text-gray-700">Manage your subjects and course materials below.</p>
             </div>
 
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold">Your Subjects</h2>
-                <form onSubmit={handleCreateSubject} className="flex gap-2">
+            {/* Header Row: Title & Action Button */}
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">Your Subjects</h2>
+                <button
+                    onClick={() => setIsAdding(!isAdding)}
+                    className={`btn-primary flex items-center gap-2 transition-colors ${isAdding ? 'bg-gray-500 hover:bg-gray-600' : ''}`}
+                >
+                    {isAdding ? (
+                        <>
+                            <X className="w-4 h-4" />
+                            <span>Cancel</span>
+                        </>
+                    ) : (
+                        <>
+                            <Plus className="w-4 h-4" />
+                            <span>Add Subject</span>
+                        </>
+                    )}
+                </button>
+            </div>
+
+            {/* Inline Creation Form (Conditional) */}
+            {isAdding && (
+                <div className="mb-6 p-4 border border-blue-200 bg-blue-50 rounded-lg shadow-sm animate-in fade-in slide-in-from-top-2">
+                    <form onSubmit={handleCreateSubject} className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex-grow">
+                            <input
+                                type="text"
+                                placeholder="Enter subject name (e.g. Computer Science 101)"
+                                className="input-field bg-white"
+                                value={newSubjectName}
+                                onChange={(e) => setNewSubjectName(e.target.value)}
+                                autoFocus
+                                disabled={creating}
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            className="btn-primary whitespace-nowrap px-6"
+                            disabled={creating || !newSubjectName.trim()}
+                        >
+                            {creating ? 'Creating...' : 'Create Subject'}
+                        </button>
+                    </form>
+                </div>
+            )}
+
+            {/* Controls Row: Search & Filter */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-8">
+                {/* Search Bar (Expansive) */}
+                <div className="relative flex-grow">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input
                         type="text"
-                        placeholder="New Subject Name..."
-                        className="input-field"
-                        value={newSubjectName}
-                        onChange={(e) => setNewSubjectName(e.target.value)}
-                        disabled={creating}
+                        placeholder="Search subjects by name or description..."
+                        className="input-field pl-10 h-11"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                     />
-                    <button type="submit" className="btn-primary whitespace-nowrap" disabled={creating}>
-                        {creating ? 'Adding...' : 'Add Subject'}
-                    </button>
-                </form>
+                </div>
+
+                {/* Filter Dropdown */}
+                <div className="relative min-w-[180px]">
+                    <select
+                        className="input-field bg-white pr-10 appearance-none cursor-pointer h-11"
+                        value={filterType}
+                        onChange={(e) => setFilterType(e.target.value)}
+                    >
+                        <option value="recent_opened">Sort: Recently Opened</option>
+                        <option value="recent_created">Sort: Recently Created</option>
+                        <option value="alpha_asc">Sort: A-Z (Alphabetical)</option>
+                        <option value="alpha_desc">Sort: Z-A (Alphabetical)</option>
+                    </select>
+                    <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+                </div>
             </div>
 
             {loading ? (
@@ -96,36 +196,52 @@ const Dashboard = () => {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {subjects.map((subject) => (
-                        <div key={subject.id} className="border border-gray-200 p-4 rounded bg-white flex flex-col">
-                            <div className="flex justify-between items-start mb-2">
-                                <h3 className="text-lg font-bold">{subject.name}</h3>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => handleRenameSubject(subject.id, subject.name)}
-                                        className="text-sm text-blue-600 hover:underline"
-                                    >
-                                        Rename
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeleteSubject(subject.id, subject.name)}
-                                        className="text-sm text-red-600 hover:underline"
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
-                            </div>
-                            <p className="text-sm text-gray-500 mb-4 flex-grow">
-                                {subject.material_count || 0} Materials associated
-                            </p>
-                            <Link to={`/subjects/${subject.id}`} className="btn-secondary text-center text-sm">
-                                Open Workspace
-                            </Link>
+                    {filteredAndSortedSubjects.length === 0 ? (
+                        <div className="col-span-full p-12 border border-dashed border-gray-300 text-center rounded bg-gray-50">
+                            <Search className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                            <p className="text-gray-500">No subjects match your search "{searchQuery}"</p>
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="text-blue-600 text-sm hover:underline mt-2"
+                            >
+                                Clear search
+                            </button>
                         </div>
-                    ))}
+                    ) : (
+                        filteredAndSortedSubjects.map((subject) => (
+                            <div key={subject.id} className="border border-gray-200 p-4 rounded bg-white shadow-sm hover:shadow-md transition-shadow flex flex-col group">
+                                <div className="flex justify-between items-start mb-2">
+                                    <h3 className="text-lg font-bold group-hover:text-blue-600 transition-colors">{subject.name}</h3>
+                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleRenameSubject(subject.id, subject.name); }}
+                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                            title="Rename"
+                                        >
+                                            <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteSubject(subject.id, subject.name); }}
+                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                            title="Delete"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <p className="text-sm text-gray-500 mb-4 flex-grow line-clamp-2">
+                                    {subject.description || `${subject.material_count || 0} Materials associated`}
+                                </p>
+                                <Link to={`/subjects/${subject.id}`} className="btn-secondary text-center text-sm py-1.5">
+                                    Open Workspace
+                                </Link>
+                            </div>
+                        ))
+                    )}
 
-                    <Link to="/upload" className="border border-dashed border-gray-300 p-4 rounded flex flex-col items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors min-h-[150px]">
-                        <span className="font-medium">+ Upload New Content</span>
+                    <Link to="/upload" className="border border-dashed border-gray-300 p-4 rounded flex flex-col items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-blue-600 transition-all min-h-[150px]">
+                        <span className="text-2xl mb-1">+</span>
+                        <span className="font-medium text-sm">Upload New Content</span>
                     </Link>
                 </div>
             )}

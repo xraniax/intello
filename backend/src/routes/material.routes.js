@@ -16,5 +16,6 @@ router.post('/upload', aiLimiter, pdfUpload.single('file'), validate(uploadMater
 router.get('/history', MaterialController.getHistory);
 router.post('/chat-combined', aiLimiter, validate(chatCombinedSchema), MaterialController.chatCombined);
 router.post('/generate-combined', aiLimiter, validate(generateCombinedSchema), MaterialController.generateCombined);
+router.delete('/:id', MaterialController.delete);
 
 export default router;
