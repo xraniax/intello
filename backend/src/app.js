@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
-import passport from './config/passport.js';
+import passport from './utils/config/passport.js';
 import errorHandler from './middlewares/errorHandler.middleware.js';
 import { apiLimiter } from './middlewares/rateLimiter.middleware.js';
 
@@ -24,7 +24,7 @@ app.use(passport.initialize());
 app.use('/api/', apiLimiter);
 
 // Static files (for uploads)
-app.use('/uploads', express.static('storage'));
+app.use('/uploads', express.static('uploads'));
 
 // Routes
 import authRoutes from './routes/auth.routes.js';

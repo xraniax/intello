@@ -3,8 +3,8 @@ import MaterialController from '../controllers/material.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
 import { aiLimiter } from '../middlewares/rateLimiter.middleware.js';
 import validate from '../middlewares/validate.middleware.js';
-import { uploadMaterialSchema, chatCombinedSchema, generateCombinedSchema } from '../validators/material.validator.js';
-import { pdfUpload } from '../config/multer.js';
+import { uploadMaterialSchema, chatCombinedSchema, generateCombinedSchema } from '../middlewares/material.validator.js';
+import { pdfUpload } from '../utils/config/multer.js';
 
 const router = express.Router();
 

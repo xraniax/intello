@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PanelRightClose, MessageSquarePlus } from 'lucide-react';
 
 const ChatPanel = ({
     messages,
@@ -22,21 +23,21 @@ const ChatPanel = ({
                 <span className="panel-title">AI Tutor</span>
                 <div className="flex items-center gap-3">
                     {isThinking && (
-                        <span className="text-xs text-blue-600">Thinking...</span>
+                        <span className="text-xs text-blue-600 anim-pulse">Thinking...</span>
                     )}
                     <button
-                        className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                        className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                         onClick={onClearChat}
                         title="Start a new chat"
                     >
-                        + New Chat
+                        <MessageSquarePlus className="w-4 h-4" />
                     </button>
                     <button
-                        className="text-xs text-gray-500 hover:text-gray-800 px-1"
+                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
                         onClick={onCollapse}
-                        title="Hide chat panel"
+                        title="Hide panel"
                     >
-                        Hide ▶
+                        <PanelRightClose className="w-4 h-4" />
                     </button>
                 </div>
             </div>

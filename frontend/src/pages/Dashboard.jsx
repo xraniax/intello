@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/AuthContext';
 import { Link } from 'react-router-dom';
 import { subjectService } from '../services/api';
 import { Search, Filter, SortAsc, SortDesc, Clock, Plus, X, Edit2, Trash2 } from 'lucide-react';
@@ -8,8 +8,10 @@ const Dashboard = () => {
     const { user } = useAuth();
     const [subjects, setSubjects] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState(null);
     const [newSubjectName, setNewSubjectName] = useState('');
     const [creating, setCreating] = useState(false);
+    const [createError, setCreateError] = useState(null);
 
     // Search & Filter State
     const [searchQuery, setSearchQuery] = useState('');
@@ -21,11 +23,13 @@ const Dashboard = () => {
     }, []);
 
     const fetchSubjects = async () => {
+        setFetchError(null);
         try {
             const res = await subjectService.getAll();
-            setSubjects(res.data.data);
+            setSubjects(res.data.data || []);
         } catch (err) {
             console.error('Failed to fetch subjects', err);
+            setFetchError(err.message || 'Could not load subjects. Is the backend running?');
         } finally {
             setLoading(false);
         }
@@ -68,13 +72,14 @@ const Dashboard = () => {
         e.preventDefault();
         if (!newSubjectName.trim()) return;
         setCreating(true);
+        setCreateError(null);
         try {
             await subjectService.create(newSubjectName);
             setNewSubjectName('');
             setIsAdding(false);
             await fetchSubjects();
         } catch (err) {
-            alert('Failed to create subject');
+            setCreateError(err.message || 'Failed to create subject. Please try again.');
         } finally {
             setCreating(false);
         }
@@ -141,7 +146,7 @@ const Dashboard = () => {
                                 placeholder="Enter subject name (e.g. Computer Science 101)"
                                 className="input-field bg-white"
                                 value={newSubjectName}
-                                onChange={(e) => setNewSubjectName(e.target.value)}
+                                onChange={(e) => { setNewSubjectName(e.target.value); setCreateError(null); }}
                                 autoFocus
                                 disabled={creating}
                             />
@@ -154,6 +159,9 @@ const Dashboard = () => {
                             {creating ? 'Creating...' : 'Create Subject'}
                         </button>
                     </form>
+                    {createError && (
+                        <p className="mt-2 text-sm text-red-600">{createError}</p>
+                    )}
                 </div>
             )}
 
@@ -189,6 +197,11 @@ const Dashboard = () => {
 
             {loading ? (
                 <div className="p-8 text-center text-gray-500">Loading subjects...</div>
+            ) : fetchError ? (
+                <div className="p-12 border border-solid border-red-100 bg-red-50 text-center rounded-xl shadow-sm">
+                    <p className="mb-4 text-red-600 font-medium">{fetchError}</p>
+                    <button onClick={fetchSubjects} className="btn-primary">Retry</button>
+                </div>
             ) : subjects.length === 0 ? (
                 <div className="p-12 border border-solid border-gray-100 bg-white text-center rounded-xl shadow-sm">
                     <p className="mb-6 text-gray-500 font-medium text-lg">You haven't created any subjects yet.</p>

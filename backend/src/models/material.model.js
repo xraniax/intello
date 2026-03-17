@@ -1,4 +1,4 @@
-import { query } from '../config/db.js';
+import { query } from '../utils/config/db.js';
 
 class Material {
     /**

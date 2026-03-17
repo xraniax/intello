@@ -1,7 +1,7 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
-import User from '../models/user.model.js';
+import User from '../../models/user.model.js';
 
 const getCallbackURL = (provider) => {
     const apiBase = process.env.BACKEND_URL || 'http://localhost:5000';

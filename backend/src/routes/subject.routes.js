@@ -2,7 +2,7 @@ import express from 'express';
 import SubjectController from '../controllers/subject.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
 import validate from '../middlewares/validate.middleware.js';
-import { createSubjectSchema, renameSubjectSchema } from '../validators/subject.validator.js';
+import { createSubjectSchema, renameSubjectSchema } from '../middlewares/subject.validator.js';
 
 const router = express.Router();
 

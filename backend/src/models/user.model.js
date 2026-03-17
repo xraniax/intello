@@ -1,4 +1,4 @@
-import { query } from '../config/db.js';
+import { query } from '../utils/config/db.js';
 import bcrypt from 'bcrypt';
 
 // Cost factor for bcrypt key derivation. Higher = slower brute force.

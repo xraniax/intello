@@ -2,7 +2,13 @@ import React, { useState, useCallback, useRef } from 'react';
 
 const MIN_PCT = 12; // minimum panel width as a percentage
 
-const WorkspaceLayout = ({ leftPanel, middlePanel, rightPanel, rightPanelCollapsed }) => {
+const WorkspaceLayout = ({
+    leftPanel,
+    middlePanel,
+    rightPanel,
+    leftPanelCollapsed,
+    rightPanelCollapsed
+}) => {
     // Panel widths as percentages [left, middle, right] — must sum to 100
     const [widths, setWidths] = useState([22, 50, 28]);
     const containerRef = useRef(null);
@@ -42,39 +48,46 @@ const WorkspaceLayout = ({ leftPanel, middlePanel, rightPanel, rightPanelCollaps
         document.addEventListener('mouseup', onMouseUp);
     }, [widths]);
 
+    // Calculate effective widths based on collapse states
+    const leftWidth = leftPanelCollapsed ? 0 : widths[0];
+    const rightWidth = rightPanelCollapsed ? 0 : widths[2];
+    const middleWidth = 100 - leftWidth - rightWidth;
+
     return (
         <div ref={containerRef} className="workspace-container">
             {/* Left Panel */}
-            <div className="workspace-panel" style={{ width: `${widths[0]}%` }}>
-                {leftPanel}
-            </div>
-
-            {/* Separator 0 */}
-            <div
-                className="workspace-separator"
-                onMouseDown={onMouseDown(0)}
-                title="Drag to resize"
-            />
+            {!leftPanelCollapsed && (
+                <>
+                    <div className="workspace-panel" style={{ width: `${leftWidth}%` }}>
+                        {leftPanel}
+                    </div>
+                    {/* Separator 0 */}
+                    <div
+                        className="workspace-separator"
+                        onMouseDown={onMouseDown(0)}
+                        title="Drag to resize"
+                    />
+                </>
+            )}
 
             {/* Middle Panel */}
-            <div className="workspace-panel" style={{ width: `${widths[1] + (rightPanelCollapsed ? widths[2] : 0)}%` }}>
+            <div className="workspace-panel" style={{ width: `${middleWidth}%` }}>
                 {middlePanel}
             </div>
 
-            {/* Separator 1 */}
-            {!rightPanelCollapsed && (
-                <div
-                    className="workspace-separator"
-                    onMouseDown={onMouseDown(1)}
-                    title="Drag to resize"
-                />
-            )}
-
             {/* Right Panel */}
             {!rightPanelCollapsed && (
-                <div className="workspace-panel" style={{ width: `${widths[2]}%` }}>
-                    {rightPanel}
-                </div>
+                <>
+                    {/* Separator 1 */}
+                    <div
+                        className="workspace-separator"
+                        onMouseDown={onMouseDown(1)}
+                        title="Drag to resize"
+                    />
+                    <div className="workspace-panel" style={{ width: `${rightWidth}%` }}>
+                        {rightPanel}
+                    </div>
+                </>
             )}
         </div>
     );

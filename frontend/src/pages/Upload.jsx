@@ -150,8 +150,9 @@ const UploadPage = () => {
                     </div>
 
                     <div>
-                        <label className="input-label">Upload PDF file (optional)</label>
+                        <label htmlFor="pdf-upload" className="input-label">Upload PDF file (optional)</label>
                         <input
+                            id="pdf-upload"
                             type="file"
                             accept=".pdf,application/pdf"
                             className="input-field"

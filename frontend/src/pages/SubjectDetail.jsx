@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { subjectService, materialService } from '../services/api';
 import { useSpeech } from '../hooks/useSpeech';
+import { PanelLeft, PanelRight } from 'lucide-react';
 
 import WorkspaceLayout from '../components/Subject/WorkspaceLayout';
 import FilePanel from '../components/Subject/FilePanel';
@@ -33,6 +34,7 @@ const SubjectDetail = () => {
     const [currentQuestion, setCurrentQuestion] = useState('');
     const [isThinking, setIsThinking] = useState(false);
     const [chatCollapsed, setChatCollapsed] = useState(false);
+    const [filePanelCollapsed, setFilePanelCollapsed] = useState(false);
     const chatEndRef = useRef(null);
 
     // Generation state
@@ -215,15 +217,28 @@ const SubjectDetail = () => {
                         {subject?.description || 'Your learning workspace.'}
                     </span>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     <span className="subject-meta">{uploads.length} documents</span>
+
+                    {filePanelCollapsed && (
+                        <button
+                            className="text-xs font-semibold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-md hover:bg-blue-100 transition-colors flex items-center gap-2"
+                            onClick={() => setFilePanelCollapsed(false)}
+                            title="Show Source Files"
+                        >
+                            <PanelLeft className="w-3.5 h-3.5" />
+                            <span>Source Files</span>
+                        </button>
+                    )}
+
                     {chatCollapsed && (
                         <button
-                            className="text-xs font-semibold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-md hover:bg-blue-100 transition-colors"
+                            className="text-xs font-semibold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-md hover:bg-blue-100 transition-colors flex items-center gap-2"
                             onClick={() => setChatCollapsed(false)}
                             title="Show AI Tutor Chat"
                         >
-                            ◀ Show AI Tutor
+                            <span>AI Tutor</span>
+                            <PanelRight className="w-3.5 h-3.5" />
                         </button>
                     )}
                 </div>
@@ -231,6 +246,7 @@ const SubjectDetail = () => {
 
             {/* Three-Panel Workspace */}
             <WorkspaceLayout
+                leftPanelCollapsed={filePanelCollapsed}
                 rightPanelCollapsed={chatCollapsed}
                 leftPanel={
                     <FilePanel
@@ -245,6 +261,7 @@ const SubjectDetail = () => {
                             setUploadValidationErrors({});
                             setShowUploadModal(true);
                         }}
+                        onCollapse={() => setFilePanelCollapsed(true)}
                     />
                 }
                 middlePanel={

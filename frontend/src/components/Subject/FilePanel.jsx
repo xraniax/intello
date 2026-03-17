@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trash2, Sparkles } from 'lucide-react';
+import { Trash2, Sparkles, PanelLeftClose } from 'lucide-react';
 
 const FilePanel = ({
     materials,
@@ -7,15 +7,25 @@ const FilePanel = ({
     toggleSelection,
     onDelete,
     onGenerate,
-    onOpenUpload
+    onOpenUpload,
+    onCollapse
 }) => {
 
     return (
         <div className="panel-inner h-full flex flex-col">
             {/* Panel Header */}
             <div className="panel-header flex-shrink-0">
-                <span className="panel-title">Source Files</span>
-                <span className="panel-badge">{selectedMaterials.length} selected</span>
+                <div className="flex items-center gap-2">
+                    <span className="panel-title">Source Files</span>
+                    <span className="panel-badge">{selectedMaterials.length} selected</span>
+                </div>
+                <button
+                    onClick={onCollapse}
+                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                    title="Hide panel"
+                >
+                    <PanelLeftClose className="w-4 h-4" />
+                </button>
             </div>
 
             {/* Upload Action */}
