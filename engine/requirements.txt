@@ -1,4 +1,13 @@
 fastapi
-uvicorn[standard]
+uvicorn
+openai
 python-multipart
-PyMuPDF
+PyPDF2
+pillow
+pytesseract 
+python-dotenv
+pdf2image
+pgvector
+psycopg2-binary
+sqlalchemy
+typing-extensions
