@@ -1,6 +1,15 @@
 @import "tailwindcss";
 
+:root {
+  --color-lilac: #C3B1E1;
+  --color-mint: #A1E3D8;
+  --color-peach: #FFC2B4;
+  --color-cream: #FFF8F0;
+  --text-dark: #333333;
+}
+
 @layer base {
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
   html,
   body,
@@ -11,50 +20,66 @@
   }
 
   body {
-    @apply bg-white text-gray-900 font-sans antialiased;
+    background-color: var(--color-cream);
+    color: var(--text-dark);
+    font-family: 'Inter', sans-serif;
+    @apply antialiased;
   }
+
+  h1 { font-size: 36px; font-weight: 700; }
+  h2 { font-size: 24px; font-weight: 600; }
+  p { font-size: 16px; }
+  small { font-size: 14px; }
 }
 
 @layer components {
-
-  /* Retained basic button utility for convenience but stripped of shadow/animations */
   .btn-primary {
-    @apply bg-blue-600 text-white font-medium py-2 px-4 rounded hover:bg-blue-700 disabled:opacity-50;
+    background-color: var(--color-lilac);
+    color: var(--text-dark);
+    @apply font-semibold py-2.5 px-6 rounded-lg transition-all duration-200 shadow-sm border border-black/5;
+  }
+  .btn-primary:hover {
+    @apply shadow-md transform scale-[1.02];
+    filter: brightness(0.95);
+  }
+  .btn-primary:active {
+    @apply scale-[0.98];
   }
 
   .btn-secondary {
-    @apply bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded hover:bg-gray-300 disabled:opacity-50;
+    @apply bg-white/50 text-gray-700 font-semibold py-2.5 px-6 rounded-lg transition-all duration-200 border border-gray-200;
+  }
+  .btn-secondary:hover {
+    @apply bg-white shadow-sm;
   }
 
-  .btn-vibrant {
-    @apply bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-2.5 px-6 rounded-lg shadow-md hover:shadow-xl hover:translate-y-[-1px] active:translate-y-[0px] active:scale-95 transition-all disabled:opacity-50;
+  .btn-mint {
+    background-color: var(--color-mint);
+    color: var(--text-dark);
+    @apply font-semibold py-2.5 px-6 rounded-lg transition-all duration-200 shadow-sm;
+  }
+  .btn-mint:hover {
+    @apply shadow-md scale-[1.02];
+    filter: brightness(0.98);
   }
 
   .input-field {
-    @apply border border-gray-300 rounded px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500;
+    @apply bg-white/80 border border-gray-200 rounded-lg px-4 py-2.5 w-full transition-all duration-200 outline-none;
+  }
+  .input-field:focus {
+    @apply border-purple-300 ring-4 ring-purple-100;
+    background-color: white;
   }
 
-  .input-label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+  .card-minimal {
+    @apply bg-white border border-gray-100 rounded-2xl p-6 transition-all duration-300 shadow-sm;
+  }
+  .card-minimal:hover {
+    @apply shadow-xl transform scale-[1.01] border-purple-100;
   }
 
-  /* Custom Utilities for Dashboard */
-  .h-11 {
-    height: 2.75rem;
-  }
-
-  .animate-in {
-    animation-duration: 300ms;
-    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    animation-fill-mode: both;
-  }
-
-  .fade-in {
-    animation-name: fadeIn;
-  }
-
-  .slide-in-from-top-2 {
-    animation-name: slideInFromTop;
+  .nav-link {
+    @apply text-sm font-medium text-gray-600 hover:text-purple-600 transition-colors px-3 py-2 rounded-lg hover:bg-purple-100/10;
   }
 }
 

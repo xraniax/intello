@@ -207,40 +207,56 @@ const SubjectDetail = () => {
     }
 
     return (
-        <div className="subject-page flex-1 min-h-0">
+        <div className="subject-page flex-1 min-h-0 flex flex-col bg-[#FFF8F0]/30 animate-in fade-in duration-700">
             {/* Page Header */}
-            <div className="subject-header">
-                <Link to="/dashboard" className="back-link">← Dashboard</Link>
-                <div className="subject-header__info">
-                    <h1 className="subject-title">{subject?.name}</h1>
-                    <span className="subject-description">
-                        {subject?.description || 'Your learning workspace.'}
-                    </span>
+            <div className="px-8 py-6 border-b border-purple-100/50 bg-white/80 backdrop-blur-md flex items-center justify-between sticky top-0 z-20">
+                <div className="flex items-center gap-6">
+                    <Link 
+                        to="/dashboard" 
+                        className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-all group"
+                        title="Back to Garden"
+                    >
+                        <svg className="w-5 h-5 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </Link>
+                    <div className="flex flex-col">
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-2xl font-black text-gray-900 tracking-tight">{subject?.name}</h1>
+                            <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-600 text-[10px] font-black uppercase tracking-widest">
+                                {uploads.length} Sources
+                            </span>
+                        </div>
+                        <p className="text-sm text-gray-400 font-medium truncate max-w-md">
+                            {subject?.description || 'Refining knowledge with AI clarity.'}
+                        </p>
+                    </div>
                 </div>
+
                 <div className="flex items-center gap-3">
-                    <span className="subject-meta">{uploads.length} documents</span>
-
-                    {filePanelCollapsed && (
+                    <div className="hidden md:flex items-center bg-gray-50 p-1 rounded-xl border border-gray-100">
                         <button
-                            className="text-xs font-semibold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-md hover:bg-blue-100 transition-colors flex items-center gap-2"
-                            onClick={() => setFilePanelCollapsed(false)}
-                            title="Show Source Files"
+                            onClick={() => setFilePanelCollapsed(!filePanelCollapsed)}
+                            className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${!filePanelCollapsed ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                         >
-                            <PanelLeft className="w-3.5 h-3.5" />
-                            <span>Source Files</span>
+                            <PanelLeft className="w-4 h-4" />
+                            <span>Sources</span>
                         </button>
-                    )}
-
-                    {chatCollapsed && (
                         <button
-                            className="text-xs font-semibold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-md hover:bg-blue-100 transition-colors flex items-center gap-2"
-                            onClick={() => setChatCollapsed(false)}
-                            title="Show AI Tutor Chat"
+                            onClick={() => setChatCollapsed(!chatCollapsed)}
+                            className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${!chatCollapsed ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                         >
-                            <span>AI Tutor</span>
-                            <PanelRight className="w-3.5 h-3.5" />
+                            <span>Tutor</span>
+                            <PanelRight className="w-4 h-4" />
                         </button>
-                    )}
+                    </div>
+                    
+                    <button 
+                        onClick={() => setShowUploadModal(true)}
+                        className="btn-primary py-2.5 px-6 text-sm"
+                    >
+                        Grow Space
+                    </button>
                 </div>
             </div>
 

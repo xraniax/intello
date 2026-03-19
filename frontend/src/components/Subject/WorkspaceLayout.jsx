@@ -54,24 +54,25 @@ const WorkspaceLayout = ({
     const middleWidth = 100 - leftWidth - rightWidth;
 
     return (
-        <div ref={containerRef} className="workspace-container">
+        <div ref={containerRef} className="flex-1 flex overflow-hidden bg-[#FFF8F0]/20 select-none">
             {/* Left Panel */}
             {!leftPanelCollapsed && (
                 <>
-                    <div className="workspace-panel" style={{ width: `${leftWidth}%` }}>
+                    <div className="h-full overflow-hidden bg-white/40 backdrop-blur-sm border-r border-purple-100/30 transition-all duration-300 ease-in-out" style={{ width: `${leftWidth}%` }}>
                         {leftPanel}
                     </div>
                     {/* Separator 0 */}
                     <div
-                        className="workspace-separator"
+                        className="w-1.5 h-full cursor-col-resize hover:bg-purple-200/50 transition-colors z-10 -mx-0.75 relative group"
                         onMouseDown={onMouseDown(0)}
-                        title="Drag to resize"
-                    />
+                    >
+                        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-purple-100/50 group-hover:bg-purple-300 transition-colors"></div>
+                    </div>
                 </>
             )}
 
             {/* Middle Panel */}
-            <div className="workspace-panel" style={{ width: `${middleWidth}%` }}>
+            <div className="h-full overflow-hidden relative flex flex-col" style={{ width: `${middleWidth}%` }}>
                 {middlePanel}
             </div>
 
@@ -80,11 +81,12 @@ const WorkspaceLayout = ({
                 <>
                     {/* Separator 1 */}
                     <div
-                        className="workspace-separator"
+                        className="w-1.5 h-full cursor-col-resize hover:bg-purple-200/50 transition-colors z-10 -mx-0.75 relative group"
                         onMouseDown={onMouseDown(1)}
-                        title="Drag to resize"
-                    />
-                    <div className="workspace-panel" style={{ width: `${rightWidth}%` }}>
+                    >
+                        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-purple-100/50 group-hover:bg-purple-300 transition-colors"></div>
+                    </div>
+                    <div className="h-full overflow-hidden bg-white/40 backdrop-blur-sm border-l border-purple-100/30 transition-all duration-300 ease-in-out" style={{ width: `${rightWidth}%` }}>
                         {rightPanel}
                     </div>
                 </>
