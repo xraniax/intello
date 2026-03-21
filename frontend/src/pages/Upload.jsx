@@ -250,7 +250,7 @@ const UploadPage = () => {
                         </button>
                         <button 
                             type="submit" 
-                            className="btn-primary w-full sm:w-auto px-12 py-4 text-base" 
+                            className="btn-vibrant w-full sm:w-auto px-12 py-4 text-base" 
                             disabled={sending}
                         >
                             {sending ? (
