@@ -4,11 +4,6 @@ import asyncHandler from '../utils/asyncHandler.js';
 class SubjectController {
     static create = asyncHandler(async (req, res) => {
         const { name, description } = req.body;
-        if (!name) {
-            res.status(400);
-            throw new Error('Subject name is required');
-        }
-
         const subject = await SubjectService.createSubject(req.user.id, name, description);
         res.status(201).json({ status: 'success', data: subject });
     });
@@ -29,11 +24,6 @@ class SubjectController {
 
     static rename = asyncHandler(async (req, res) => {
         const { name } = req.body;
-        if (!name) {
-            res.status(400);
-            throw new Error('New name is required');
-        }
-
         const subject = await SubjectService.renameSubject(req.user.id, req.params.id, name);
         if (!subject) {
             res.status(404);

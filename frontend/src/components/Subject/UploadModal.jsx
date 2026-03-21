@@ -15,14 +15,13 @@ const UploadModal = ({
     uploadFileError,
     uploadError,
     uploadValidationErrors = {},
-    uploadSuccess
 }) => {
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Upload New Material">
             <form onSubmit={handleUpload} className="space-y-4">
                 {/* ... existing fields ... */}
                 <div>
-                    <label className="input-label">Title (optional)</label>
+                    <label className="input-label text-gray-400">Document Title <span className="text-[10px] font-normal lowercase">(Optional)</span></label>
                     <input
                         type="text"
                         className="input-field"
@@ -88,9 +87,6 @@ const UploadModal = ({
 
                 {uploadError && (
                     <p className="text-red-600 text-sm bg-red-50 p-3 rounded">{uploadError}</p>
-                )}
-                {uploadSuccess && (
-                    <p className="text-green-700 text-sm bg-green-50 p-3 rounded">{uploadSuccess}</p>
                 )}
 
                 <div className="flex justify-end gap-3 pt-2">

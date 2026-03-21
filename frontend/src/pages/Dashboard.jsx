@@ -3,6 +3,9 @@ import { useAuth } from '../hooks/AuthContext';
 import { Link } from 'react-router-dom';
 import { subjectService } from '../services/api';
 import { Search, Filter, SortAsc, SortDesc, Clock, Plus, X, Edit2, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { formatDistanceToNow } from 'date-fns';
+import CustomModal from '../components/Common/CustomModal';
 
 const Dashboard = () => {
     const { user } = useAuth();
@@ -12,6 +15,10 @@ const Dashboard = () => {
     const [newSubjectName, setNewSubjectName] = useState('');
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
+
+    // Modal State
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalConfig, setModalConfig] = useState({});
 
     // Search & Filter State
     const [searchQuery, setSearchQuery] = useState('');
@@ -56,12 +63,13 @@ const Dashboard = () => {
                 case 'alpha_desc':
                     return b.name.localeCompare(a.name);
                 case 'recent_created':
-                    // Assuming higher ID means more recent or use created_at if available
-                    return (b.created_at || b.id) > (a.created_at || a.id) ? 1 : -1;
+                    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
                 case 'recent_opened':
                 default:
-                    // Sort by updated_at (or id as fallback)
-                    return (b.updated_at || b.id) > (a.updated_at || a.id) ? 1 : -1;
+                    // Sort by lastActivityAt (Snake case from DB might be last_activity_at but we aliased it to lastActivityAt)
+                    const dateA = new Date(a.lastActivityAt || a.last_activity_at || a.updated_at || a.created_at || 0);
+                    const dateB = new Date(b.lastActivityAt || b.last_activity_at || b.updated_at || b.created_at || 0);
+                    return dateB - dateA;
             }
         });
 
@@ -77,90 +85,120 @@ const Dashboard = () => {
             await subjectService.create(newSubjectName);
             setNewSubjectName('');
             setIsAdding(false);
+            toast.success(`Subject "${newSubjectName}" created!`);
             await fetchSubjects();
         } catch (err) {
             setCreateError(err.message || 'Failed to create subject. Please try again.');
+            toast.error('Failed to create subject');
         } finally {
             setCreating(false);
         }
     };
 
-    const handleDeleteSubject = async (id, name) => {
-        if (window.confirm(`Are you sure you want to delete "${name}"? All materials inside will be deleted.`)) {
-            try {
-                await subjectService.delete(id);
-                setSubjects(subjects.filter(s => s.id !== id));
-            } catch (err) {
-                alert('Failed to delete subject');
+    const handleDeleteSubject = (id, name) => {
+        setModalConfig({
+            title: 'Delete Subject?',
+            message: `Are you sure you want to delete "${name}"? This will permanently remove all materials inside.`,
+            type: 'warning',
+            confirmText: 'Delete Forever',
+            onConfirm: async () => {
+                try {
+                    await subjectService.delete(id);
+                    setSubjects(prev => prev.filter(s => s.id !== id));
+                    toast.success('Subject deleted');
+                } catch (err) {
+                    toast.error('Failed to delete subject');
+                } finally {
+                    setIsModalOpen(false);
+                }
             }
-        }
+        });
+        setIsModalOpen(true);
     };
 
-    const handleRenameSubject = async (id, currentName) => {
-        const newName = window.prompt('Enter new subject name:', currentName);
-        if (newName && newName !== currentName) {
-            try {
-                await subjectService.rename(id, newName);
-                fetchSubjects();
-            } catch (err) {
-                alert('Failed to rename subject');
+    const handleRenameSubject = (id, currentName) => {
+        setModalConfig({
+            title: 'Rename Subject',
+            message: 'Choose a new name for your study space.',
+            type: 'prompt',
+            defaultValue: currentName,
+            confirmText: 'Save Changes',
+            onConfirm: async (newName) => {
+                if (!newName || newName === currentName) {
+                    setIsModalOpen(false);
+                    return;
+                }
+                try {
+                    await subjectService.rename(id, newName);
+                    toast.success('Subject renamed');
+                    fetchSubjects();
+                } catch (err) {
+                    toast.error(err.message || 'Failed to rename subject');
+                } finally {
+                    setIsModalOpen(false);
+                }
             }
-        }
+        });
+        setIsModalOpen(true);
     };
 
     return (
-        <div className="max-w-7xl mx-auto p-6 md:p-10 animate-in fade-in duration-700">
-            {/* Hero Section */}
-            <div className="relative mb-12 p-10 rounded-[2rem] overflow-hidden bg-gradient-to-br from-[#C3B1E1]/20 via-[#FFF8F0] to-[#A1E3D8]/10 border border-purple-100/50">
-                <div className="relative z-10 max-w-2xl">
-                    <h1 className="text-4xl md:text-5xl font-extrabold mb-4 tracking-tight text-gray-900 leading-tight">
-                        Welcome back, <span className="text-purple-600">{user?.name?.split(' ')[0] || 'Scholar'}</span>
+        <div className="dashboard-page max-w-7xl mx-auto px-6 py-12 animate-in fade-in duration-700">
+            {/* ... navigation / header ... */}
+
+            {/* Welcome Header */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+                <div className="space-y-2">
+                    <h1 className="text-5xl font-black text-gray-900 tracking-tight">
+                        Hello, <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">{user?.name?.split(' ')[0] || 'Scholar'}</span>
                     </h1>
-                    <p className="text-lg text-gray-600 font-medium leading-relaxed mb-8">
-                        Your personal knowledge garden is growing. Ready to cultivate some more wisdom today?
-                    </p>
-                    <button
-                        onClick={() => setIsAdding(!isAdding)}
-                        className={`btn-primary flex items-center gap-2 group ${isAdding ? 'bg-red-400 border-red-400 hover:bg-red-500' : ''}`}
-                    >
-                        {isAdding ? (
-                            <>
-                                <X className="w-5 h-5 transition-transform group-hover:rotate-90" />
-                                <span>Cancel</span>
-                            </>
-                        ) : (
-                            <>
-                                <Plus className="w-5 h-5 transition-transform group-hover:scale-110" />
-                                <span>Create New Subject</span>
-                            </>
-                        )}
-                    </button>
+                    <p className="text-gray-500 font-medium text-lg">Your cognitive garden is thriving. What shall we explore today?</p>
                 </div>
-                {/* Abstract shape for flair */}
-                <div className="absolute top-[-10%] right-[-5%] w-64 h-64 bg-purple-200/30 rounded-full blur-3xl"></div>
-                <div className="absolute bottom-[-20%] left-[10%] w-96 h-96 bg-mint-100/20 rounded-full blur-3xl"></div>
+                <button
+                    onClick={() => setIsAdding(true)}
+                    className="btn-vibrant group flex items-center gap-3 px-8 py-4 shadow-xl shadow-purple-200/50"
+                >
+                    <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center group-hover:rotate-90 transition-transform duration-500">
+                        <Plus className="w-4 h-4" />
+                    </div>
+                    <span className="font-extrabold uppercase tracking-widest text-sm">New Subject</span>
+                </button>
             </div>
 
-            {/* Inline Creation Form */}
+            {/* Quick Add Form (Inline) */}
             {isAdding && (
-                <div className="mb-12 p-8 card-minimal border-indigo-100 bg-white/50 backdrop-blur-sm animate-in zoom-in-95 slide-in-from-top-4 duration-300">
-                    <form onSubmit={handleCreateSubject} className="flex flex-col md:flex-row gap-4">
+                <div className="mb-12 p-8 bg-white rounded-[2rem] border-2 border-purple-50 shadow-2xl shadow-purple-100/20 animate-in zoom-in-95 duration-300 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-100/50 to-indigo-50/50 rounded-bl-[4rem] -z-0"></div>
+                    <button
+                        onClick={() => setIsAdding(false)}
+                        className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                    
+                    <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                        <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                            <Plus className="w-4 h-4 text-purple-600" />
+                        </div>
+                        Create New Study Space
+                    </h3>
+                    
+                    <form onSubmit={handleCreateSubject} className="flex flex-col sm:flex-row gap-4 relative z-10">
                         <div className="flex-grow">
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Subject Name</label>
                             <input
                                 type="text"
-                                placeholder="e.g. Molecular Biology, Modern History..."
-                                className="input-field py-4 text-lg bg-white"
+                                className="input-field h-14 text-lg"
+                                placeholder="Enter subject name (e.g. Molecular Biology)"
                                 value={newSubjectName}
                                 onChange={(e) => { setNewSubjectName(e.target.value); setCreateError(null); }}
                                 autoFocus
                                 disabled={creating}
                             />
                         </div>
-                        <div className="flex items-end">
+                        <div className="flex gap-3">
                             <button
                                 type="submit"
-                                className="btn-primary py-4 px-8 text-lg w-full md:w-auto"
+                                className="btn-vibrant px-10 h-14 min-w-[180px]"
                                 disabled={creating || !newSubjectName.trim()}
                             >
                                 {creating ? (
@@ -208,7 +246,7 @@ const Dashboard = () => {
                             value={filterType}
                             onChange={(e) => setFilterType(e.target.value)}
                         >
-                            <option value="recent_opened">Recently Opened</option>
+                            <option value="recent_opened">Recently Active</option>
                             <option value="recent_created">Recently Created</option>
                             <option value="alpha_asc">Alphabetical (A-Z)</option>
                             <option value="alpha_desc">Alphabetical (Z-A)</option>
@@ -296,7 +334,11 @@ const Dashboard = () => {
                                     <div className="flex items-center justify-between pt-6 border-t border-gray-50">
                                         <div className="flex items-center text-xs font-bold text-gray-400 uppercase tracking-widest gap-2">
                                             <Clock className="w-3 h-3" />
-                                            <span>Just now</span>
+                                            <span>
+                                                {subject.lastActivityAt || subject.last_activity_at 
+                                                    ? formatDistanceToNow(new Date(subject.lastActivityAt || subject.last_activity_at), { addSuffix: true })
+                                                    : 'No activity yet'}
+                                            </span>
                                         </div>
                                         <Link
                                             to={`/subjects/${subject.id}`}
@@ -324,6 +366,12 @@ const Dashboard = () => {
                     )}
                 </div>
             )}
+            {/* Custom Modal for Confirms/Prompts */}
+            <CustomModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                {...modalConfig}
+            />
         </div>
     );
 };

@@ -93,6 +93,8 @@ describe('Materials API Integration', () => {
         it('should upload text content manually successfully', async () => {
             // Mock Subject.findByName (fallback subject generation)
             global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 99, name: 'Imported Materials' }] });
+            // Mock Material.findByTitle (new duplicate check) - return empty rows
+            global.__mockDbQuery.mockResolvedValueOnce({ rows: [] });
             // Mock Material.create
             global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 10, title: 'Text Note' }] });
             // Mock Material.findById (before processing)

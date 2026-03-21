@@ -29,13 +29,14 @@ class MaterialController {
      *   6. Clean up the temp file locally.
      */
     static upload = asyncHandler(async (req, res) => {
+        console.log('[MaterialController] Upload Headers:', JSON.stringify(req.headers, null, 2));
+        console.log('[MaterialController] Upload request body:', req.body);
         const { title, content, type, subjectId } = req.body;
         const file = req.file;
+        console.log('[MaterialController] Upload file present:', !!file);
+        console.log('[MaterialController] Upload subjectId:', subjectId);
 
-        const originalFilename = file ? file.originalname : '';
-        const rawContent = content || '';
-
-        if (!file && !rawContent) {
+        if (!file && !content) {
             res.status(400);
             throw new Error('Content is required — upload a PDF or paste text.');
         }
@@ -45,8 +46,8 @@ class MaterialController {
             const uploadedDocument = await MaterialService.processDocument(
                 req.user.id,
                 file,
-                (title && title.trim()) || originalFilename || 'Untitled Resource',
-                rawContent,
+                title,
+                content || '',
                 type || 'upload',
                 subjectId
             );

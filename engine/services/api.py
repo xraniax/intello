@@ -73,10 +73,11 @@ async def process_document_route(file: UploadFile = File(...)):
             content={"status": "error", "message": "Only PDF files are supported."}
         )
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode='wb') as tmp:
         try:
-            contents = await file.read()
-            tmp.write(contents)
+            # Optimize: Stream the file to disk in chunks instead of loading entirely into memory
+            while chunk := await file.read(1024 * 1024):  # 1MB chunks
+                tmp.write(chunk)
             tmp_path = tmp.name
             logger.info(f"Saved temporary file to: {tmp_path}")
         except Exception as e:

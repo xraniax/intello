@@ -104,6 +104,17 @@ class Material {
     }
 
     /**
+     * Find a material by title for a specific user and subject (for duplicate checks)
+     */
+    static async findByTitle(userId, subjectId, title) {
+        const result = await query(
+            'SELECT * FROM materials WHERE user_id = $1 AND subject_id = $2 AND LOWER(TRIM(title)) = LOWER(TRIM($3))',
+            [userId, subjectId, title]
+        );
+        return result.rows[0];
+    }
+
+    /**
      * Remove a material.
      * user_id enforced for IDOR protection — users can only delete their own materials.
      */

@@ -124,12 +124,6 @@ class AuthController {
      */
     static validateResetToken = asyncHandler(async (req, res) => {
         const { token } = req.params;
-
-        if (!token) {
-            res.status(400);
-            throw new Error('Token is required.');
-        }
-
         const user = await User.findByResetToken(token);
 
         if (!user) {

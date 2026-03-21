@@ -43,9 +43,12 @@ const FilePanel = ({
             <div className="panel-body flex-1 overflow-y-auto min-h-0 pt-2">
                 <div className="file-list">
                     {materials.length === 0 ? (
-                        <div className="empty-state">
-                            <p>No documents yet.</p>
-                            <p className="text-xs mt-1">Upload a PDF to get started.</p>
+                        <div className="flex flex-col items-center justify-center p-12 text-center opacity-40">
+                            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+                                <Sparkles className="w-8 h-8 text-gray-400" />
+                            </div>
+                            <p className="text-sm font-bold text-gray-500 uppercase tracking-widest leading-tight">No insights yet</p>
+                            <p className="text-xs text-gray-400 mt-2 max-w-[140px]">Upload a PDF or paste text to begin your AI journey.</p>
                         </div>
                     ) : (
                         materials.map((m) => (

@@ -3,6 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import { subjectService, materialService } from '../services/api';
 import { useSpeech } from '../hooks/useSpeech';
 import { PanelLeft, PanelRight } from 'lucide-react';
+import toast from 'react-hot-toast';
+import CustomModal from '../components/Common/CustomModal';
 
 import WorkspaceLayout from '../components/Subject/WorkspaceLayout';
 import FilePanel from '../components/Subject/FilePanel';
@@ -16,12 +18,16 @@ const SubjectDetail = () => {
     const [uploads, setUploads] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    // Modal state
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalConfig, setModalConfig] = useState({});
+
     // Upload state
     const [selectedUploads, setSelectedUploads] = useState([]);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState('');
-    const [uploadValidationErrors, setUploadValidationErrors] = useState({});
     const [uploadSuccess, setUploadSuccess] = useState('');
+    const [uploadValidationErrors, setUploadValidationErrors] = useState({});
     const [newUploadTitle, setNewUploadTitle] = useState('');
     const [newUploadContent, setNewUploadContent] = useState('');
     const [uploadFile, setUploadFile] = useState(null);
@@ -81,18 +87,11 @@ const SubjectDetail = () => {
     const handleUpload = async (e) => {
         e.preventDefault();
         setUploadError('');
-        setUploadSuccess('');
         if (uploadFileError) return;
 
         // Handle title logic for validation
-        const titleToValidate = (newUploadTitle && newUploadTitle.trim()) || (uploadFile ? uploadFile.name : '');
+        const titleToValidate = (newUploadTitle && newUploadTitle.trim()) || (uploadFile ? uploadFile.name : 'Untitled Material');
 
-        // Check for duplicate titles
-        const isDuplicate = uploads.some(m => m.title.toLowerCase() === titleToValidate.toLowerCase());
-        if (isDuplicate) {
-            setUploadError(`A material with the title "${titleToValidate}" already exists in this workspace.`);
-            return;
-        }
 
         if (!newUploadContent.trim() && !uploadFile) {
             setUploadError('Please provide either text content or a PDF document.');
@@ -101,16 +100,20 @@ const SubjectDetail = () => {
 
         setUploading(true);
         setUploadValidationErrors({}); // clear previous Zod errors
+        console.log('[SubjectDetail] handleUpload - id:', id);
+        toast.loading(`Uploading document to subject: ${id}`, { id: 'upload-debug' });
         try {
             if (uploadFile) {
                 const formData = new FormData();
                 formData.append('file', uploadFile);
-                if (newUploadTitle) formData.append('title', newUploadTitle);
+                formData.append('title', titleToValidate); // Use calculated title (fallback to filename)
                 if (newUploadContent) formData.append('content', newUploadContent);
                 formData.append('type', 'upload');
                 formData.append('subjectId', id);
+                console.log('[SubjectDetail] Sending FormData with subjectId:', id);
                 await materialService.upload(formData);
             } else {
+                console.log('[SubjectDetail] Sending JSON with subjectId:', id);
                 await materialService.upload({
                     title: newUploadTitle || 'New Resource',
                     content: newUploadContent,
@@ -121,31 +124,47 @@ const SubjectDetail = () => {
             setNewUploadTitle('');
             setNewUploadContent('');
             setUploadFile(null);
-            setUploadSuccess('Material uploaded — AI is processing it.');
+            toast.success('Material uploaded! AI processing started.', { id: 'upload-debug' });
             setShowUploadModal(false); // Close modal on success
             await fetchDetails();
         } catch (err) {
+            console.error('[SubjectDetail] Upload Error:', err);
+            toast.error(err.message || 'Upload failed', { id: 'upload-debug' });
             if (err.code === 'VALIDATION_ERROR') {
                 setUploadValidationErrors(err.validationErrors || {});
                 setUploadError('Please check the form for errors.');
+            } else if (err.statusCode === 409) {
+                setUploadError('A material with this title already exists.');
             } else {
-                setUploadError('Upload failed. Please try again.');
+                setUploadError(err.message || 'Upload failed. Please try again.');
             }
         } finally {
             setUploading(false);
         }
     };
 
-    const handleDeleteUpload = async (materialId) => {
-        if (!window.confirm('Are you sure you want to delete this file? This cannot be undone.')) return;
-        try {
-            await materialService.delete(materialId);
-            setUploads(prev => prev.filter(m => m.id !== materialId));
-            setSelectedUploads(prev => prev.filter(id => id !== materialId));
-        } catch (err) {
-            console.error('Failed to delete material:', err);
-            alert('Failed to delete material. Please try again.');
-        }
+    const handleDeleteUpload = (materialId) => {
+        const material = uploads.find(m => m.id === materialId);
+        setModalConfig({
+            title: 'Delete document?',
+            message: `Are you sure you want to delete "${material?.title || 'this file'}"? This cannot be undone.`,
+            type: 'warning',
+            confirmText: 'Delete permanently',
+            onConfirm: async () => {
+                try {
+                    await materialService.delete(materialId);
+                    setUploads(prev => prev.filter(m => m.id !== materialId));
+                    setSelectedUploads(prev => prev.filter(id => id !== materialId));
+                    toast.success('Document removed');
+                } catch (err) {
+                    console.error('Failed to delete material:', err);
+                    toast.error('Failed to delete material');
+                } finally {
+                    setIsModalOpen(false);
+                }
+            }
+        });
+        setIsModalOpen(true);
     };
 
     const handleChat = async (e) => {
@@ -325,7 +344,12 @@ const SubjectDetail = () => {
                 uploadFileError={uploadFileError}
                 uploadError={uploadError}
                 uploadValidationErrors={uploadValidationErrors}
-                uploadSuccess={uploadSuccess}
+            />
+
+            <CustomModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                {...modalConfig}
             />
         </div>
     );

@@ -68,19 +68,25 @@ const UploadPage = () => {
         setSending(true);
         setErr('');
 
+        console.log('[UploadPage] handleSubmit - subjectId:', subjectId);
+        console.log('[UploadPage] handleSubmit - title:', title);
+
         try {
+            const finalTitle = title.trim() || (file ? file.name : 'Untitled Document');
             if (file) {
                 const formData = new FormData();
                 formData.append('file', file);
-                formData.append('title', title);
+                formData.append('title', finalTitle);
                 formData.append('content', content);
-                formData.append('type', 'upload'); // Terminology cleanup: source is 'upload'
+                formData.append('type', 'upload'); 
                 if (subjectId) formData.append('subjectId', subjectId);
 
+                console.log('[UploadPage] Sending FormData with subjectId:', subjectId);
                 await materialService.upload(formData);
             } else {
+                console.log('[UploadPage] Sending JSON with subjectId:', subjectId);
                 await materialService.upload({
-                    title,
+                    title: finalTitle,
                     content,
                     type: 'upload',
                     subjectId: subjectId || undefined

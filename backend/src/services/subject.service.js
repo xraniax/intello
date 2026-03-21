@@ -17,10 +17,14 @@ class SubjectService {
      * Create a new subject
      */
     static async createSubject(userId, name, description) {
+        const opContext = { userId, name, operation: 'createSubject' };
         const existing = await Subject.findByName(userId, name);
         if (existing) {
+            console.warn(`[SubjectService] Duplicate detected: ${JSON.stringify(opContext)}`);
             throw Object.assign(new Error(`A subject named "${name}" already exists.`), { statusCode: 409, code: 'DUPLICATE_SUBJECT' });
         }
+        
+        console.info(`[SubjectService] Creating subject: ${JSON.stringify(opContext)}`);
         return await Subject.create(userId, name, description);
     }
 
