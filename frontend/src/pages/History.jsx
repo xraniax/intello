@@ -1,12 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { materialService } from '../services/api';
+import { Search, Calendar, BookOpen, ChevronRight, Clock, FileText, Trash2, LayoutGrid, List } from 'lucide-react';
+import { format, isToday, isYesterday, subDays, startOfDay } from 'date-fns';
+import Skeleton from '../components/Common/Skeleton';
+import toast from 'react-hot-toast';
 
 const History = () => {
     const location = useLocation();
+    const navigate = useNavigate();
     const [materials, setMaterials] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selected, setSelected] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
 
     useEffect(() => {
         const fetchHistory = async () => {
@@ -14,117 +20,210 @@ const History = () => {
                 const res = await materialService.getHistory();
                 const historyData = Array.isArray(res.data.data) ? res.data.data : [];
                 setMaterials(historyData);
-
-                // If we came from SubjectDetail with a selectedId, find and select it
-                if (location.state?.selectedId) {
-                    const found = historyData.find(m => m.id === location.state.selectedId);
-                    if (found) setSelected(found);
-                } else if (historyData.length > 0) {
-                    setSelected(historyData[0]);
-                }
             } catch (error) {
                 console.error('Failed to fetch history', error);
+                toast.error('Failed to load study history');
             } finally {
                 setLoading(false);
             }
         };
         fetchHistory();
-    }, [location.state]);
+    }, []);
 
-    if (loading) {
-        return <div className="p-8 text-center text-gray-500">Loading your history...</div>;
-    }
+    const handleDelete = async (e, id) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!window.confirm('Are you sure you want to delete this material?')) return;
+        
+        try {
+            await materialService.delete(id);
+            setMaterials(prev => prev.filter(m => m.id !== id));
+            toast.success('Document removed');
+        } catch (err) {
+            toast.error('Failed to delete material');
+        }
+    };
+
+    const groupedMaterials = useMemo(() => {
+        const filtered = materials.filter(m => 
+            m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (m.subject_name && m.subject_name.toLowerCase().includes(searchQuery.toLowerCase()))
+        );
+
+        const groups = {
+            today: [],
+            yesterday: [],
+            lastWeek: [],
+            earlier: []
+        };
+
+        const today = startOfDay(new Date());
+        const yesterday = startOfDay(subDays(new Date(), 1));
+        const lastWeek = startOfDay(subDays(new Date(), 7));
+
+        filtered.forEach(m => {
+            const date = new Date(m.created_at);
+            if (isToday(date)) groups.today.push(m);
+            else if (isYesterday(date)) groups.yesterday.push(m);
+            else if (date >= lastWeek) groups.lastWeek.push(m);
+            else groups.earlier.push(m);
+        });
+
+        return groups;
+    }, [materials, searchQuery]);
+
+    const renderGroup = (label, items) => {
+        if (items.length === 0) return null;
+        return (
+            <div className="mb-12">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="h-px bg-gray-100 flex-grow"></div>
+                    <span className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] px-4 py-1 bg-white border border-gray-100 rounded-full shadow-sm">
+                        {label}
+                    </span>
+                    <div className="h-px bg-gray-100 flex-grow"></div>
+                </div>
+                <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
+                    {items.map(m => (
+                        <div 
+                            key={m.id} 
+                            onClick={() => navigate(`/subjects/${m.subject_id}`, { state: { openMaterialId: m.id } })}
+                            className={`group relative bg-white border border-gray-100 rounded-[1.5rem] p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${viewMode === 'list' ? 'flex items-center justify-between py-4' : ''}`}
+                        >
+                            <div className="flex items-start gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-500 group-hover:text-white transition-all duration-500 shrink-0">
+                                    {m.type === 'upload' ? <FileText className="w-6 h-6" /> : <BookOpen className="w-6 h-6" />}
+                                </div>
+                                <div className="min-w-0 flex-grow">
+                                    <h4 className="font-bold text-gray-900 truncate group-hover:text-indigo-600 transition-colors">{m.title}</h4>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="px-2 py-0.5 rounded-md bg-gray-50 text-gray-400 text-[10px] font-bold uppercase tracking-wider">
+                                            {m.subject_name || 'Imported'}
+                                        </span>
+                                        <span className="text-[10px] text-gray-300 font-medium flex items-center gap-1">
+                                            <Clock className="w-3 h-3" />
+                                            {format(new Date(m.created_at), 'h:mm a')}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {viewMode === 'grid' && (
+                                <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
+                                    <div className="text-xs text-gray-400 font-medium line-clamp-1">
+                                        {m.ai_generated_content?.result ? "AI Insights Ready" : "Processing Source..."}
+                                    </div>
+                                    <button 
+                                        onClick={(e) => handleDelete(e, m.id)}
+                                        className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            )}
+
+                            {viewMode === 'list' && (
+                                <div className="flex items-center gap-4">
+                                    <button 
+                                        onClick={(e) => handleDelete(e, m.id)}
+                                        className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                    <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500 transition-colors" />
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
 
     return (
-        <div className="max-w-6xl mx-auto p-4 md:p-6">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold">Study History</h1>
-                <p className="text-gray-600">Review your learning materials and AI-generated insights</p>
-            </div>
-
-            <div className="flex flex-col md:flex-row gap-6">
-                <div className="w-full md:w-1/3 flex flex-col gap-2">
-                    {materials.length === 0 ? (
-                        <div className="p-6 border border-gray-200 bg-gray-50 text-center rounded">
-                            <p className="text-gray-600">No materials found. Start by uploading content!</p>
-                        </div>
-                    ) : (
-                        materials.map((m) => (
-                            <div
-                                key={m.id}
-                                className={`p-3 border rounded cursor-pointer ${selected?.id === m.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
-                                onClick={() => setSelected(m)}
-                            >
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <h4 className="font-semibold text-gray-900">{m.title}</h4>
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            {m.subject_name || 'Imported'}
-                                        </div>
-                                    </div>
-                                    <span className="text-gray-400">&gt;</span>
-                                </div>
-                            </div>
-                        ))
-                    )}
+        <div className="history-page max-w-7xl mx-auto px-6 py-12 animate-in fade-in duration-700">
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-8">
+                <div className="space-y-2">
+                    <div className="flex items-center gap-3 text-indigo-500 font-bold text-xs uppercase tracking-[0.2em] mb-2">
+                        <Calendar className="w-4 h-4" />
+                        <span>Timeline</span>
+                    </div>
+                    <h1 className="text-5xl font-black text-gray-900 tracking-tight">Study History</h1>
+                    <p className="text-gray-500 font-medium text-lg italic">Your journey of enlightenment, archived and ready for revision.</p>
                 </div>
 
-                <div className="w-full md:w-2/3 border border-gray-200 bg-white rounded p-6 min-h-[500px]">
-                    {selected ? (
-                        <div>
-                            <div className="flex justify-between items-start mb-6">
-                                <div>
-                                    <h2 className="text-xl font-bold">{selected.title}</h2>
-                                    <div className="flex gap-2 mt-2 text-xs">
-                                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded uppercase font-medium">
-                                            {selected.type}
-                                        </span>
-                                        <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                                            {selected.subject_name || 'Imported Materials'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <button className="text-sm text-red-600 border border-red-200 hover:bg-red-50 px-2 py-1 rounded">
-                                    Delete
-                                </button>
-                            </div>
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <div className="relative group w-full sm:w-80">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 group-focus-within:text-indigo-400 transition-colors" />
+                        <input
+                            type="text"
+                            placeholder="Search your archives..."
+                            className="input-field pl-12 h-12 text-sm font-medium"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                    <div className="flex bg-white p-1 rounded-xl border border-gray-100 shadow-sm">
+                        <button 
+                            onClick={() => setViewMode('grid')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-400 hover:bg-gray-50'}`}
+                        >
+                            <LayoutGrid className="w-5 h-5" />
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('list')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-400 hover:bg-gray-50'}`}
+                        >
+                            <List className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-                            <div className="mb-8">
-                                <h4 className="font-semibold text-gray-800 mb-2">AI Generated Insights</h4>
-                                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded text-sm text-gray-800 whitespace-pre-wrap">
-                                    {selected.ai_generated_content?.result ? (
-                                        typeof selected.ai_generated_content.result === 'string' ? (
-                                            selected.ai_generated_content.result
-                                        ) : (
-                                            <div className="flex flex-col gap-4">
-                                                {selected.ai_generated_content.result.map((q, i) => (
-                                                    <div key={i} className="pb-4 border-b border-blue-200 last:border-0 last:pb-0">
-                                                        <p className="font-semibold text-gray-900">Q: {q.question}</p>
-                                                        <p className="text-blue-800 mt-1">A: {q.answer}</p>
-                                                    </div>
-                                                ))}
+            {loading ? (
+                <div className="space-y-12">
+                    {[1, 2].map(g => (
+                        <div key={g}>
+                            <Skeleton className="h-8 w-32 mx-auto mb-8 rounded-full" />
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} className="bg-white border border-gray-100 rounded-[1.5rem] p-6 h-48 flex flex-col justify-between">
+                                        <div className="flex gap-4">
+                                            <Skeleton className="w-12 h-12 rounded-2xl shrink-0" />
+                                            <div className="flex-grow space-y-2">
+                                                <Skeleton className="h-5 w-3/4 rounded" />
+                                                <Skeleton className="h-3 w-1/2 rounded" />
                                             </div>
-                                        )
-                                    ) : (
-                                        <span className="italic text-gray-500">No AI results generated yet.</span>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div>
-                                <h4 className="font-semibold text-gray-700 mb-2">Source Content Clip</h4>
-                                <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded border border-gray-200">
-                                    {selected.content.substring(0, 500)}...
-                                </p>
+                                        </div>
+                                        <Skeleton className="h-8 w-full rounded-xl" />
+                                    </div>
+                                ))}
                             </div>
                         </div>
-                    ) : (
-                        <div className="h-full flex items-center justify-center text-gray-500">
-                            Select a material from the list to view insights
-                        </div>
-                    )}
+                    ))}
                 </div>
-            </div>
+            ) : materials.length === 0 ? (
+                <div className="py-24 text-center border-2 border-dashed border-gray-100 rounded-[3rem] bg-white/50 backdrop-blur-sm">
+                    <div className="w-20 h-20 bg-indigo-50 text-indigo-200 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <BookOpen className="w-10 h-10" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">The archives are empty</h3>
+                    <p className="text-gray-400 font-medium max-w-sm mx-auto mb-8">Start your learning journey by uploading sources or chatting with your AI garden.</p>
+                    <button onClick={() => navigate('/upload')} className="btn-vibrant px-10 py-4 shadow-xl shadow-purple-200/50">Grow First Document</button>
+                </div>
+            ) : (
+                <div className="animate-in slide-in-from-bottom-4 duration-700">
+                    {renderGroup('Today', groupedMaterials.today)}
+                    {renderGroup('Yesterday', groupedMaterials.yesterday)}
+                    {renderGroup('Last Week', groupedMaterials.lastWeek)}
+                    {renderGroup('The Elder Archives', groupedMaterials.earlier)}
+                </div>
+            )}
+
+            <p className="text-center mt-20 text-[10px] font-black text-gray-300 uppercase tracking-[0.5em]">
+                Cognify &bull; Knowledge Eternal
+            </p>
         </div>
     );
 };

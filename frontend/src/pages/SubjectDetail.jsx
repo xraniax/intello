@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { subjectService, materialService } from '../services/api';
 import { useSpeech } from '../hooks/useSpeech';
 import { PanelLeft, PanelRight } from 'lucide-react';
@@ -11,9 +11,11 @@ import FilePanel from '../components/Subject/FilePanel';
 import MaterialsPanel from '../components/Subject/MaterialsPanel';
 import ChatPanel from '../components/Subject/ChatPanel';
 import UploadModal from '../components/Subject/UploadModal';
+import Skeleton from '../components/Common/Skeleton';
 
 const SubjectDetail = () => {
     const { id } = useParams();
+    const location = useLocation();
     const [subject, setSubject] = useState(null);
     const [uploads, setUploads] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -60,8 +62,19 @@ const SubjectDetail = () => {
     const fetchDetails = async () => {
         try {
             const res = await subjectService.getOne(id);
+            const fetchedMaterials = res.data.data.materials;
             setSubject(res.data.data.subject);
-            setUploads(res.data.data.materials);
+            setUploads(fetchedMaterials);
+
+            // Handle redirected material selection
+            if (location.state?.openMaterialId) {
+                const mid = location.state.openMaterialId;
+                if (!selectedUploads.includes(mid)) {
+                    setSelectedUploads([mid]);
+                    // Auto-trigger summary generation for this material
+                    setTimeout(() => handleGenerate(mid), 500);
+                }
+            }
         } catch (err) {
             console.error('Failed to fetch subject details:', err);
         } finally {
@@ -219,8 +232,40 @@ const SubjectDetail = () => {
 
     if (loading) {
         return (
-            <div style={{ padding: '2rem', color: '#6b7280' }}>
-                Loading subject details...
+            <div className="h-full flex flex-col animate-in fade-in duration-700">
+                <div className="h-20 border-b border-gray-100 bg-white/80 backdrop-blur-md px-8 flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                        <Skeleton className="w-10 h-10 rounded-xl" />
+                        <div className="space-y-2">
+                            <Skeleton className="h-6 w-48 rounded-md" />
+                            <Skeleton className="h-3 w-32 rounded-sm" />
+                        </div>
+                    </div>
+                    <Skeleton className="w-32 h-10 rounded-xl" />
+                </div>
+                <div className="flex-1 flex overflow-hidden">
+                    <div className="w-80 border-r border-gray-100 bg-[#FAFBFF] p-6 space-y-6">
+                        <Skeleton className="h-12 w-full rounded-2xl" />
+                        <div className="space-y-4">
+                            {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full rounded-2xl" />)}
+                        </div>
+                    </div>
+                    <div className="flex-1 p-8 space-y-6">
+                        <Skeleton className="h-4 w-32 rounded-full" />
+                        <div className="grid grid-cols-2 gap-4">
+                            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-12 w-full rounded-xl" />)}
+                        </div>
+                        <Skeleton className="h-12 w-full rounded-2xl" />
+                        <div className="bg-white border border-gray-100 rounded-[2rem] p-8 space-y-4 shadow-sm">
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-4 w-3/4" />
+                        </div>
+                    </div>
+                    <div className="w-96 border-l border-gray-100 bg-white p-6 flex flex-col justify-end">
+                        <Skeleton className="h-12 w-full rounded-2xl mb-4" />
+                    </div>
+                </div>
             </div>
         );
     }

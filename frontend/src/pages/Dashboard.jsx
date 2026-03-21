@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/AuthContext';
 import { Link } from 'react-router-dom';
 import { subjectService } from '../services/api';
-import { Search, Filter, SortAsc, SortDesc, Clock, Plus, X, Edit2, Trash2 } from 'lucide-react';
+import { Search, Filter, SortAsc, SortDesc, Clock, Plus, X, Edit2, Trash2, BookOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import CustomModal from '../components/Common/CustomModal';
+import Skeleton from '../components/Common/Skeleton';
 
 const Dashboard = () => {
     const { user } = useAuth();
@@ -65,11 +66,12 @@ const Dashboard = () => {
                 case 'recent_created':
                     return new Date(b.created_at || 0) - new Date(a.created_at || 0);
                 case 'recent_opened':
-                default:
+                default: {
                     // Sort by lastActivityAt (Snake case from DB might be last_activity_at but we aliased it to lastActivityAt)
                     const dateA = new Date(a.lastActivityAt || a.last_activity_at || a.updated_at || a.created_at || 0);
                     const dateB = new Date(b.lastActivityAt || b.last_activity_at || b.updated_at || b.created_at || 0);
                     return dateB - dateA;
+                }
             }
         });
 
@@ -147,16 +149,20 @@ const Dashboard = () => {
             {/* ... navigation / header ... */}
 
             {/* Welcome Header */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-6 group">
                 <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-indigo-500 font-bold text-xs uppercase tracking-[0.2em] mb-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 anim-pulse"></div>
+                        <span>Active Garden</span>
+                    </div>
                     <h1 className="text-5xl font-black text-gray-900 tracking-tight">
-                        Hello, <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">{user?.name?.split(' ')[0] || 'Scholar'}</span>
+                        Hello, <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600 drop-shadow-sm">{user?.name?.split(' ')[0] || 'Scholar'}</span>
                     </h1>
                     <p className="text-gray-500 font-medium text-lg">Your cognitive garden is thriving. What shall we explore today?</p>
                 </div>
                 <button
                     onClick={() => setIsAdding(true)}
-                    className="btn-vibrant group flex items-center gap-3 px-8 py-4 shadow-xl shadow-purple-200/50"
+                    className="btn-vibrant group flex items-center gap-3 px-8 py-4 shadow-xl shadow-purple-200/50 hover:shadow-purple-300 transition-all border border-purple-400/20"
                 >
                     <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center group-hover:rotate-90 transition-transform duration-500">
                         <Plus className="w-4 h-4" />
@@ -167,8 +173,8 @@ const Dashboard = () => {
 
             {/* Quick Add Form (Inline) */}
             {isAdding && (
-                <div className="mb-12 p-8 bg-white rounded-[2rem] border-2 border-purple-50 shadow-2xl shadow-purple-100/20 animate-in zoom-in-95 duration-300 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-100/50 to-indigo-50/50 rounded-bl-[4rem] -z-0"></div>
+                <div className="mb-8 p-8 bg-white/80 backdrop-blur-md rounded-[2.5rem] border-2 border-purple-100/50 shadow-2xl shadow-purple-100/10 animate-in zoom-in-95 duration-300 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-purple-100/30 to-indigo-50/30 rounded-bl-[6rem] -z-10"></div>
                     <button
                         onClick={() => setIsAdding(false)}
                         className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all"
@@ -219,10 +225,13 @@ const Dashboard = () => {
             )}
 
             {/* Controls Row: Search & Filter */}
-            <div className="flex flex-col lg:flex-row gap-4 mb-10 items-center justify-between">
+            <div className="flex flex-col lg:flex-row gap-4 mb-8 items-center justify-between">
                 <div className="flex items-center gap-4 w-full lg:w-auto">
-                    <h2 className="text-2xl font-bold text-gray-900 whitespace-nowrap">Your Subjects</h2>
-                    <div className="h-px bg-gray-100 flex-grow hidden lg:block min-w-[100px]"></div>
+                    <h2 className="text-3xl font-black text-gray-900 whitespace-nowrap tracking-tight">Your Spaces</h2>
+                    <div className="h-px bg-gray-100 flex-grow hidden lg:block min-w-[60px]"></div>
+                    <span className="bg-gray-50 text-gray-400 text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full border border-gray-100">
+                        {subjects.length} Total
+                    </span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
@@ -259,9 +268,27 @@ const Dashboard = () => {
             </div>
 
             {loading ? (
-                <div className="flex flex-col items-center justify-center p-20 text-gray-400 space-y-4">
-                    <div className="w-12 h-12 border-4 border-purple-100 border-t-purple-500 rounded-full animate-spin"></div>
-                    <p className="font-bold uppercase tracking-widest text-xs">Cultivating your workspace...</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                        <div key={i} className="card-minimal h-[280px] flex flex-col justify-between">
+                            <div className="flex justify-between items-start">
+                                <Skeleton variant="circle" className="w-12 h-12" />
+                                <div className="flex gap-2">
+                                    <Skeleton className="w-8 h-8 rounded-lg" />
+                                    <Skeleton className="w-8 h-8 rounded-lg" />
+                                </div>
+                            </div>
+                            <div className="space-y-3">
+                                <Skeleton className="h-6 w-3/4" />
+                                <Skeleton className="h-4 w-full" />
+                                <Skeleton className="h-4 w-2/3" />
+                            </div>
+                            <div className="flex justify-between items-center pt-6 border-t border-gray-50">
+                                <Skeleton className="h-3 w-24" />
+                                <Skeleton className="h-4 w-16" />
+                            </div>
+                        </div>
+                    ))}
                 </div>
             ) : fetchError ? (
                 <div className="p-12 border-2 border-red-50 bg-red-50/30 text-center rounded-[2rem] backdrop-blur-sm">
@@ -278,7 +305,7 @@ const Dashboard = () => {
                     </div>
                     <h3 className="text-2xl font-bold text-gray-900 mb-2">A clean slate awaits</h3>
                     <p className="mb-10 text-gray-500 font-medium text-lg max-w-sm">Create your first subject to start organizing your knowledge with AI power.</p>
-                    <button onClick={() => setIsAdding(true)} className="btn-primary px-10 py-4 text-lg">Initialize First Subject</button>
+                    <button onClick={() => setIsAdding(true)} className="btn-vibrant px-12 py-4 text-lg shadow-2xl">Initialize First Subject</button>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -323,21 +350,32 @@ const Dashboard = () => {
                                     </div>
 
                                     <div className="flex-grow">
-                                        <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors leading-tight">
+                                        <h3 className="text-2xl font-black text-gray-900 mb-2 group-hover:text-purple-600 transition-colors leading-tight tracking-tight">
                                             {subject.name}
                                         </h3>
-                                        <p className="text-gray-500 text-sm font-medium line-clamp-3 leading-relaxed mb-6">
-                                            {subject.description || `${subject.material_count || 0} smart documents analyzed and ready for review.`}
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="flex items-center gap-1.5 px-2 py-1 bg-mint-50 text-mint-700 rounded-lg text-[10px] font-black uppercase tracking-wider border border-mint-100">
+                                                <BookOpen className="w-3 h-3" />
+                                                <span>{subject.material_count || 0} Sources</span>
+                                            </div>
+                                            {subject.lastActivityAt && (
+                                                <div className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-wider border border-indigo-100">
+                                                    Active
+                                                </div>
+                                            )}
+                                        </div>
+                                        <p className="text-gray-500 text-sm font-medium line-clamp-2 leading-relaxed mb-6 italic">
+                                            {subject.description || `Harnessing AI to master the intricacies of ${subject.name}.`}
                                         </p>
                                     </div>
 
                                     <div className="flex items-center justify-between pt-6 border-t border-gray-50">
-                                        <div className="flex items-center text-xs font-bold text-gray-400 uppercase tracking-widest gap-2">
-                                            <Clock className="w-3 h-3" />
+                                        <div className="flex items-center text-[10px] font-black text-gray-400 uppercase tracking-widest gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-gray-200"></div>
                                             <span>
                                                 {subject.lastActivityAt || subject.last_activity_at 
                                                     ? formatDistanceToNow(new Date(subject.lastActivityAt || subject.last_activity_at), { addSuffix: true })
-                                                    : 'No activity yet'}
+                                                    : 'New Space'}
                                             </span>
                                         </div>
                                         <Link

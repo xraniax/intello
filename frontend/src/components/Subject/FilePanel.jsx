@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trash2, Sparkles, PanelLeftClose } from 'lucide-react';
+import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2 } from 'lucide-react';
 
 const FilePanel = ({
     materials,
@@ -28,14 +28,17 @@ const FilePanel = ({
                 </button>
             </div>
 
-            {/* Upload Action */}
-            <div className="panel-body flex-shrink-0 border-b border-gray-100 pb-2">
+            {/* Quick Upload Action */}
+            <div className="px-4 py-4 border-b border-gray-100 bg-gray-50/30">
                 <button
-                    className="btn-vibrant w-full text-sm flex items-center justify-center gap-2 py-3 shadow-md"
+                    className="w-full py-4 px-4 bg-white border-2 border-dashed border-indigo-100 rounded-2xl flex flex-col items-center justify-center gap-1 group hover:border-indigo-400 hover:bg-indigo-50/50 transition-all duration-300 shadow-sm hover:shadow-md"
                     onClick={onOpenUpload}
                 >
-                    <Sparkles className="w-4 h-4" />
-                    <span>+ Upload Document</span>
+                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <Sparkles className="w-5 h-5 text-indigo-500" />
+                    </div>
+                    <span className="text-xs font-black text-indigo-600 uppercase tracking-widest mt-1">Grow Your Space</span>
+                    <span className="text-[10px] text-gray-400 font-medium">Add PDF or Text Source</span>
                 </button>
             </div>
 
@@ -54,47 +57,42 @@ const FilePanel = ({
                         materials.map((m) => (
                             <div
                                 key={m.id}
-                                className={`file-item group ${selectedMaterials.includes(m.id) ? 'file-item--selected' : ''}`}
+                                className={`group relative bg-white border rounded-2xl p-4 transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 ${
+                                    selectedMaterials.includes(m.id) 
+                                        ? 'border-indigo-500 bg-indigo-50/30 ring-2 ring-indigo-500/10' 
+                                        : 'border-gray-100 hover:border-indigo-200 hover:shadow-md'
+                                }`}
                                 onClick={() => toggleSelection(m.id)}
                             >
-                                <input
-                                    type="checkbox"
-                                    checked={selectedMaterials.includes(m.id)}
-                                    readOnly
-                                    className="flex-shrink-0 mt-1"
-                                />
-                                <div className="file-item__info flex-1 min-w-0">
-                                    <div className="flex justify-between items-start gap-2">
-                                        <span className="file-item__title truncate" title={m.title}>
-                                            {m.title}
-                                        </span>
-                                        <span className="text-[10px] text-gray-400 whitespace-nowrap mt-0.5">
+                                <div className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                    selectedMaterials.includes(m.id) ? 'bg-indigo-500 text-white' : 'bg-gray-50 text-gray-400'
+                                }`}>
+                                    {selectedMaterials.includes(m.id) ? <CheckCircle2 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                                </div>
+                                <div className="min-w-0 flex-grow">
+                                    <h4 className={`text-sm font-bold truncate ${selectedMaterials.includes(m.id) ? 'text-indigo-900' : 'text-gray-700'}`}>
+                                        {m.title}
+                                    </h4>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
                                             {new Date(m.created_at).toLocaleDateString()}
                                         </span>
-                                    </div>
-
-                                    {/* Action Buttons - Visible on hover or when selected */}
-                                    <div className="flex gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onGenerate(m.id);
-                                            }}
-                                            className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                            title="Generate AI Tool"
-                                        >
-                                            <Sparkles className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onDelete(m.id);
-                                            }}
-                                            className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                            title="Delete File"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all ml-auto">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onGenerate(m.id); }}
+                                                className="p-1.5 text-indigo-500 hover:bg-white rounded-lg transition-all"
+                                                title="AI Insight"
+                                            >
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onDelete(m.id); }}
+                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-all"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
