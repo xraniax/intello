@@ -3,7 +3,10 @@ import fs from 'fs';
 import FormData from 'form-data';
 import Material from '../models/material.model.js';
 import Subject from '../models/subject.model.js';
+import File from '../models/file.model.js';
+import User from '../models/user.model.js';
 import SubjectService from './subject.service.js';
+import SettingsService from './settings.service.js';
 
 class MaterialService {
     /**
@@ -12,12 +15,36 @@ class MaterialService {
      * removing the load from the Node.js backend.
      */
     static async processDocument(userId, file, title, content, type, subjectId = null) {
+        // 1. Storage Quota Validation
+        if (file) {
+            const user = await User.findById(userId);
+            const controls = await SettingsService.getStorageControls();
+            
+            // Determine limit: User override or Global default
+            const userLimitBytes = user.storage_limit_bytes || (controls.default_user_quota_mb * 1024 * 1024);
+            const currentUsageBytes = await File.getUserStorageUsage(userId);
+            
+            if (currentUsageBytes + file.size > userLimitBytes) {
+                const error = new Error(`Storage limit exceeded. You have used ${Math.round(currentUsageBytes / (1024 * 1024))}MB of your ${Math.round(userLimitBytes / (1024 * 1024))}MB quota.`);
+                error.statusCode = 403;
+                error.code = 'STORAGE_QUOTA_EXCEEDED';
+                throw error;
+            }
+
+            // Check global max file size
+            if (file.size > (controls.max_file_size_mb * 1024 * 1024)) {
+                const error = new Error(`File too large. Max allowed size is ${controls.max_file_size_mb}MB.`);
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         // Fallback for title: 1. Manual title, 2. Filename, 3. Default string
         const baseTitle = title || (file ? file.originalname : 'Untitled Material');
         const normalizedTitle = baseTitle.trim();
         const opContext = { userId, subjectId, title: normalizedTitle, operation: 'processDocument' };
 
-        // 1. Resolve subject
+        // 2. Resolve subject
         let finalSubjectId = subjectId;
         if (!finalSubjectId) {
             const importedSubject = await SubjectService.getOrCreateImportedSubject(userId);
@@ -25,28 +52,40 @@ class MaterialService {
             opContext.subjectId = finalSubjectId;
         }
 
-        // 2. Strict Duplicate Check (Normalize before comparison)
+        // 3. Strict Duplicate Check
         const existing = await Material.findByTitle(userId, finalSubjectId, normalizedTitle);
         if (existing) {
-            console.warn(`[MaterialService] Duplicate detected: ${JSON.stringify(opContext)}`);
             const error = new Error('A document with this title already exists in this subject.');
             error.statusCode = 409;
             error.code = 'DUPLICATE_MATERIAL';
             throw error;
         }
 
+        // 4. Track File Persistence if applicable
+        if (file) {
+            await File.create(
+                userId,
+                finalSubjectId,
+                file.filename,
+                file.originalname,
+                file.mimetype,
+                file.size,
+                file.path
+            );
+        }
+
         console.info(`[MaterialService] Starting processing: ${JSON.stringify(opContext)}`);
 
-        // 3. Save original placeholder record
-        const documentRecord = await Material.create(userId, finalSubjectId, normalizedTitle, content, type);
+        // 5. Save material record
+        const documentRecord = await Material.create(userId, finalSubjectId, normalizedTitle, content || '', type);
         
-        // 3b. Update Subject activity
+        // 6. Update Subject activity
         await Subject.touch(finalSubjectId, userId);
         
         const fullDocument = await Material.findById(documentRecord.id, userId);
 
         try {
-            // 4. Construct multipart/form-data payload for Python Engine
+            // 7. Construct multipart/form-data payload for Python Engine
             const formData = new FormData();
             formData.append('content', content || '');
             formData.append('task_type', type || 'upload');

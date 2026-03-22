@@ -12,7 +12,8 @@ const router = express.Router();
 // All material routes are protected
 router.use(protect);
 
-router.post('/upload', aiLimiter, pdfUpload.single('file'), validate(uploadMaterialSchema), MaterialController.upload);
+router.get('/settings', MaterialController.getSettings);
+router.post('/upload', aiLimiter, pdfUpload, validate(uploadMaterialSchema), MaterialController.upload);
 router.get('/history', MaterialController.getHistory);
 router.post('/chat-combined', aiLimiter, validate(chatCombinedSchema), MaterialController.chatCombined);
 router.post('/generate-combined', aiLimiter, validate(generateCombinedSchema), MaterialController.generateCombined);

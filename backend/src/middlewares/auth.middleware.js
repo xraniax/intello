@@ -47,6 +47,14 @@ const protect = async (req, res, next) => {
             });
         }
 
+        if (user.status === 'suspended') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Your account has been suspended. Please contact support.',
+                code: 'ACCOUNT_SUSPENDED'
+            });
+        }
+
         req.user = user;
         return next();
     } catch (error) {
@@ -63,4 +71,18 @@ const protect = async (req, res, next) => {
     }
 };
 
-export { protect };
+/**
+ * Admin authorization middleware.
+ * Ensures the authenticated user has the 'admin' role.
+ */
+const adminOnly = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        return next();
+    }
+    return res.status(403).json({
+        status: 'error',
+        message: 'Forbidden. Admin access required.',
+    });
+};
+
+export { protect, adminOnly };

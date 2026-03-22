@@ -41,6 +41,7 @@ app.use('/uploads', express.static('uploads'));
 import authRoutes from './routes/auth.routes.js';
 import materialRoutes from './routes/material.routes.js';
 import subjectRoutes from './routes/subject.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 import AuthController from './controllers/auth.controller.js';
 
 // Root-level OAuth routes (Direct backend callback support)
@@ -59,6 +60,7 @@ app.get('/google/callback/github', // Keeping GitHub callback separate if needed
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/subjects', subjectRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Cognify Backend is healthy' });

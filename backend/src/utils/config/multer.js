@@ -1,5 +1,6 @@
 import multer from 'multer';
 import path from 'path';
+import SettingsService from '../../services/settings.service.js';
 
 /**
  * Multer disk storage configuration.
@@ -33,18 +34,33 @@ const pdfOnlyFilter = (req, file, cb) => {
 };
 
 /**
- * Pre-configured multer instance for PDF-only uploads.
- *   - Maximum file size: 10 MB
- *   - Only .pdf files accepted (MIME + extension check)
- *   - Files stored on disk in the `uploads/` directory
+ * Middleware for PDF uploads using dynamic limits from DB.
  */
-export const pdfUpload = multer({
-  storage,
-  fileFilter: pdfOnlyFilter,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10 MB
-  },
-});
+export const pdfUpload = async (req, res, next) => {
+  try {
+    const controls = await SettingsService.getStorageControls();
+    const maxSizeBytes = (controls?.max_file_size_mb || 10) * 1024 * 1024;
+
+    const upload = multer({
+      storage,
+      fileFilter: pdfOnlyFilter,
+      limits: { fileSize: maxSizeBytes }
+    }).single('file');
+
+    upload(req, res, function (err) {
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        const customErr = new Error(`File too large. Max allowed size is ${controls.max_file_size_mb}MB.`);
+        customErr.statusCode = 400;
+        return next(customErr);
+      } else if (err) {
+        return next(err);
+      }
+      next();
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // Keep the raw storage export for any other use-case
 export { storage };

@@ -17,7 +17,7 @@ class User {
         }
 
         const result = await query(
-            'INSERT INTO users (email, password_hash, name, role, auth_provider, provider_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, role, created_at',
+            'INSERT INTO users (email, password_hash, name, role, auth_provider, provider_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, role, status, last_login_at, created_at',
             [email, hashedPassword, name, role, authProvider, providerId]
         );
         return result.rows[0];
@@ -42,7 +42,7 @@ class User {
         if (existingByEmail) {
             // Link existing account to this provider
             const result = await query(
-                'UPDATE users SET auth_provider = $1, provider_id = $2 WHERE id = $3 RETURNING id, email, name, role, created_at',
+                'UPDATE users SET auth_provider = $1, provider_id = $2 WHERE id = $3 RETURNING id, email, name, role, status, last_login_at, created_at',
                 [provider, providerId, existingByEmail.id]
             );
             return result.rows[0];
@@ -134,6 +134,54 @@ class User {
             'UPDATE users SET password_hash = $1, reset_token_hash = NULL, reset_token_expires = NULL WHERE id = $2',
             [hashedPassword, id]
         );
+    }
+
+    /**
+     * Fetch all users for admin management.
+     * Includes material counts and storage estimation.
+     */
+    static async findAll() {
+        const result = await query(
+            `SELECT u.id, u.email, u.name, u.role, u.status, u.created_at, u.last_login_at, u.storage_limit_bytes,
+             COUNT(m.id)::int as material_count,
+             COALESCE(SUM(LENGTH(m.content)), 0)::int as storage_usage_bytes
+             FROM users u
+             LEFT JOIN materials m ON u.id = m.user_id
+             GROUP BY u.id
+             ORDER BY u.created_at DESC`
+        );
+        return result.rows;
+    }
+
+    /**
+     * Administrative update of user status or role.
+     */
+    static async adminUpdate(id, updates) {
+        const fields = [];
+        const values = [];
+        let idx = 1;
+
+        for (const [key, value] of Object.entries(updates)) {
+            fields.push(`${key} = $${idx++}`);
+            values.push(value);
+        }
+
+        if (fields.length === 0) return null;
+
+        values.push(id);
+        const result = await query(
+            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, email, name, role, status, storage_limit_bytes`,
+            values
+        );
+        return result.rows[0];
+    }
+
+    /**
+     * Delete user and all associated data.
+     */
+    static async delete(id) {
+        const result = await query('DELETE FROM users WHERE id = $1 RETURNING *', [id]);
+        return result.rowCount > 0;
     }
 
     /**

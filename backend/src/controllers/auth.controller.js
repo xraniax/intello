@@ -30,6 +30,8 @@ class AuthController {
                 id: user.id,
                 name: user.name,
                 email: user.email,
+                role: user.role,
+                status: user.status,
                 token: generateToken(user.id),
             },
         });
@@ -40,12 +42,19 @@ class AuthController {
 
         const user = await User.findByEmail(email);
         if (user && (await User.comparePassword(password, user.password_hash))) {
+            if (user.status === 'suspended') {
+                res.status(403);
+                throw new Error('Your account has been suspended. Please contact support.');
+            }
+
             res.json({
                 status: 'success',
                 data: {
                     id: user.id,
                     name: user.name,
                     email: user.email,
+                    role: user.role,
+                    status: user.status,
                     token: generateToken(user.id),
                 },
             });
@@ -73,6 +82,11 @@ class AuthController {
         }
 
         const user = req.user;
+        
+        if (user.status === 'suspended') {
+            return res.redirect(`${process.env.FRONTEND_URL}/login?error=account_suspended`);
+        }
+
         const token = generateToken(user.id);
 
         // Redirect to frontend dashboard with token in URL

@@ -1,4 +1,5 @@
 import MaterialService from '../services/material.service.js';
+import SettingsService from '../services/settings.service.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import fs from 'fs';
 
@@ -56,10 +57,14 @@ class MaterialController {
                 status: 'success',
                 data: uploadedDocument,
             });
-        } finally {
+        } catch (error) {
+            // Only delete if processing failed and we haven't tracked it yet
+            // (In a real app, we might keep failed ones for debugging, 
+            // but here we clean up to save space if it's a fatal error)
             if (file) {
                 safeDelete(file.path);
             }
+            throw error;
         }
     });
 
@@ -106,6 +111,11 @@ class MaterialController {
             status: 'success',
             message: 'Document deleted successfully'
         });
+    });
+
+    static getSettings = asyncHandler(async (req, res) => {
+        const controls = await SettingsService.getStorageControls();
+        res.status(200).json({ status: 'success', data: controls });
     });
 }
 
