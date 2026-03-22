@@ -24,16 +24,8 @@ const SubjectDetail = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalConfig, setModalConfig] = useState({});
 
-    // Upload state
+    // Selection & Generation state
     const [selectedUploads, setSelectedUploads] = useState([]);
-    const [uploading, setUploading] = useState(false);
-    const [uploadError, setUploadError] = useState('');
-    const [uploadSuccess, setUploadSuccess] = useState('');
-    const [uploadValidationErrors, setUploadValidationErrors] = useState({});
-    const [newUploadTitle, setNewUploadTitle] = useState('');
-    const [newUploadContent, setNewUploadContent] = useState('');
-    const [uploadFile, setUploadFile] = useState(null);
-    const [uploadFileError, setUploadFileError] = useState('');
     const [showUploadModal, setShowUploadModal] = useState(false);
 
     // Chat state
@@ -82,78 +74,8 @@ const SubjectDetail = () => {
         }
     };
 
-    const validatePdfFile = (file) => {
-        if (!file) return null;
-        const ext = file.name.split('.').pop().toLowerCase();
-        if (ext !== 'pdf' || file.type !== 'application/pdf') return 'Only .pdf files are accepted.';
-        if (file.size > 10 * 1024 * 1024) return 'File must be under 10 MB.';
-        return null;
-    };
-
-    const handleFileChange = (e) => {
-        const selected = e.target.files[0] || null;
-        const err = validatePdfFile(selected);
-        setUploadFileError(err || '');
-        setUploadFile(err ? null : selected);
-    };
-
-    const handleUpload = async (e) => {
-        e.preventDefault();
-        setUploadError('');
-        if (uploadFileError) return;
-
-        // Handle title logic for validation
-        const titleToValidate = (newUploadTitle && newUploadTitle.trim()) || (uploadFile ? uploadFile.name : 'Untitled Material');
-
-
-        if (!newUploadContent.trim() && !uploadFile) {
-            setUploadError('Please provide either text content or a PDF document.');
-            return;
-        }
-
-        setUploading(true);
-        setUploadValidationErrors({}); // clear previous Zod errors
-        console.log('[SubjectDetail] handleUpload - id:', id);
-        toast.loading(`Uploading document to subject: ${id}`, { id: 'upload-debug' });
-        try {
-            if (uploadFile) {
-                const formData = new FormData();
-                formData.append('file', uploadFile);
-                formData.append('title', titleToValidate); // Use calculated title (fallback to filename)
-                if (newUploadContent) formData.append('content', newUploadContent);
-                formData.append('type', 'upload');
-                formData.append('subjectId', id);
-                console.log('[SubjectDetail] Sending FormData with subjectId:', id);
-                await materialService.upload(formData);
-            } else {
-                console.log('[SubjectDetail] Sending JSON with subjectId:', id);
-                await materialService.upload({
-                    title: newUploadTitle || 'New Resource',
-                    content: newUploadContent,
-                    type: 'upload',
-                    subjectId: id,
-                });
-            }
-            setNewUploadTitle('');
-            setNewUploadContent('');
-            setUploadFile(null);
-            toast.success('Material uploaded! AI processing started.', { id: 'upload-debug' });
-            setShowUploadModal(false); // Close modal on success
-            await fetchDetails();
-        } catch (err) {
-            console.error('[SubjectDetail] Upload Error:', err);
-            toast.error(err.message || 'Upload failed', { id: 'upload-debug' });
-            if (err.code === 'VALIDATION_ERROR') {
-                setUploadValidationErrors(err.validationErrors || {});
-                setUploadError('Please check the form for errors.');
-            } else if (err.statusCode === 409) {
-                setUploadError('A material with this title already exists.');
-            } else {
-                setUploadError(err.message || 'Upload failed. Please try again.');
-            }
-        } finally {
-            setUploading(false);
-        }
+    const handleUploadSuccess = async () => {
+        await fetchDetails();
     };
 
     const handleDeleteUpload = (materialId) => {
@@ -335,12 +257,7 @@ const SubjectDetail = () => {
                         toggleSelection={toggleSelection}
                         onDelete={handleDeleteUpload}
                         onGenerate={handleGenerate}
-                        onOpenUpload={() => {
-                            setUploadError('');
-                            setUploadSuccess('');
-                            setUploadValidationErrors({});
-                            setShowUploadModal(true);
-                        }}
+                        onOpenUpload={() => setShowUploadModal(true)}
                         onCollapse={() => setFilePanelCollapsed(true)}
                     />
                 }
@@ -378,17 +295,8 @@ const SubjectDetail = () => {
             <UploadModal
                 isOpen={showUploadModal}
                 onClose={() => setShowUploadModal(false)}
-                handleUpload={handleUpload}
-                uploading={uploading}
-                newUploadTitle={newUploadTitle}
-                setNewUploadTitle={setNewUploadTitle}
-                newUploadContent={newUploadContent}
-                setNewUploadContent={setNewUploadContent}
-                handleFileChange={handleFileChange}
-                uploadFile={uploadFile}
-                uploadFileError={uploadFileError}
-                uploadError={uploadError}
-                uploadValidationErrors={uploadValidationErrors}
+                subjectId={id}
+                onSuccess={handleUploadSuccess}
             />
 
             <CustomModal

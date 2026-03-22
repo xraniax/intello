@@ -19,6 +19,8 @@ const Login = () => {
 
         if (error === 'auth_failed') {
             setErr('Authentication failed. Please check your external provider permissions.');
+        } else if (error === 'account_suspended') {
+            setErr('Your account has been suspended. Please contact support if you believe this is a mistake.');
         } else if (params.get('expired') === 'true') {
             setErr('Your session has expired. Please log in again.');
         }

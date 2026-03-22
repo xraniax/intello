@@ -26,6 +26,12 @@ const Navbar = () => {
                         <>
                             <Link to="/upload" className="nav-link">Upload</Link>
                             <Link to="/history" className="nav-link">History</Link>
+                            {user.role === 'admin' && (
+                                <Link to="/admin" className="nav-link text-indigo-600 font-black bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-100 flex items-center gap-1.5 tracking-tight">
+                                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                                    Admin Console
+                                </Link>
+                            )}
 
                             <div className="h-4 w-[1px] bg-gray-200 mx-2"></div>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/AuthContext';
 import Navbar from './components/Navbar';
 import { Toaster } from 'react-hot-toast';
@@ -8,9 +8,12 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import History from './pages/History';
-import SubjectDetail from './pages/SubjectDetail';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
+import AdminUsers from './pages/Admin/AdminUsers';
+import AdminFiles from './pages/Admin/AdminFiles';
+import AdminDashboard from './pages/Admin/AdminDashboard';
+import AdminLogs from './pages/Admin/AdminLogs';
+import AdminSettings from './pages/Admin/AdminSettings';
+import AdminLayout from './components/Admin/AdminLayout';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -21,8 +24,24 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
+const AdminRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" />;
+  if (user.role !== 'admin') return <Navigate to="/dashboard" />;
+
+  return children;
+};
+
+import SubjectDetail from './pages/SubjectDetail';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+
 const AppContent = () => {
   const { loginWithToken, loading: authLoading } = useAuth();
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -41,8 +60,8 @@ const AppContent = () => {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <Navbar />
-      <main className="flex-1 min-h-0 flex flex-col overflow-y-auto">
+      {!isAdminRoute && <Navbar />}
+      <main className={`flex-1 min-h-0 flex flex-col ${isAdminRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -52,6 +71,14 @@ const AppContent = () => {
           <Route path="/subjects/:id" element={<ProtectedRoute><SubjectDetail /></ProtectedRoute>} />
           <Route path="/upload" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+          
+          {/* Admin Routes */}
+          <Route path="/admin" element={<AdminRoute><AdminLayout><AdminDashboard /></AdminLayout></AdminRoute>} />
+          <Route path="/admin/users" element={<AdminRoute><AdminLayout><AdminUsers /></AdminLayout></AdminRoute>} />
+          <Route path="/admin/files" element={<AdminRoute><AdminLayout><AdminFiles /></AdminLayout></AdminRoute>} />
+          <Route path="/admin/logs" element={<AdminRoute><AdminLayout><AdminLogs /></AdminLayout></AdminRoute>} />
+          <Route path="/admin/settings" element={<AdminRoute><AdminLayout><AdminSettings /></AdminLayout></AdminRoute>} />
+          
           <Route path="/" element={<Navigate to="/dashboard" />} />
         </Routes>
       </main>

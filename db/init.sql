@@ -77,3 +77,4 @@ CREATE TABLE chat_history (
 
     created_at TIMESTAMP DEFAULT NOW()
 );
+

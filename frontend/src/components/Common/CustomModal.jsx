@@ -13,7 +13,8 @@ const CustomModal = ({
     cancelText = 'Cancel',
     defaultValue = '',
     placeholder = 'Enter value...',
-    isLoading = false
+    isLoading = false,
+    children
 }) => {
     const [inputValue, setInputValue] = useState(defaultValue);
 
@@ -22,6 +23,16 @@ const CustomModal = ({
             setInputValue(defaultValue);
         }
     }, [isOpen, defaultValue]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && isOpen) {
+                onClose();
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
 
     const handleConfirm = () => {
         if (type === 'prompt') {
@@ -72,43 +83,49 @@ const CustomModal = ({
                         </p>
                     </div>
 
-                    {/* Body / Prompt Input */}
-                    <div className="p-8">
-                        {type === 'prompt' && (
-                            <input
-                                type="text"
-                                className="input-field py-4 text-lg font-medium"
-                                value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}
-                                placeholder={placeholder}
-                                autoFocus
-                                onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
-                            />
-                        )}
-                    </div>
+                    {/* Body / Prompt Input / Children */}
+                    {children ? (
+                        children
+                    ) : (
+                        <>
+                            <div className="p-8">
+                                {type === 'prompt' && (
+                                    <input
+                                        type="text"
+                                        className="input-field py-4 text-lg font-medium"
+                                        value={inputValue}
+                                        onChange={(e) => setInputValue(e.target.value)}
+                                        placeholder={placeholder}
+                                        autoFocus
+                                        onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
+                                    />
+                                )}
+                            </div>
 
-                    {/* Footer Actions */}
-                    <div className="p-6 bg-gray-50/50 flex flex-col sm:flex-row gap-3">
-                        <button
-                            onClick={onClose}
-                            className="btn-secondary flex-1 py-4 text-sm font-bold uppercase tracking-widest"
-                        >
-                            {cancelText}
-                        </button>
-                        <button
-                            onClick={handleConfirm}
-                            disabled={isLoading || (type === 'prompt' && !inputValue.trim())}
-                            className={`btn-primary flex-1 py-4 text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-2 ${
-                                type === 'warning' ? 'bg-red-500 border-red-500 text-white hover:bg-red-600' : ''
-                            }`}
-                        >
-                            {isLoading ? (
-                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                            ) : (
-                                confirmText
-                            )}
-                        </button>
-                    </div>
+                            {/* Footer Actions */}
+                            <div className="p-6 bg-gray-50/50 flex flex-col sm:flex-row gap-3">
+                                <button
+                                    onClick={onClose}
+                                    className="btn-secondary flex-1 py-4 text-sm font-bold uppercase tracking-widest"
+                                >
+                                    {cancelText}
+                                </button>
+                                <button
+                                    onClick={handleConfirm}
+                                    disabled={isLoading || (type === 'prompt' && !inputValue.trim())}
+                                    className={`btn-primary flex-1 py-4 text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-2 ${
+                                        type === 'warning' ? 'bg-red-500 border-red-500 text-white hover:bg-red-600' : ''
+                                    }`}
+                                >
+                                    {isLoading ? (
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                    ) : (
+                                        confirmText
+                                    )}
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </motion.div>
             </div>
         </AnimatePresence>

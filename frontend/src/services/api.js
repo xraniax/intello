@@ -60,6 +60,7 @@ export const authService = {
 };
 
 export const materialService = {
+    getSettings: () => api.get('/materials/settings'),
     upload: (data) => {
         // Data can be FormData (with file) or plain object (text-only)
         const config = data instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
@@ -76,7 +77,28 @@ export const subjectService = {
     getOne: (id) => api.get(`/subjects/${id}`),
     create: (name, description) => api.post('/subjects', { name, description }),
     rename: (id, name) => api.patch(`/subjects/${id}`, { name }),
-    delete: (id) => api.delete(`/subjects/${id}`),
+    delete: (id) => api.delete(`/subjects/${id}`)
+};
+
+export const adminService = {
+    getUsers: () => api.get('/admin/users'),
+    updateUserStatus: (userId, status, reason = '') => 
+        api.patch(`/admin/users/${userId}/status`, { status, reason }),
+    updateUserRole: (userId, role) => 
+        api.patch(`/admin/users/${userId}/role`, { role }),
+    updateUserStorageLimit: (userId, limitBytes) =>
+        api.patch(`/admin/users/${userId}/storage-limit`, { limitBytes }),
+    deleteUser: (id) => api.delete(`/admin/users/${id}`),
+    
+    // File Management
+    getFiles: (params) => api.get('/admin/files', { params }),
+    deleteFile: (id) => api.delete(`/admin/files/${id}`),
+    
+    // Settings Management
+    getSettings: () => api.get('/admin/settings'),
+    updateSettings: (settings) => api.patch('/admin/settings', settings),
+    
+    getLogs: () => api.get('/admin/logs')
 };
 
 export default api;
