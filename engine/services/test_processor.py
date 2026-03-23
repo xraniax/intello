@@ -1,10 +1,12 @@
+from uuid import UUID
+
 try:
     from .processor import process_subject
 except ImportError:
     from processor import process_subject
 
-# Pick a real subject_id from your DB
-SUBJECT_ID = 1
+# Replace with a real subjects.id (UUID) from your DB
+SUBJECT_ID = UUID("00000000-0000-0000-0000-000000000001")
 TOPIC = None  # or a string like "graphs"
 
 if __name__ == "__main__":

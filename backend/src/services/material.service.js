@@ -60,7 +60,7 @@ class MaterialService {
             }
 
             // 5. Send directly to Python Engine's process-document route
-            const aiResponse = await axios.post(`${process.env.ENGINE_URL}/process-document`, formData, {
+            const aiResponse = await axios.post(`${process.env.ENGINE_URL || 'http://engine:8000'}/process-document`, formData, {
                 headers: {
                     ...formData.getHeaders()
                 },

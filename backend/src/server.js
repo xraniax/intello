@@ -2,6 +2,8 @@ import app from './app.js';
 import validateEnv from './utils/validateEnv.js';
 // Middlewares
 
+validateEnv();
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {

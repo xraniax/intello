@@ -1,13 +1,15 @@
 fastapi
 uvicorn
+requests
 openai
 python-multipart
 PyPDF2
 pillow
-pytesseract 
+pytesseract
 python-dotenv
 pdf2image
 pgvector
 psycopg2-binary
 sqlalchemy
+tiktoken
 typing-extensions

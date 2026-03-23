@@ -11,16 +11,19 @@ except ImportError:
 from PyPDF2 import PdfReader
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DEFAULT_UPLOADS_DIR = os.path.join(_REPO_ROOT, "backend", "uploads")
-SUPPORTED_EXTENSIONS = {".pdf"}
+_DEFAULT_UPLOADS = os.path.join(_REPO_ROOT, "backend", "uploads")
+# In Docker, mount uploads here (e.g. ./backend/uploads:/data/uploads) and set COGNIFY_UPLOADS_DIR=/data/uploads
+DEFAULT_UPLOADS_DIR = os.getenv("COGNIFY_UPLOADS_DIR", _DEFAULT_UPLOADS)
+SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 from pdf2image import convert_from_path
 from pytesseract import image_to_string
+from PIL import Image
 import logging
 
 logger = logging.getLogger("engine-preprocessing")
 
 
-DocumentType = Literal["PDF", "ScannedDoc"]
+DocumentType = Literal["PDF", "ScannedDoc", "Image"]
 
 
 def _extract_text_from_digital_pdf(file_path: str, max_pages: Optional[int] = None) -> str:
@@ -74,8 +77,67 @@ def _clean_text(text: str) -> str:
     lines = [line for line in lines if line]
     return "\n".join(lines).strip()
 
-#split the text into chunks to be used for embedding
+# extract text from image files via OCR
+def _extract_text_from_image(file_path: str) -> str:
+    try:
+        with Image.open(file_path) as image:
+            text = image_to_string(image)
+            return (text or "").strip()
+    except Exception as e:
+        logger.error(f"Failed OCR for image {file_path}: {e}")
+        raise
+
+# token-based chunking for LLM compatibility
+def _chunk_text_by_tokens(text: str, max_tokens: int = 300, overlap: int = 50) -> List[str]:
+    if not text:
+        return []
+
+    if max_tokens <= 0:
+        return [text]
+
+    if overlap < 0:
+        overlap = 0
+
+    try:
+        import tiktoken
+    except ImportError as e:
+        logger.warning(f"tiktoken unavailable, fallback to charset chunking: {e}")
+        raise
+
+    try:
+        try:
+            encoder = tiktoken.encoding_for_model("gpt-4")
+        except Exception:
+            encoder = tiktoken.get_encoding("cl100k_base")
+
+        tokens = encoder.encode(text)
+        chunks: List[str] = []
+        length = len(tokens)
+        start = 0
+
+        while start < length:
+            end = min(start + max_tokens, length)
+            chunk_tokens = tokens[start:end]
+            chunk = encoder.decode(chunk_tokens, errors="replace")
+            chunks.append(chunk)
+
+            if end == length:
+                break
+
+            start = max(0, end - overlap)
+
+        return chunks
+    except Exception as e:
+        logger.warning(f"Token-based chunking failed: {e}")
+        raise
+
+# chunk by tokens with char fallback
 def _chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> List[str]:
+    try:
+        return _chunk_text_by_tokens(text, max_tokens=max_chars, overlap=overlap)
+    except Exception:
+        logger.warning("Falling back to character-based chunking.")
+
     if not text:
         return []
 
@@ -101,15 +163,22 @@ def _chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> List[st
 
     return chunks
 
-#high level preprocessing function
-def preprocess_document(
+
+def clean_text_step(raw_text: str) -> str:
+    """Normalize and clean raw extracted text (reusable pipeline step)."""
+    return _clean_text(raw_text)
+
+
+def preprocess_step(
     file_path: str,
     *,
     forced_type: Optional[DocumentType] = None,
-    max_chunk_chars: int = 1500,
-    chunk_overlap: int = 200,
 ) -> Dict:
-    logger.info(f"Preprocessing document: {file_path}")
+    """
+    Extract and clean text from a file (no chunking).
+    Returns type, raw_text, cleaned_text.
+    """
+    logger.info(f"Preprocess step (extract+clean): {file_path}")
     if not os.path.isfile(file_path):
         logger.error(f"File not found: {file_path}")
         raise FileNotFoundError(f"File not found: {file_path}")
@@ -126,29 +195,68 @@ def preprocess_document(
             logger.warning(f"Type detection failed for {file_path}: {e}. Falling back to 'PDF'")
             doc_type = "PDF"
 
+    ext = os.path.splitext(file_path)[1].lower()
+
     try:
-        if doc_type == "PDF":
-            logger.info("Extracting text from digital PDF...")
-            raw_text = _extract_text_from_digital_pdf(file_path)
+        if ext in {".png", ".jpg", ".jpeg"}:
+            doc_type = "Image"
+            logger.info("Extracting text from image (OCR)...")
+            raw_text = _extract_text_from_image(file_path)
+        elif ext == ".pdf":
+            if doc_type == "PDF":
+                logger.info("Extracting text from digital PDF...")
+                raw_text = _extract_text_from_digital_pdf(file_path)
+            else:
+                logger.info("Extracting text from scanned PDF (OCR)...")
+                raw_text = _extract_text_from_scanned_pdf(file_path)
         else:
-            logger.info("Extracting text from scanned PDF (OCR)...")
-            raw_text = _extract_text_from_scanned_pdf(file_path)
-        
+            logger.error(f"Unsupported file extension: {ext}")
+            raise ValueError(f"Unsupported document extension: {ext}")
+
         if not raw_text.strip():
             logger.warning(f"No text extracted from {file_path}")
     except Exception as e:
         logger.error(f"Text extraction failed for {file_path}: {e}")
         raise ValueError(f"Failed to extract text: {str(e)}")
 
-    logger.info("Cleaning and chunking text...")
     cleaned_text = _clean_text(raw_text)
-    chunks = _chunk_text(cleaned_text, max_chars=max_chunk_chars, overlap=chunk_overlap)
-
-    logger.info(f"Finished preprocessing. Extracted {len(chunks)} chunks.")
     return {
         "type": doc_type,
         "raw_text": raw_text,
         "cleaned_text": cleaned_text,
+    }
+
+
+def chunk_step(
+    text: str,
+    *,
+    max_chunk_chars: int = 1500,
+    chunk_overlap: int = 200,
+) -> List[str]:
+    """Split cleaned text into chunks (reusable pipeline step)."""
+    return _chunk_text(text, max_chars=max_chunk_chars, overlap=chunk_overlap)
+
+
+#high level preprocessing function
+def preprocess_document(
+    file_path: str,
+    *,
+    forced_type: Optional[DocumentType] = None,
+    max_chunk_chars: int = 1500,
+    chunk_overlap: int = 200,
+) -> Dict:
+    logger.info(f"Preprocessing document: {file_path}")
+    extracted = preprocess_step(file_path, forced_type=forced_type)
+    chunks = chunk_step(
+        extracted["cleaned_text"],
+        max_chunk_chars=max_chunk_chars,
+        chunk_overlap=chunk_overlap,
+    )
+    logger.info(f"Finished preprocessing. Extracted {len(chunks)} chunks.")
+    for i, chunk in enumerate(chunks):
+        logger.debug(f"Chunk {i}: {len(chunk)} characters")
+    return {
+        **extracted,
         "chunks": chunks,
         "num_chunks": len(chunks),
     }

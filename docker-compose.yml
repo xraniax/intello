@@ -12,7 +12,7 @@ services:
     env_file:
       - .env
     environment:
-      - VITE_API_URL=${REACT_APP_API_BASE}
+      - VITE_API_URL=${VITE_API_URL}
       - CHOKIDAR_USEPOLLING=true
 
   backend:
@@ -41,9 +41,31 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
     volumes:
       - ./engine:/app
+      - ./backend/uploads:/data/uploads
+    environment:
+      COGNIFY_UPLOADS_DIR: /data/uploads
     command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: always
 
   db:
     image: pgvector/pgvector:pg16
@@ -56,7 +78,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d intello_db" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-elearning}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -64,3 +86,4 @@ services:
 volumes:
   backend_node_modules:
   postgres_data:
+  ollama_data:
