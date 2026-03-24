@@ -1,4 +1,5 @@
 from typing import List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -36,3 +37,8 @@ class ProcessTextRequest(BaseModel):
         default=True,
         description="If false, returns chunks only (no calls to Ollama).",
     )
+
+class RetrieveRequest(BaseModel):
+    subject_id: UUID
+    topic: Optional[str] = None
+    top_k: int = Field(default=5, ge=1, le=50)

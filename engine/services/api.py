@@ -6,7 +6,8 @@ from typing import List, Optional
 from uuid import UUID
 
 import requests
-from fastapi import FastAPI, File, HTTPException, UploadFile, Request
+from fastapi import FastAPI, File, HTTPException, UploadFile, Request, Depends
+from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
@@ -14,7 +15,14 @@ from .preprocessing import DEFAULT_UPLOADS_DIR, preprocess_document, preprocess_
 from .document_processor import process_document, process_text_pipeline
 from .embeddings import embed_step, ollama_tags_url
 from .processor import process_subject
-from .schemas import EmbedRequest, ProcessTextRequest
+from .schemas import EmbedRequest, ProcessTextRequest, RetrieveRequest
+from .retrieval import retrieve_chunks_by_topic
+
+try:
+    import database
+    SessionLocal = database.SessionLocal
+except ImportError:
+    from ..database import SessionLocal
 
 logging.basicConfig(
     level=logging.INFO,
@@ -332,3 +340,33 @@ async def process_subject_route(
         topic=topic,
     )
     return result
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.post("/retrieve")
+async def retrieve_route(body: RetrieveRequest, db: Session = Depends(get_db)):
+    """Retrieve top-k relevant chunks for a given topic and subject."""
+    logger.info("Retrieve request for subject: %s, topic: %s", body.subject_id, body.topic)
+    try:
+        chunks = retrieve_chunks_by_topic(db, str(body.subject_id), body.topic, body.top_k)
+        return {
+            "status": "success",
+            "stage": "retrieval",
+            "count": len(chunks),
+            "chunks": [{"id": c.id, "content": c.content, "document_id": c.document_id} for c in chunks]
+        }
+    except Exception as e:
+        logger.exception("Retrieval failed")
+        return _stage_error_response(
+            "retrieval",
+            "Retrieval failed",
+            details=str(e),
+            status_code=500,
+        )
