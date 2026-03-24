@@ -13,7 +13,11 @@ from PyPDF2 import PdfReader
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _DEFAULT_UPLOADS = os.path.join(_REPO_ROOT, "backend", "uploads")
 # In Docker, mount uploads here (e.g. ./backend/uploads:/data/uploads) and set COGNIFY_UPLOADS_DIR=/data/uploads
-DEFAULT_UPLOADS_DIR = os.getenv("COGNIFY_UPLOADS_DIR", _DEFAULT_UPLOADS)
+_DEFAULT_DOCKER_UPLOADS = "/data/uploads"
+DEFAULT_UPLOADS_DIR = os.getenv(
+    "COGNIFY_UPLOADS_DIR",
+    _DEFAULT_DOCKER_UPLOADS if os.path.isdir(_DEFAULT_DOCKER_UPLOADS) else _DEFAULT_UPLOADS,
+)
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 from pdf2image import convert_from_path
 from pytesseract import image_to_string
@@ -49,7 +53,17 @@ def _extract_text_from_scanned_pdf(file_path: str, dpi: int = 300) -> str:
     texts: List[str] = []
 
     for image in images:
-        text = image_to_string(image)
+        try:
+            text = image_to_string(image)
+        except Exception as e:
+            # Make OCR failures clearer when tesseract isn't installed/misconfigured.
+            msg = str(e).lower()
+            if "tesseract" in msg and ("not found" in msg or "missing" in msg or "no such" in msg):
+                raise RuntimeError(
+                    "Tesseract OCR is not available in the engine container. "
+                    "Ensure `tesseract-ocr` is installed and configured."
+                ) from e
+            raise
         if text:
             texts.append(text)
 
@@ -84,6 +98,13 @@ def _extract_text_from_image(file_path: str) -> str:
             text = image_to_string(image)
             return (text or "").strip()
     except Exception as e:
+        msg = str(e).lower()
+        if "tesseract" in msg and ("not found" in msg or "missing" in msg or "no such" in msg):
+            logger.error("Tesseract OCR is not available: %s", e)
+            raise RuntimeError(
+                "Tesseract OCR is not available in the engine container. "
+                "Ensure `tesseract-ocr` is installed and configured."
+            ) from e
         logger.error(f"Failed OCR for image {file_path}: {e}")
         raise
 
@@ -97,6 +118,10 @@ def _chunk_text_by_tokens(text: str, max_tokens: int = 300, overlap: int = 50) -
 
     if overlap < 0:
         overlap = 0
+
+    # Prevent overlap >= max_tokens which can stall progress on some inputs.
+    if max_tokens > 0 and overlap >= max_tokens:
+        overlap = max(0, max_tokens - 1)
 
     try:
         import tiktoken
@@ -133,11 +158,6 @@ def _chunk_text_by_tokens(text: str, max_tokens: int = 300, overlap: int = 50) -
 
 # chunk by tokens with char fallback
 def _chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> List[str]:
-    try:
-        return _chunk_text_by_tokens(text, max_tokens=max_chars, overlap=overlap)
-    except Exception:
-        logger.warning("Falling back to character-based chunking.")
-
     if not text:
         return []
 
@@ -146,6 +166,16 @@ def _chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> List[st
 
     if overlap < 0:
         overlap = 0
+
+    # Token chunking is preferred when available, but the public API uses "max_chunk_chars".
+    # For token chunking, convert chars -> tokens approximately so the parameter means the same thing.
+    try:
+        approx_chars_per_token = 4  # heuristic for cl100k_base-like tokenizers
+        max_tokens = max(1, int(max_chars / approx_chars_per_token))
+        overlap_tokens = max(0, int(overlap / approx_chars_per_token))
+        return _chunk_text_by_tokens(text, max_tokens=max_tokens, overlap=overlap_tokens)
+    except Exception:
+        logger.warning("Falling back to character-based chunking.")
 
     chunks: List[str] = []
     start = 0

@@ -64,7 +64,8 @@ def generate_embeddings(texts: List[str], timeout: int = 10, retries: int = 3) -
     for idx, chunk in enumerate(texts):
         try:
             emb = generate_embedding(chunk, timeout=timeout, retries=retries)
-            embeddings.append(emb)
+            # Stability: avoid persisting empty vectors into pgvector.
+            embeddings.append(emb if emb else None)
         except Exception as err:
             logger.warning("Embedding for chunk %d failed after retries: %s", idx, err)
             embeddings.append(None)
