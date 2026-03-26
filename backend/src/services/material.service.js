@@ -59,6 +59,11 @@ class MaterialService {
                 formData.append('file', dummyContent, { filename: 'note.pdf', contentType: 'application/pdf' });
             }
 
+            // Pass subject_id for engine-side persistence (RAG support)
+            if (finalSubjectId) {
+                formData.append('subject_id', finalSubjectId);
+            }
+
             // 5. Send directly to Python Engine's process-document route
             const aiResponse = await axios.post(`${process.env.ENGINE_URL || 'http://engine:8000'}/process-document`, formData, {
                 headers: {
@@ -100,29 +105,30 @@ class MaterialService {
     }
 
     /**
-     * AI Chat grounded in specific document IDs
+     * AI Chat grounded in a subject's knowledge base.
      */
     static async chatWithContext(userId, materialIds, question) {
         const sourceDocuments = await Material.findByIds(materialIds, userId);
         if (sourceDocuments.length === 0) return { result: "No source documents selected for context." };
 
-        // Combine content from selected documents
-        const context = sourceDocuments.map(m => `--- SOURCE: ${m.title} ---\n${m.content}`).join('\n\n');
+        // We use the subject_id of the first document to provide the search context
+        const subjectId = sourceDocuments[0].subject_id;
 
         try {
             const endpoint = `${process.env.ENGINE_URL}/chat`;
-            const payload = { context, question };
-            const options = { timeout: 15000 };
+            const payload = { 
+                subject_id: subjectId, 
+                question: question,
+                top_k: 8 // Increase context for better chat
+            };
+            const options = { timeout: 30000 };
 
             const aiResponse = process.env.NODE_ENV === 'test' && global.__mockAxiosPost
                 ? await global.__mockAxiosPost(endpoint, payload, options)
                 : await axios.post(endpoint, payload, options);
 
-            // Update Subject activity for involved materials
-            // Note: In this specific implementation, we assume materials belong to a subject grounded in context
-            if (sourceDocuments.length > 0 && sourceDocuments[0].subject_id) {
-                await Subject.touch(sourceDocuments[0].subject_id, userId);
-            }
+            // Update Subject activity
+            await Subject.touch(subjectId, userId);
 
             return aiResponse.data;
         } catch (error) {
@@ -136,32 +142,43 @@ class MaterialService {
     }
 
     /**
-     * Generate study tools grounded in specific document IDs
+     * AI Generation grounded in a subject's knowledge base.
      */
     static async generateWithContext(userId, materialIds, taskType) {
         const sourceDocuments = await Material.findByIds(materialIds, userId);
         if (sourceDocuments.length === 0) return { result: "No source documents selected for context." };
 
-        const context = sourceDocuments.map(m => `--- SOURCE: ${m.title} ---\n${m.content}`).join('\n\n');
+        const subjectId = sourceDocuments[0].subject_id;
+        
+        // Map backend task types to engine material types
+        const typeMap = {
+            'summary': 'summary',
+            'quiz': 'quiz',
+            'flashcards': 'flashcards',
+            'mock_exam': 'exam'
+        };
+        const materialType = typeMap[taskType] || 'summary';
 
         try {
             const endpoint = `${process.env.ENGINE_URL}/generate`;
-            const payload = { content: context, task_type: taskType };
-            const options = { timeout: 30000 };
+            const payload = { 
+                subject_id: subjectId, 
+                material_type: materialType,
+                top_k: 10 // More context for study material generation
+            };
+            const options = { timeout: 300000 }; // 5 minutes for generation
 
             const aiResponse = process.env.NODE_ENV === 'test' && global.__mockAxiosPost
                 ? await global.__mockAxiosPost(endpoint, payload, options)
                 : await axios.post(endpoint, payload, options);
 
-            // Update Subject activity for involved materials
-            if (sourceDocuments.length > 0 && sourceDocuments[0].subject_id) {
-                await Subject.touch(sourceDocuments[0].subject_id, userId);
-            }
+            // Update Subject activity
+            await Subject.touch(subjectId, userId);
 
             return aiResponse.data;
         } catch (error) {
             console.error('[MaterialService] Engine Generate Error:', error.message);
-            const isTimeout = error.code === 'ECONNABORTED';
+            const isTimeout = error.code === 'ECONNABORTED' || error.message.includes('timeout');
             const enhancedError = new Error(isTimeout ? 'AI engine took too long to generate content.' : 'AI engine generation failed.');
             enhancedError.statusCode = 503;
             enhancedError.code = isTimeout ? 'ENGINE_TIMEOUT' : 'ENGINE_UNAVAILABLE';

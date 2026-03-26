@@ -10,7 +10,7 @@ logger = logging.getLogger("engine-embeddings")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
 # Full URL override keeps Docker/local setups working when only the base host changes.
 OLLAMA_EMBEDDINGS_URL = os.getenv("OLLAMA_EMBEDDINGS_URL") or f"{OLLAMA_BASE_URL}/api/embeddings"
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
+OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 
 
 def ollama_tags_url() -> str:
@@ -23,7 +23,7 @@ def generate_embedding(text: str, timeout: int = 10, retries: int = 3) -> List[f
         return []
 
     payload: Dict[str, Any] = {
-        "model": OLLAMA_MODEL,
+        "model": OLLAMA_EMBEDDING_MODEL,
         "prompt": text,
     }
 

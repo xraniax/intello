@@ -1,4 +1,8 @@
 from typing import List, Optional
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -42,3 +46,72 @@ class RetrieveRequest(BaseModel):
     subject_id: UUID
     topic: Optional[str] = None
     top_k: int = Field(default=5, ge=1, le=50)
+
+class GenerateRequest(BaseModel):
+    subject_id: UUID
+    topic: Optional[str] = None
+    material_type: Literal["summary", "quiz", "flashcards", "exam"]
+    top_k: int = Field(default=5, ge=1, le=50)
+    language: str = Field(default="en")
+
+class ChatRequest(BaseModel):
+    subject_id: UUID
+    question: str
+    top_k: int = Field(default=5, ge=1, le=50)
+    language: str = Field(default="en")
+
+# --- Structured Output Models ---
+
+class ExamQuestion(BaseModel):
+    question: str
+    answer_space: str = "__________"
+
+class ExamAnswerSheetItem(BaseModel):
+    question_id: int
+    answer: str
+    explanation: str
+
+class ExamOutput(BaseModel):
+    type: Literal["exam"] = "exam"
+    questions: List[ExamQuestion]
+    answer_sheet: List[ExamAnswerSheetItem]
+
+class QuizQuestion(BaseModel):
+    id: int
+    question: str
+    options: Optional[List[str]] = None
+    correct_answer: str
+    explanation: str
+
+class QuizOutput(BaseModel):
+    type: Literal["quiz"] = "quiz"
+    questions: List[QuizQuestion]
+
+class Flashcard(BaseModel):
+    front: str
+    back: str
+
+class FlashcardsOutput(BaseModel):
+    type: Literal["flashcards"] = "flashcards"
+    cards: List[Flashcard]
+
+# --- Evaluation Models ---
+
+class QuizSubmission(BaseModel):
+    question_id: int
+    user_answer: str
+
+class QuizEvaluateRequest(BaseModel):
+    # Questions (with correct answers) are passed back for stateless evaluation
+    questions: List[QuizQuestion]
+    submissions: List[QuizSubmission]
+
+class QuizResultItem(BaseModel):
+    question_id: int
+    status: Literal["correct", "wrong"]
+    color: Literal["green", "red"]
+    explanation: Optional[str] = None
+
+class QuizEvaluateResponse(BaseModel):
+    type: Literal["quiz_result"] = "quiz_result"
+    results: List[QuizResultItem]

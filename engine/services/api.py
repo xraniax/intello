@@ -6,7 +6,7 @@ from typing import List, Optional
 from uuid import UUID
 
 import requests
-from fastapi import FastAPI, File, HTTPException, UploadFile, Request, Depends
+from fastapi import FastAPI, File, HTTPException, UploadFile, Request, Depends, Form
 from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -15,14 +15,22 @@ from .preprocessing import DEFAULT_UPLOADS_DIR, preprocess_document, preprocess_
 from .document_processor import process_document, process_text_pipeline
 from .embeddings import embed_step, ollama_tags_url
 from .processor import process_subject
-from .schemas import EmbedRequest, ProcessTextRequest, RetrieveRequest
 from .retrieval import retrieve_chunks_by_topic
+from .generation import generate_study_material, evaluate_quiz, generate_chat_response
+from .schemas import (
+    EmbedRequest, ProcessTextRequest, RetrieveRequest, GenerateRequest,
+    ChatRequest, QuizEvaluateRequest, QuizEvaluateResponse
+)
 
 try:
     import database
+    import models
     SessionLocal = database.SessionLocal
+    Document = models.Document
+    Chunk = models.Chunk
 except ImportError:
     from ..database import SessionLocal
+    from ..models import Document, Chunk
 
 logging.basicConfig(
     level=logging.INFO,
@@ -257,12 +265,17 @@ async def process_text_route(body: ProcessTextRequest):
 
 
 @app.post("/process-document")
-async def process_document_route(file: UploadFile = File(...)):
+async def process_document_route(
+    file: UploadFile = File(...),
+    subject_id: Optional[UUID] = Form(None),
+    db: Session = Depends(get_db)
+):
     """
     Upload a single file and run the full pipeline: preprocess → chunk → embed.
-    Response includes prior fields plus `embeddings` when embedding succeeds (entries may be null per chunk).
+    If subject_id is provided, the document and chunks are saved to the database.
+    Response includes prior fields plus `embeddings` when embedding succeeds.
     """
-    logger.info("Full pipeline request for: %s", file.filename)
+    logger.info("Full pipeline request for: %s (subject_id: %s)", file.filename, subject_id)
     tmp_path: Optional[str] = None
     try:
         try:
@@ -274,8 +287,46 @@ async def process_document_route(file: UploadFile = File(...)):
                 details=str(e),
                 status_code=400,
             )
+        
         logger.info("Saved temporary file to: %s", tmp_path)
         result = process_document(tmp_path, include_embeddings=True)
+        
+        # Persistence Logic
+        if subject_id:
+            try:
+                # 1. Create Document record
+                new_doc = Document(
+                    subject_id=subject_id,
+                    filename=file.filename,
+                    file_path=tmp_path # Note: this is a temp path, but follows existing model
+                )
+                db.add(new_doc)
+                db.commit()
+                db.refresh(new_doc)
+                
+                # 2. Persist Chunks
+                chunks = result.get("chunks", [])
+                embeddings = result.get("embeddings", [])
+                
+                for i, content in enumerate(chunks):
+                    emb = embeddings[i] if i < len(embeddings) else None
+                    new_chunk = Chunk(
+                        document_id=new_doc.id,
+                        content=content,
+                        embedding=emb,
+                        chunk_index=i
+                    )
+                    db.add(new_chunk)
+                
+                db.commit()
+                logger.info("Persisted document %d and %d chunks to DB", new_doc.id, len(chunks))
+                result["document_id"] = new_doc.id
+            except Exception as e:
+                db.rollback()
+                logger.error("Failed to persist document/chunks: %s", e)
+                # We continue since the extraction was successful, but we add a warning
+                result["persistence_error"] = str(e)
+
         out = {
             "status": "success",
             "message": "Document processed",
@@ -370,3 +421,83 @@ async def retrieve_route(body: RetrieveRequest, db: Session = Depends(get_db)):
             details=str(e),
             status_code=500,
         )
+
+@app.post("/chat")
+async def chat_route(body: ChatRequest, db: Session = Depends(get_db)):
+    """Conversational chat grounded in retrieved context."""
+    logger.info("Chat request: subject=%s, query=%s", body.subject_id, body.question)
+    try:
+        # 1. Retrieve context chunks
+        chunks = retrieve_chunks_by_topic(db, str(body.subject_id), None, body.top_k)
+        chunk_texts = [c.content for c in chunks if c.content]
+        
+        # 2. Generate response
+        context = "\n\n".join(chunk_texts)
+        response = generate_chat_response(context, body.question, body.language)
+        
+        return {
+            "status": "success",
+            "stage": "chat",
+            "response": response
+        }
+    except Exception as e:
+        logger.exception("Chat failed")
+        return _stage_error_response(
+            "chat",
+            "Chat failed",
+            details=str(e),
+            status_code=500,
+        )
+
+@app.post("/generate")
+async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
+    """Generate study materials using LLM based on retrieved context."""
+    logger.info("Generate request: subject=%s, type=%s, topic=%s", body.subject_id, body.material_type, body.topic)
+    try:
+        # 1. Retrieve context chunks
+        chunks = retrieve_chunks_by_topic(db, str(body.subject_id), body.topic, body.top_k)
+        chunk_texts = [c.content for c in chunks if c.content]
+        
+        # 2. Generate material
+        material = generate_study_material(chunk_texts, body.material_type, body.topic, body.language)
+        
+        # material can be a string (summary) or a dict (structured modes)
+        return {
+            "status": "success",
+            "stage": "generation",
+            "material_type": body.material_type,
+            "content": material
+        }
+    except Exception as e:
+        logger.exception("Generation failed")
+        return _stage_error_response(
+            "generation",
+            "Study material generation failed",
+            details=str(e),
+            status_code=500,
+        )
+
+@app.post("/evaluate-quiz", response_model=QuizEvaluateResponse)
+async def evaluate_quiz_route(body: QuizEvaluateRequest):
+    """
+    Evaluate user answers for a quiz.
+    The request includes the original questions (with correct answers) 
+    and the user submissions.
+    """
+    logger.info("Evaluate quiz request: %d submissions", len(body.submissions))
+    try:
+        # Convert Pydantic models to dicts for the helper
+        questions_dict = [q.model_dump() for q in body.questions]
+        submissions_dict = [s.model_dump() for s in body.submissions]
+        
+        result = evaluate_quiz(questions_dict, submissions_dict)
+        return result
+    except Exception as e:
+        logger.exception("Quiz evaluation failed")
+        return _stage_error_response(
+            "evaluation",
+            "Quiz evaluation failed",
+            details=str(e),
+            status_code=500,
+        )
+
