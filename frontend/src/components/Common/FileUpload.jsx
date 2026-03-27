@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMaterialStore } from '../../store/useMaterialStore';
 import { useSubjectStore } from '../../store/useSubjectStore';
+import { useUIStore } from '../../store/useUIStore';
 import { materialService } from '../../services/api';
 import { File as FileIcon, Upload as UploadIcon, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -19,6 +20,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
 
     const uploadMaterial = useMaterialStore((state) => state.actions.uploadMaterial);
     const uploading = useMaterialStore((state) => state.loading);
+    const uiError = useUIStore(state => state.data.errors['upload']);
     const subjects = useSubjectStore((state) => state.data.subjects);
     const fetchSubjects = useSubjectStore((state) => state.actions.fetchSubjects);
 
@@ -40,6 +42,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
     }, [initialSubjectId, subjects.length, fetchSubjects]);
 
     const handleFileChange = (e) => {
+        if (uploading) return;
         const selected = e.target.files[0] || null;
         if (!selected) return;
 
@@ -64,14 +67,22 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
         if (!title) setTitle(selected.name.replace(`.${ext}`, ''));
     };
 
+    const validate = () => {
+        const errors = {};
+        if (!title.trim() && !file) {
+            errors.title = 'Title or file is required';
+        }
+        if (!file && !content.trim()) {
+            errors.content = 'Document content or PDF is required';
+        }
+        setValidationErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!file && !content.trim()) {
-            toast.error('Please provide a PDF or enter text content');
-            return;
-        }
-
-        setValidationErrors({});
+        if (uploading) return;
+        if (!validate()) return;
 
         try {
             const payload = file ? new FormData() : {};
@@ -99,7 +110,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
             if (err.code === 'VALIDATION_ERROR') {
                 setValidationErrors(err.validationErrors || {});
             } else {
-                toast.error(err.message || 'Upload failed');
+                // Global error handled by MaterialStore -> UIStore
             }
         }
     };
@@ -112,10 +123,15 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     <input
                         type="text"
                         placeholder="e.g. Machine Learning Basics"
-                        className={`input-field text-sm ${validationErrors.title ? 'border-red-300 ring-2 ring-red-50' : ''}`}
+                        className={`input-field text-sm ${validationErrors.title ? 'border-red-400 ring-4 ring-red-50' : ''}`}
                         value={title}
-                        onChange={(e) => setTitle(e.target.value)}
+                        onChange={(e) => {
+                            setTitle(e.target.value);
+                            if (validationErrors.title) setValidationErrors(prev => ({ ...prev, title: '' }));
+                        }}
+                        disabled={uploading}
                     />
+                    {validationErrors.title && <p className="text-[10px] text-red-500 font-bold mt-1 ml-1">{validationErrors.title}</p>}
                 </div>
                 {!initialSubjectId && (
                     <div className="space-y-2">
@@ -124,6 +140,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                             className="input-field text-sm bg-white"
                             value={subjectId}
                             onChange={(e) => setSubjectId(e.target.value)}
+                            disabled={uploading}
                         >
                             <option value="">Quick Import (No Subject)</option>
                             {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -131,6 +148,12 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     </div>
                 )}
             </div>
+
+            {uiError && (
+                <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl text-xs font-bold animate-in slide-in-from-top-2">
+                    {uiError}
+                </div>
+            )}
 
             <div className="space-y-4">
                 <div className="relative group">
@@ -140,10 +163,11 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                         className="hidden"
                         accept={systemLimits.allowed_types.join(',')}
                         onChange={handleFileChange}
+                        disabled={uploading}
                     />
                     <label
                         htmlFor="file-input"
-                        className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-2xl transition-all cursor-pointer ${file ? 'bg-indigo-50/30 border-indigo-200' : 'bg-gray-50/50 border-gray-200 hover:border-indigo-400 hover:bg-white'}`}
+                        className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-2xl transition-all cursor-pointer ${uploading ? 'cursor-not-allowed opacity-60' : ''} ${file ? 'bg-indigo-50/30 border-indigo-200' : 'bg-gray-50/50 border-gray-200 hover:border-indigo-400 hover:bg-white'}`}
                     >
                         {file ? (
                             <div className="flex flex-col items-center text-center">
@@ -194,11 +218,16 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
 
                 <div className="space-y-2">
                     <textarea
-                        className="input-field min-h-[120px] text-sm py-3 leading-relaxed"
+                        className={`input-field min-h-[120px] text-sm py-3 leading-relaxed ${validationErrors.content ? 'border-red-400 ring-4 ring-red-50' : ''}`}
                         placeholder="Paste lecture notes, articles, or research content..."
                         value={content}
-                        onChange={(e) => setContent(e.target.value)}
+                        onChange={(e) => {
+                            setContent(e.target.value);
+                            if (validationErrors.content) setValidationErrors(prev => ({ ...prev, content: '' }));
+                        }}
+                        disabled={uploading}
                     ></textarea>
+                    {validationErrors.content && <p className="text-[10px] text-red-500 font-bold mt-1 ml-1">{validationErrors.content}</p>}
                 </div>
             </div>
 

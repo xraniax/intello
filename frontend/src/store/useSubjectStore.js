@@ -41,6 +41,7 @@ export const useSubjectStore = create((set, get) => ({
         createSubject: async (name, description) => {
             const uiActions = useUIStore.getState().actions;
             uiActions.setLoading('createSubject', true, 'Creating subject...', true);
+            uiActions.clearError('createSubject');
             set({ error: null });
             try {
                 const res = await subjectService.create(name, description);
@@ -52,7 +53,9 @@ export const useSubjectStore = create((set, get) => ({
                 }));
                 return subject;
             } catch (err) {
-                set({ error: err.message || 'Failed to create subject' });
+                const message = err.message || 'Failed to create subject';
+                set({ error: message });
+                uiActions.setError('createSubject', message);
                 throw err;
             } finally {
                 uiActions.setLoading('createSubject', false);

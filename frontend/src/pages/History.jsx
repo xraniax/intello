@@ -38,10 +38,11 @@ const History = () => {
     };
 
     const groupedMaterials = useMemo(() => {
-        const filtered = materials.filter(m => 
-            m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (m.subject_name && m.subject_name.toLowerCase().includes(searchQuery.toLowerCase()))
-        );
+        const filtered = materials.filter(m => {
+            const titleMatch = (m.title || '').toLowerCase().includes(searchQuery.toLowerCase());
+            const subjectMatch = (m.subject_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+            return titleMatch || subjectMatch;
+        });
 
         const groups = {
             today: [],
@@ -50,10 +51,20 @@ const History = () => {
             earlier: []
         };
 
-        const lastWeek = startOfDay(subDays(new Date(), 7));
+        const now = new Date();
+        const lastWeek = startOfDay(subDays(now, 7));
 
         filtered.forEach(m => {
+            if (!m.created_at) {
+                groups.today.push(m); // Fallback for newly created items without timestamp yet
+                return;
+            }
             const date = new Date(m.created_at);
+            if (isNaN(date.getTime())) {
+                groups.today.push(m);
+                return;
+            }
+
             if (isToday(date)) groups.today.push(m);
             else if (isYesterday(date)) groups.yesterday.push(m);
             else if (date >= lastWeek) groups.lastWeek.push(m);
@@ -75,12 +86,13 @@ const History = () => {
                     <div className="h-px bg-gray-100 flex-grow"></div>
                 </div>
                 <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
-                    {items.map(m => {
+                    {items.map((m, idx) => {
                         const isProcessing = normalizeStatus(m.status) === PROCESSING;
+                        const materialId = m.id || `temp-${idx}`;
                         return (
                             <div 
-                                key={m.id} 
-                                onClick={() => !isProcessing && navigate(`/subjects/${m.subject_id}`, { state: { openMaterialId: m.id } })}
+                                key={materialId} 
+                                onClick={() => !isProcessing && m.subject_id && navigate(`/subjects/${m.subject_id}`, { state: { openMaterialId: m.id } })}
                                 className={`group relative bg-white border border-gray-100 rounded-[1.5rem] p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${isProcessing ? 'cursor-wait opacity-80' : ''} ${viewMode === 'list' ? 'flex items-center justify-between py-4' : ''}`}
                             >
                                 <div className="flex items-start gap-4">
@@ -104,7 +116,9 @@ const History = () => {
                                             </span>
                                             <span className="text-[10px] text-gray-300 font-medium flex items-center gap-1">
                                                 <Clock className="w-3 h-3" />
-                                                {format(new Date(m.created_at), 'h:mm a')}
+                                                {m.created_at && !isNaN(new Date(m.created_at).getTime()) 
+                                                    ? format(new Date(m.created_at), 'h:mm a') 
+                                                    : 'Just now'}
                                             </span>
                                         </div>
                                     </div>

@@ -51,16 +51,16 @@ const ForgotPassword = () => {
     }
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[50vh] p-4">
-            <div className="w-full max-w-sm border border-gray-200 p-6 rounded shadow-sm bg-white">
-                <div className="mb-6">
-                    <h1 className="text-2xl font-bold mb-1">Forgot Password</h1>
-                    <p className="text-gray-600 text-sm">Enter your email to receive a reset link</p>
+        <div className="flex flex-col items-center justify-center min-h-[90vh] p-6 animate-in fade-in duration-700">
+            <div className={`w-full max-w-[400px] card-minimal transition-opacity duration-300 ${loading ? 'opacity-70' : ''}`}>
+                <div className="text-center mb-10">
+                    <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">Forgot Password</h1>
+                    <p className="text-gray-500 font-medium">Enter your email to receive a reset link</p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-6">
                     <div>
-                        <label className="input-label">Email Address</label>
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Email Address</label>
                         <input
                             type="email"
                             className="input-field"
@@ -68,15 +68,21 @@ const ForgotPassword = () => {
                             required
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
+                            disabled={loading}
                         />
                     </div>
 
-                    <button type="submit" className="btn-primary w-full mt-2" disabled={loading}>
-                        {loading ? 'Sending...' : 'Send Reset Link'}
+                    <button type="submit" className="btn-primary w-full py-3.5 text-base flex items-center justify-center gap-2" disabled={loading}>
+                        {loading ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                <span>Sending...</span>
+                            </>
+                        ) : 'Send Reset Link'}
                     </button>
 
-                    <div className="text-center mt-4">
-                        <Link to="/login" className="text-sm text-blue-600 hover:underline">
+                    <div className="text-center mt-6">
+                        <Link to="/login" className="text-sm font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">
                             Back to Login
                         </Link>
                     </div>

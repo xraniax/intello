@@ -83,28 +83,31 @@ const ResetPassword = () => {
     }
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[50vh] p-4">
-            <div className="w-full max-w-sm border border-gray-200 p-6 rounded shadow-sm bg-white">
-                <div className="mb-6">
-                    <h1 className="text-2xl font-bold mb-1">New Password</h1>
-                    <p className="text-gray-600 text-sm">Create a secure password for your account</p>
+        <div className="flex flex-col items-center justify-center min-h-[90vh] p-6 animate-in fade-in duration-700">
+            <div className={`w-full max-w-[400px] card-minimal transition-opacity duration-300 ${loading ? 'opacity-70' : ''}`}>
+                <div className="text-center mb-10">
+                    <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">New Password</h1>
+                    <p className="text-gray-500 font-medium">Create a secure password for your account</p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-5">
                     <div>
-                        <label className="input-label">New Password</label>
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">New Password</label>
                         <div className="relative">
                             <input
                                 type={showPassword ? 'text' : 'password'}
-                                className="input-field pr-10"
+                                className="input-field pr-12"
+                                placeholder="••••••••"
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
+                                disabled={loading}
                             />
                             <button
                                 type="button"
-                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none"
+                                className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-indigo-400 transition-colors focus:outline-none"
                                 onClick={() => setShowPassword(!showPassword)}
+                                disabled={loading}
                             >
                                 {showPassword ? (
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -121,22 +124,32 @@ const ResetPassword = () => {
                     </div>
 
                     <div>
-                        <label className="input-label">Confirm New Password</label>
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Confirm New Password</label>
                         <input
                             type={showPassword ? 'text' : 'password'}
-                            className="input-field"
+                            className={`input-field ${password && confirmPassword && password !== confirmPassword ? 'border-red-400 ring-4 ring-red-50' : ''}`}
+                            placeholder="••••••••"
                             required
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
+                            disabled={loading}
                         />
+                        {password && confirmPassword && password !== confirmPassword && (
+                            <p className="text-xs text-red-500 mt-1.5 ml-1 font-medium">Passwords do not match</p>
+                        )}
                     </div>
 
-                    <button type="submit" className="btn-primary w-full mt-2" disabled={loading}>
-                        {loading ? 'Updating...' : 'Reset Password'}
+                    <button type="submit" className="btn-primary w-full mt-2 py-3.5 text-base flex items-center justify-center gap-2" disabled={loading}>
+                        {loading ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                <span>Updating...</span>
+                            </>
+                        ) : 'Reset Password'}
                     </button>
 
-                    <div className="text-center mt-4">
-                        <Link to="/login" className="text-sm text-blue-600 hover:underline">
+                    <div className="text-center mt-6">
+                        <Link to="/login" className="text-sm font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">
                             Cancel
                         </Link>
                     </div>

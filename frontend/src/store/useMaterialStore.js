@@ -48,6 +48,7 @@ export const useMaterialStore = create((set, get) => ({
         uploadMaterial: async (formData) => {
             const uiActions = useUIStore.getState().actions;
             uiActions.setLoading('upload', true, 'Uploading document...', true);
+            uiActions.clearError('upload');
             set({ error: null });
 
             try {
@@ -67,11 +68,13 @@ export const useMaterialStore = create((set, get) => ({
 
                 return material;
             } catch (err) {
+                const message = err.message || 'Upload failed';
                 set((state) => ({
                     ...state,
-                    error: err.message || 'Upload failed',
+                    error: message,
                     data: { ...state.data, jobProgress: null }
                 }));
+                uiActions.setError('upload', message);
                 throw err;
             } finally {
                 uiActions.setLoading('upload', false);

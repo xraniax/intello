@@ -9,6 +9,7 @@ import Skeleton from '../components/Common/Skeleton';
 
 import { useAuthStore } from '../store/useAuthStore';
 import { useSubjectStore } from '../store/useSubjectStore';
+import { useUIStore } from '../store/useUIStore';
 
 const Dashboard = () => {
     const user = useAuthStore((state) => state.data.user);
@@ -16,11 +17,9 @@ const Dashboard = () => {
     const loading = useSubjectStore((state) => state.loading);
     const fetchError = useSubjectStore((state) => state.error);
     const { fetchSubjects, createSubject } = useSubjectStore((state) => state.actions);
+    const uiError = useUIStore(state => state.data.errors['createSubject']);
 
     const [newSubjectName, setNewSubjectName] = useState('');
-    const [createError, setCreateError] = useState(null);
-
-    // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalConfig, setModalConfig] = useState({});
 
@@ -70,16 +69,26 @@ const Dashboard = () => {
 
     const handleCreateSubject = async (e) => {
         e.preventDefault();
-        if (!newSubjectName.trim()) return;
-        setCreateError(null);
+        const trimmedName = newSubjectName.trim();
+        
+        if (!trimmedName) {
+            toast.error('Subject name is required');
+            return;
+        }
+
+        if (trimmedName.length < 2) {
+            toast.error('Subject name is too short (min 2 chars)');
+            return;
+        }
+
         try {
-            await createSubject(newSubjectName);
+            await createSubject(trimmedName);
             setNewSubjectName('');
             setIsAdding(false);
-            toast.success(`Subject "${newSubjectName}" created!`);
+            toast.success(`Subject "${trimmedName}" created!`);
         } catch (err) {
-            setCreateError(err.message || 'Failed to create subject.');
-            toast.error('Failed to create subject');
+            // Error is handled via UIStore/SubjectStore
+            toast.error(err.message || 'Failed to create subject');
         }
     };
 
@@ -179,10 +188,13 @@ const Dashboard = () => {
                         <div className="flex-grow">
                             <input
                                 type="text"
-                                className="input-field h-14 text-lg"
+                                className={`input-field h-14 text-lg ${uiError ? 'border-red-300 ring-2 ring-red-50' : ''}`}
                                 placeholder="Enter subject name (e.g. Molecular Biology)"
                                 value={newSubjectName}
-                                onChange={(e) => { setNewSubjectName(e.target.value); setCreateError(null); }}
+                                onChange={(e) => { 
+                                    setNewSubjectName(e.target.value); 
+                                    if (uiError) useUIStore.getState().actions.clearError('createSubject');
+                                }}
                                 autoFocus
                                 disabled={loading}
                             />
@@ -190,21 +202,21 @@ const Dashboard = () => {
                         <div className="flex gap-3">
                             <button
                                 type="submit"
-                                className="btn-vibrant px-10 h-14 min-w-[180px]"
+                                className="btn-vibrant px-10 h-14 min-w-[180px] flex items-center justify-center gap-2"
                                 disabled={loading || !newSubjectName.trim()}
                             >
                                 {loading ? (
-                                    <div className="flex items-center gap-2">
+                                    <>
                                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                        Creating...
-                                    </div>
+                                        <span>Creating...</span>
+                                    </>
                                 ) : 'Create Now'}
                             </button>
                         </div>
                     </form>
-                    {createError && (
-                        <p className="mt-4 text-sm text-red-500 font-medium ml-1 flex items-center gap-1">
-                            <X className="w-4 h-4" /> {createError}
+                    {uiError && (
+                        <p className="mt-4 text-sm text-red-500 font-medium ml-1 flex items-center gap-1 animate-in slide-in-from-top-1">
+                            <X className="w-4 h-4" /> {uiError}
                         </p>
                     )}
                 </div>

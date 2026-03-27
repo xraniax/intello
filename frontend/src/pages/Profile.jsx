@@ -184,45 +184,57 @@ const Profile = () => {
                                 {isEditing ? (
                                     <form onSubmit={handleSave} className="space-y-6">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Full Name</label>
                                             <input 
                                                 type="text" 
                                                 value={editForm.name}
                                                 onChange={e => setEditForm(prev => ({...prev, name: e.target.value}))}
-                                                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent outline-none transition-all"
+                                                className="w-full px-4 py-3.5 rounded-xl border border-gray-200 focus:ring-4 focus:ring-fuchsia-100 focus:border-fuchsia-500 outline-none transition-all font-medium disabled:bg-gray-50 disabled:text-gray-400"
                                                 required
+                                                disabled={saving}
                                             />
                                         </div>
 
-                                        <div className="bg-orange-50/50 p-6 rounded-xl border border-orange-100">
-                                            <h3 className="text-lg font-semibold text-orange-800 mb-4">Preferences</h3>
-                                            <div className="flex items-center justify-between mb-4">
+                                        <div className="bg-orange-50/50 p-6 rounded-2xl border border-orange-100/50">
+                                            <h3 className="text-sm font-bold text-orange-800 uppercase tracking-widest mb-4">Preferences</h3>
+                                            <div className="flex items-center justify-between mb-2">
                                                 <div>
-                                                    <p className="font-medium text-gray-900">Email Notifications</p>
-                                                    <p className="text-sm text-gray-500">Receive alerts about courses and quizzes.</p>
+                                                    <p className="font-bold text-gray-900">Email Notifications</p>
+                                                    <p className="text-xs text-gray-500 font-medium">Receive alerts about courses and quizzes.</p>
                                                 </div>
                                                 <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input type="checkbox" checked={editForm.notifications} onChange={e => setEditForm(prev => ({...prev, notifications: e.target.checked}))} className="sr-only peer" />
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={editForm.notifications} 
+                                                        onChange={e => setEditForm(prev => ({...prev, notifications: e.target.checked}))} 
+                                                        className="sr-only peer"
+                                                        disabled={saving}
+                                                    />
                                                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-fuchsia-600"></div>
                                                 </label>
                                             </div>
-
                                         </div>
 
                                         <div className="pt-4 flex justify-end gap-3">
                                             <button 
                                                 type="button" 
                                                 onClick={() => setIsEditing(false)}
-                                                className="px-5 py-2.5 rounded-xl text-gray-600 font-medium hover:bg-gray-100 transition-all"
+                                                className="px-6 py-3 rounded-xl text-gray-500 font-bold uppercase tracking-widest text-[10px] hover:bg-gray-100 transition-all disabled:opacity-50"
+                                                disabled={saving}
                                             >
                                                 Cancel
                                             </button>
                                             <button 
                                                 type="submit" 
                                                 disabled={saving}
-                                                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white font-semibold shadow-md active:scale-95 transition-all disabled:opacity-50"
+                                                className="px-8 py-3 rounded-xl bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-fuchsia-200 hover:shadow-fuchsia-300 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
                                             >
-                                                {saving ? 'Saving...' : 'Save Changes'}
+                                                {saving ? (
+                                                    <>
+                                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                                        <span>Saving...</span>
+                                                    </>
+                                                ) : 'Save Changes'}
                                             </button>
                                         </div>
                                     </form>

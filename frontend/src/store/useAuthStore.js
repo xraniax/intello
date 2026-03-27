@@ -52,10 +52,10 @@ export const useAuthStore = create((set, get) => ({
                 uiActions.setLoading('auth', false);
             }
         },
-
         login: async (email, password) => {
             const uiActions = useUIStore.getState().actions;
             uiActions.setLoading('auth', true, 'Signing you in...', true);
+            uiActions.clearError('auth');
             set({ error: null });
             try {
                 const res = await authService.login(email, password);
@@ -68,7 +68,9 @@ export const useAuthStore = create((set, get) => ({
                 }));
                 return res.data;
             } catch (err) {
-                set({ error: err.message || 'Login failed' });
+                const message = err.message || 'Login failed';
+                set({ error: message });
+                uiActions.setError('auth', message);
                 throw err;
             } finally {
                 uiActions.setLoading('auth', false);
@@ -78,6 +80,7 @@ export const useAuthStore = create((set, get) => ({
         register: async (userData) => {
             const uiActions = useUIStore.getState().actions;
             uiActions.setLoading('auth', true, 'Creating your account...', true);
+            uiActions.clearError('auth');
             set({ error: null });
             try {
                 const res = await authService.register(userData);
@@ -90,7 +93,9 @@ export const useAuthStore = create((set, get) => ({
                 }));
                 return res.data;
             } catch (err) {
-                set({ error: err.message || 'Registration failed' });
+                const message = err.message || 'Registration failed';
+                set({ error: message });
+                uiActions.setError('auth', message);
                 throw err;
             } finally {
                 uiActions.setLoading('auth', false);
