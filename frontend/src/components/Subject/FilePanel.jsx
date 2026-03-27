@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2 } from 'lucide-react';
 
 const FilePanel = ({
@@ -55,7 +55,7 @@ const FilePanel = ({
                         </div>
                     ) : (
                         materials.map((m) => {
-                            const isProcessing = m.status === 'processing';
+                            const isProcessing = String(m.status || '').toUpperCase() === 'PROCESSING';
                             const isSelected = selectedMaterials.includes(m.id);
                             
                             return (

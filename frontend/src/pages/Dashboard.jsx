@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../hooks/AuthContext';
 import { Link } from 'react-router-dom';
 import { subjectService } from '../services/api';
 import { Search, Filter, SortAsc, SortDesc, Clock, Plus, X, Edit2, Trash2, BookOpen } from 'lucide-react';
@@ -8,13 +7,19 @@ import { formatDistanceToNow } from 'date-fns';
 import CustomModal from '../components/Common/CustomModal';
 import Skeleton from '../components/Common/Skeleton';
 
+import { useAuthStore } from '../store/useAuthStore';
+import { useSubjectStore } from '../store/useSubjectStore';
+import { useUIStore } from '../store/useUIStore';
+
 const Dashboard = () => {
-    const { user } = useAuth();
-    const [subjects, setSubjects] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const user = useAuthStore(state => state.user);
+    const { subjects, fetchSubjects, createSubject, selectSubject } = useSubjectStore();
+    const { setLoading, loadingStates } = useUIStore();
+    
+    const loading = loadingStates['subjects'] || false;
+    const creating = loadingStates['createSubject'] || false;
     const [fetchError, setFetchError] = useState(null);
     const [newSubjectName, setNewSubjectName] = useState('');
-    const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
 
     // Modal State
@@ -27,21 +32,18 @@ const Dashboard = () => {
     const [isAdding, setIsAdding] = useState(false);
 
     useEffect(() => {
-        fetchSubjects();
-    }, []);
-
-    const fetchSubjects = async () => {
-        setFetchError(null);
-        try {
-            const res = await subjectService.getAll();
-            setSubjects(res.data.data || []);
-        } catch (err) {
-            console.error('Failed to fetch subjects', err);
-            setFetchError(err.message || 'Could not load subjects. Is the backend running?');
-        } finally {
-            setLoading(false);
-        }
-    };
+        const init = async () => {
+            setLoading('subjects', true);
+            try {
+                await fetchSubjects();
+            } catch (err) {
+                setFetchError('Failed to load subjects');
+            } finally {
+                setLoading('subjects', false);
+            }
+        };
+        init();
+    }, [fetchSubjects, setLoading]);
 
     // Client-side filtering and sorting
     const filteredAndSortedSubjects = React.useMemo(() => {
@@ -81,19 +83,18 @@ const Dashboard = () => {
     const handleCreateSubject = async (e) => {
         e.preventDefault();
         if (!newSubjectName.trim()) return;
-        setCreating(true);
+        setLoading('createSubject', true);
         setCreateError(null);
         try {
-            await subjectService.create(newSubjectName);
+            await createSubject(newSubjectName);
             setNewSubjectName('');
             setIsAdding(false);
             toast.success(`Subject "${newSubjectName}" created!`);
-            await fetchSubjects();
         } catch (err) {
-            setCreateError(err.message || 'Failed to create subject. Please try again.');
+            setCreateError(err.message || 'Failed to create subject.');
             toast.error('Failed to create subject');
         } finally {
-            setCreating(false);
+            setLoading('createSubject', false);
         }
     };
 
@@ -106,7 +107,7 @@ const Dashboard = () => {
             onConfirm: async () => {
                 try {
                     await subjectService.delete(id);
-                    setSubjects(prev => prev.filter(s => s.id !== id));
+                    await fetchSubjects();
                     toast.success('Subject deleted');
                 } catch (err) {
                     toast.error('Failed to delete subject');

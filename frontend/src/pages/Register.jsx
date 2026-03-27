@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/AuthContext';
+import { useAuthStore } from '../store/useAuthStore';
+import { useUIStore } from '../store/useUIStore';
 
 const Register = () => {
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });
@@ -8,12 +9,14 @@ const Register = () => {
     const [sending, setSending] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
-    const { register } = useAuth();
+    const register = useAuthStore(state => state.register);
+    const setLoading = useUIStore(state => state.setLoading);
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSending(true);
+        setLoading('register', true);
         setErr({ message: '', fields: {} });
 
         try {
@@ -26,6 +29,7 @@ const Register = () => {
             });
         } finally {
             setSending(false);
+            setLoading('register', false);
         }
     };
 

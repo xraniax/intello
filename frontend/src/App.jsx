@@ -15,11 +15,24 @@ import AdminDashboard from './pages/Admin/AdminDashboard';
 import AdminLogs from './pages/Admin/AdminLogs';
 import AdminSettings from './pages/Admin/AdminSettings';
 import AdminLayout from './components/Admin/AdminLayout';
+import SubjectDetail from './pages/SubjectDetail';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import LoadingOverlay from './components/Common/LoadingOverlay';
+import JobProgress from './components/Common/JobProgress';
+import { useUIStore } from './store/useUIStore';
+import { useMaterialStore } from './store/useMaterialStore';
+
+const RouteLoadingState = () => (
+  <div className="flex-1 flex items-center justify-center bg-white">
+    <div className="text-sm font-semibold text-gray-500">Loading your workspace...</div>
+  </div>
+);
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
-  if (loading) return null;
+  if (loading) return <RouteLoadingState />;
   if (!user) return <Navigate to="/login" />;
 
   return children;
@@ -28,19 +41,15 @@ const ProtectedRoute = ({ children }) => {
 const AdminRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
-  if (loading) return null;
+  if (loading) return <RouteLoadingState />;
   if (!user) return <Navigate to="/login" />;
   if (user.role !== 'admin') return <Navigate to="/dashboard" />;
 
   return children;
 };
 
-import SubjectDetail from './pages/SubjectDetail';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-
 const AppContent = () => {
-  const { loginWithToken, loading: authLoading } = useAuth();
+  const { loginWithToken } = useAuth();
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith('/admin');
 
@@ -49,7 +58,6 @@ const AppContent = () => {
     const token = params.get('token');
     if (token) {
       loginWithToken(token).then(() => {
-        // Clear token from URL for security and cleanliness
         const url = new URL(window.location);
         url.searchParams.delete('token');
         window.history.replaceState({}, document.title, url.pathname + url.search);
@@ -74,7 +82,6 @@ const AppContent = () => {
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           
-          {/* Admin Routes */}
           <Route path="/admin" element={<AdminRoute><AdminLayout><AdminDashboard /></AdminLayout></AdminRoute>} />
           <Route path="/admin/users" element={<AdminRoute><AdminLayout><AdminUsers /></AdminLayout></AdminRoute>} />
           <Route path="/admin/files" element={<AdminRoute><AdminLayout><AdminFiles /></AdminLayout></AdminRoute>} />
@@ -89,9 +96,17 @@ const AppContent = () => {
 };
 
 const App = () => {
+  const loadingStates = useUIStore(state => state.loadingStates);
+  const jobProgress = useMaterialStore(state => state.jobProgress);
+  
+  // Only block UI for critical auth operations
+  const isBlocking = loadingStates['login'] || loadingStates['register'];
+
   return (
     <AuthProvider>
       <Toaster position="top-right" />
+      <LoadingOverlay visible={isBlocking} message="Please wait..." />
+      <JobProgress job={jobProgress} />
       <Router>
         <AppContent />
       </Router>

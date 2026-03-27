@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../hooks/AuthContext';
+import { useAuthStore } from '../store/useAuthStore';
+import { useUIStore } from '../store/useUIStore';
 
 const Login = () => {
     const [email, setEmail] = useState('');
@@ -9,7 +10,8 @@ const Login = () => {
     const [sending, setSending] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
-    const { login, loginWithToken } = useAuth();
+    const login = useAuthStore(state => state.login);
+    const setLoading = useUIStore(state => state.setLoading);
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -29,6 +31,7 @@ const Login = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSending(true);
+        setLoading('login', true);
         setErr('');
 
         try {
@@ -38,6 +41,7 @@ const Login = () => {
             setErr(error.message || 'Login failed. Please check your credentials.');
         } finally {
             setSending(false);
+            setLoading('login', false);
         }
     };
 

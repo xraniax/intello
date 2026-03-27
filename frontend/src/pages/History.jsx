@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useMaterialStore } from '../store/useMaterialStore';
+import { useUIStore } from '../store/useUIStore';
 import { materialService } from '../services/api';
 import { Search, Calendar, BookOpen, ChevronRight, Clock, FileText, Trash2, LayoutGrid, List } from 'lucide-react';
 import { format, isToday, isYesterday, subDays, startOfDay } from 'date-fns';
@@ -7,63 +9,26 @@ import Skeleton from '../components/Common/Skeleton';
 import toast from 'react-hot-toast';
 
 const History = () => {
-    const location = useLocation();
     const navigate = useNavigate();
-    const [materials, setMaterials] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const { materials, fetchMaterials } = useMaterialStore();
+    const { setLoading, loadingStates } = useUIStore();
+    const loading = loadingStates['history'] || false;
     const [searchQuery, setSearchQuery] = useState('');
-    const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+    const [viewMode, setViewMode] = useState('grid');
 
     useEffect(() => {
-        const fetchHistory = async () => {
+        const init = async () => {
+            setLoading('history', true);
             try {
-                const res = await materialService.getHistory();
-                const historyData = Array.isArray(res.data.data) ? res.data.data : [];
-                setMaterials(historyData);
-            } catch (error) {
-                console.error('Failed to fetch history', error);
+                await fetchMaterials();
+            } catch {
                 toast.error('Failed to load study history');
             } finally {
-                setLoading(false);
+                setLoading('history', false);
             }
         };
-        fetchHistory();
-    }, []);
-
-    useEffect(() => {
-        let pollInterval;
-        
-        const pollProcessing = async () => {
-            const processingIds = materials
-                .filter(m => m.status === 'processing')
-                .map(m => m.id);
-
-            if (processingIds.length === 0) {
-                if (pollInterval) clearInterval(pollInterval);
-                return;
-            }
-
-            for (const mid of processingIds) {
-                try {
-                    const res = await materialService.sync(mid);
-                    const updated = res.data.data;
-                    if (updated.status !== 'processing') {
-                        setMaterials(prev => prev.map(m => m.id === mid ? updated : m));
-                    }
-                } catch (err) {
-                    console.error(`Sync failed for ${mid}:`, err);
-                }
-            }
-        };
-
-        if (materials.some(m => m.status === 'processing')) {
-            pollInterval = setInterval(pollProcessing, 4000);
-        }
-
-        return () => {
-            if (pollInterval) clearInterval(pollInterval);
-        };
-    }, [materials]);
+        init();
+    }, [fetchMaterials, setLoading]);
 
     const handleDelete = async (e, id) => {
         e.preventDefault();
@@ -72,9 +37,9 @@ const History = () => {
         
         try {
             await materialService.delete(id);
-            setMaterials(prev => prev.filter(m => m.id !== id));
+            await fetchMaterials();
             toast.success('Document removed');
-        } catch (err) {
+        } catch {
             toast.error('Failed to delete material');
         }
     };
@@ -92,8 +57,6 @@ const History = () => {
             earlier: []
         };
 
-        const today = startOfDay(new Date());
-        const yesterday = startOfDay(subDays(new Date(), 1));
         const lastWeek = startOfDay(subDays(new Date(), 7));
 
         filtered.forEach(m => {
@@ -120,7 +83,7 @@ const History = () => {
                 </div>
                 <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
                     {items.map(m => {
-                        const isProcessing = m.status === 'processing';
+                        const isProcessing = String(m.status || '').toUpperCase() === 'PROCESSING';
                         return (
                             <div 
                                 key={m.id} 

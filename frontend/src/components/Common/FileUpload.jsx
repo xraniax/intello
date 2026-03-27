@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { materialService, subjectService } from '../../services/api';
+import { useMaterialStore } from '../../store/useMaterialStore';
+import { useSubjectStore } from '../../store/useSubjectStore';
+import { useUIStore } from '../../store/useUIStore';
+import { materialService } from '../../services/api';
 import { File as FileIcon, Upload as UploadIcon, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -9,25 +12,19 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
     const [file, setFile] = useState(null);
     const [fileError, setFileError] = useState('');
     const [subjectId, setSubjectId] = useState(initialSubjectId || '');
-    const [subjects, setSubjects] = useState([]);
-    const [uploading, setUploading] = useState(false);
-    const [isPolling, setIsPolling] = useState(false);
-    const [pollInterval, setPollInterval] = useState(null);
     const [validationErrors, setValidationErrors] = useState({});
     const [systemLimits, setSystemLimits] = useState({ 
         max_file_size_mb: 10, 
         allowed_types: ['application/pdf'] 
     });
 
-    // Cleanup polling on unmount
-    useEffect(() => {
-        return () => {
-            if (pollInterval) clearInterval(pollInterval);
-        };
-    }, [pollInterval]);
+    const uploadMaterial = useMaterialStore(state => state.uploadMaterial);
+    const { subjects, fetchSubjects } = useSubjectStore();
+    const { setLoading, loadingStates } = useUIStore();
+    const uploading = loadingStates['upload'] || false;
 
     useEffect(() => {
-        const loadInitialData = async () => {
+        const loadSettings = async () => {
             try {
                 const settingsRes = await materialService.getSettings();
                 if (settingsRes.data?.data) {
@@ -36,26 +33,18 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
             } catch (err) {
                 console.warn('Failed to fetch settings', err);
             }
-            if (!initialSubjectId) {
-                try {
-                    const res = await subjectService.getAll();
-                    setSubjects(res.data.data);
-                } catch (err) {
-                    console.error('Failed to fetch subjects', err);
-                }
-            }
         };
-        loadInitialData();
-    }, [initialSubjectId]);
+        loadSettings();
+        if (!initialSubjectId && subjects.length === 0) {
+            fetchSubjects();
+        }
+    }, [initialSubjectId, subjects.length, fetchSubjects]);
 
     const handleFileChange = (e) => {
         const selected = e.target.files[0] || null;
         if (!selected) return;
 
-        // Dynamic client-side check
         const ext = selected.name.split('.').pop().toLowerCase();
-        
-        // Allowed types check
         const isMimeAllowed = systemLimits.allowed_types.includes(selected.type);
         const isPdfFallback = ext === 'pdf' && systemLimits.allowed_types.includes('application/pdf');
 
@@ -73,36 +62,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
 
         setFileError('');
         setFile(selected);
-        if (!title && ext === 'pdf') setTitle(selected.name.replace('.pdf', ''));
-        else if (!title) setTitle(selected.name.replace(`.${ext}`, ''));
-    };
-
-    const startPolling = (materialId) => {
-        setIsPolling(true);
-        const intervalId = setInterval(async () => {
-            try {
-                const res = await materialService.sync(materialId);
-                const material = res.data.data;
-                const status = (material.status || '').toUpperCase();
-                
-                if (status === 'COMPLETED' || status === 'SUCCESS') {
-                    clearInterval(intervalId);
-                    setIsPolling(false);
-                    setUploading(false);
-                    toast.success('AI Cultivation Complete!');
-                    if (onSuccess) onSuccess(material);
-                } else if (status === 'FAILED') {
-                    clearInterval(intervalId);
-                    setIsPolling(false);
-                    setUploading(false);
-                    toast.error(`AI Processing failed: ${material.error_message || 'Unknown error'}`);
-                }
-            } catch (err) {
-                console.error('Polling error:', err);
-                // We keep polling on temporary network errors
-            }
-        }, 3000);
-        setPollInterval(intervalId);
+        if (!title) setTitle(selected.name.replace(`.${ext}`, ''));
     };
 
     const handleSubmit = async (e) => {
@@ -112,7 +72,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
             return;
         }
 
-        setUploading(true);
+        setLoading('upload', true);
         setValidationErrors({});
 
         try {
@@ -134,20 +94,17 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                 });
             }
 
-            const res = await materialService.upload(payload);
-            const material = res.data.data;
-            
-            toast.success('Document uploaded! AI is processing...');
-            
-            // Start polling for AI completion
-            startPolling(material.id);
+            await uploadMaterial(payload);
+            toast.success('Document seeded! AI is cultivating your material...');
+            if (onSuccess) onSuccess();
         } catch (err) {
-            setUploading(false);
             if (err.code === 'VALIDATION_ERROR') {
                 setValidationErrors(err.validationErrors || {});
             } else {
                 toast.error(err.message || 'Upload failed');
             }
+        } finally {
+            setLoading('upload', false);
         }
     };
 
@@ -267,7 +224,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     {uploading ? (
                         <>
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            {isPolling ? 'AI Cultivating...' : 'Uploading...'}
+                            Processing...
                         </>
                     ) : (
                         <>

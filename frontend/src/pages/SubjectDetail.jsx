@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { subjectService, materialService } from '../services/api';
+import { materialService } from '../services/api';
 import { useSpeech } from '../hooks/useSpeech';
 import { PanelLeft, PanelRight } from 'lucide-react';
+import { useSubjectStore } from '../store/useSubjectStore';
+import { useMaterialStore } from '../store/useMaterialStore';
+import { useUIStore } from '../store/useUIStore';
 import toast from 'react-hot-toast';
 import CustomModal from '../components/Common/CustomModal';
 
@@ -16,9 +19,17 @@ import Skeleton from '../components/Common/Skeleton';
 const SubjectDetail = () => {
     const { id } = useParams();
     const location = useLocation();
-    const [subject, setSubject] = useState(null);
-    const [uploads, setUploads] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const normalizedId = String(id);
+    const redirectedMaterialId = location.state?.openMaterialId;
+    
+    const { subjects, fetchSubjects } = useSubjectStore();
+    const { materials, fetchMaterials, clearAllPolling } = useMaterialStore();
+    const { setLoading, loadingStates } = useUIStore();
+    
+    const subject = subjects.find((s) => String(s.id) === normalizedId);
+    const uploads = materials.filter((m) => String(m.subject_id) === normalizedId);
+    const loading = loadingStates['subjectDetail'] || false;
+    const isGenerating = loadingStates['generating'] || false;
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -40,85 +51,40 @@ const SubjectDetail = () => {
     // Generation state
     const [genError, setGenError] = useState('');
     const [genType, setGenType] = useState('summary');
-    const [isGenerating, setIsGenerating] = useState(false);
     const [genResult, setGenResult] = useState('');
 
     const { isListening, speak, listen } = useSpeech();
 
-    useEffect(() => { fetchDetails(); }, [id]);
+    useEffect(() => {
+        const init = async () => {
+            setLoading('subjectDetail', true);
+            try {
+                await Promise.all([fetchSubjects(), fetchMaterials()]);
+                
+                // Handle redirected material selection
+                if (redirectedMaterialId) {
+                    const mid = redirectedMaterialId;
+                    setSelectedUploads([mid]);
+                    // Summary generation helper could be added here if needed
+                }
+            } catch {
+                console.error('Failed to load subject details');
+            } finally {
+                setLoading('subjectDetail', false);
+            }
+        };
+        init();
+        return () => {
+            clearAllPolling();
+        };
+    }, [id, fetchSubjects, fetchMaterials, setLoading, clearAllPolling, redirectedMaterialId]);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatMessages, isThinking]);
 
-    useEffect(() => {
-        let pollInterval;
-        
-        const pollProcessing = async () => {
-            const processingIds = uploads
-                .filter(m => m.status === 'processing')
-                .map(m => m.id);
-
-            if (processingIds.length === 0) {
-                if (pollInterval) clearInterval(pollInterval);
-                return;
-            }
-
-            console.log(`[Polling] Checking status for ${processingIds.length} materials...`);
-            
-            for (const mid of processingIds) {
-                try {
-                    const res = await materialService.sync(mid);
-                    const updated = res.data.data;
-                    
-                    if (updated.status !== 'processing') {
-                        setUploads(prev => prev.map(m => m.id === mid ? updated : m));
-                        if (updated.status === 'completed') {
-                            toast.success(`"${updated.title}" refined successfully!`, { icon: '✨' });
-                        } else if (updated.status === 'failed') {
-                            toast.error(`AI analysis failed for "${updated.title}"`);
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Sync failed for ${mid}:`, err);
-                }
-            }
-        };
-
-        if (uploads.some(m => m.status === 'processing')) {
-            pollInterval = setInterval(pollProcessing, 3000);
-        }
-
-        return () => {
-            if (pollInterval) clearInterval(pollInterval);
-        };
-    }, [uploads]);
-
-    const fetchDetails = async () => {
-        try {
-            const res = await subjectService.getOne(id);
-            const fetchedMaterials = res.data.data.materials;
-            setSubject(res.data.data.subject);
-            setUploads(fetchedMaterials);
-
-            // Handle redirected material selection
-            if (location.state?.openMaterialId) {
-                const mid = location.state.openMaterialId;
-                if (!selectedUploads.includes(mid)) {
-                    setSelectedUploads([mid]);
-                    // Auto-trigger summary generation for this material
-                    setTimeout(() => handleGenerate(mid), 500);
-                }
-            }
-        } catch (err) {
-            console.error('Failed to fetch subject details:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handleUploadSuccess = async () => {
-        await fetchDetails();
+        await fetchMaterials();
     };
 
     const handleDeleteUpload = (materialId) => {
@@ -131,11 +97,10 @@ const SubjectDetail = () => {
             onConfirm: async () => {
                 try {
                     await materialService.delete(materialId);
-                    setUploads(prev => prev.filter(m => m.id !== materialId));
+                    await fetchMaterials();
                     setSelectedUploads(prev => prev.filter(id => id !== materialId));
                     toast.success('Document removed');
-                } catch (err) {
-                    console.error('Failed to delete material:', err);
+                } catch {
                     toast.error('Failed to delete material');
                 } finally {
                     setIsModalOpen(false);
@@ -178,7 +143,7 @@ const SubjectDetail = () => {
             setGenError('Select at least one document from the Source Files panel first.');
             return;
         }
-        setIsGenerating(true);
+        setLoading('generating', true);
         setGenResult('');
         try {
             const res = await materialService.generateCombined(targets, genType);
@@ -186,7 +151,7 @@ const SubjectDetail = () => {
         } catch (err) {
             setGenError(err.message || 'Generation failed. Please try again.');
         } finally {
-            setIsGenerating(false);
+            setLoading('generating', false);
         }
     };
 
