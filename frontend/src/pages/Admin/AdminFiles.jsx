@@ -21,7 +21,7 @@ const AdminFiles = () => {
     const [stats, setStats] = useState({ total_storage_bytes: 0 });
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('files');
-    const [filters, setFilters] = useState({ userId: '', subjectId: '', mimeType: '', minSizeMb: '' });
+    const [filters, setFilters] = useState({ userId: '', subjectId: '', mimeType: '', minSizeMb: '', sortBy: 'created_at', order: 'desc' });
     
     // Bulk Selection State
     const [selectedFileIds, setSelectedFileIds] = useState(new Set());
@@ -48,8 +48,8 @@ const AdminFiles = () => {
             setFiles(filesRes.data.data);
             setSettings(settingsRes.data.data.storage);
             setStats({
-                // Ensure we capture total sum strictly
-                total_storage_bytes: filesRes.data.data.reduce((acc, f) => acc + (parseInt(f.size_bytes) || 0), 0)
+                // Ensure we capture total sum strictly from global stats
+                total_storage_bytes: settingsRes.data.data.stats.total_storage_bytes || 0
             });
             // Clear selections when fetching new data
             setSelectedFileIds(new Set());
@@ -155,7 +155,7 @@ const AdminFiles = () => {
                     <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2">
                             <Server className="w-4 h-4 text-orange-400" />
-                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest group-hover:text-orange-400 transition-colors">Utilized By Users</span>
+                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest group-hover:text-orange-400 transition-colors">Physical Storage Used</span>
                         </div>
                     </div>
                     <span className="text-3xl font-black text-gray-900 truncate z-10 block pb-3">

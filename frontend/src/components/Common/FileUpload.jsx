@@ -11,11 +11,20 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
     const [subjectId, setSubjectId] = useState(initialSubjectId || '');
     const [subjects, setSubjects] = useState([]);
     const [uploading, setUploading] = useState(false);
+    const [isPolling, setIsPolling] = useState(false);
+    const [pollInterval, setPollInterval] = useState(null);
     const [validationErrors, setValidationErrors] = useState({});
     const [systemLimits, setSystemLimits] = useState({ 
         max_file_size_mb: 10, 
         allowed_types: ['application/pdf'] 
     });
+
+    // Cleanup polling on unmount
+    useEffect(() => {
+        return () => {
+            if (pollInterval) clearInterval(pollInterval);
+        };
+    }, [pollInterval]);
 
     useEffect(() => {
         const loadInitialData = async () => {
@@ -68,6 +77,34 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
         else if (!title) setTitle(selected.name.replace(`.${ext}`, ''));
     };
 
+    const startPolling = (materialId) => {
+        setIsPolling(true);
+        const intervalId = setInterval(async () => {
+            try {
+                const res = await materialService.sync(materialId);
+                const material = res.data.data;
+                const status = (material.status || '').toUpperCase();
+                
+                if (status === 'COMPLETED' || status === 'SUCCESS') {
+                    clearInterval(intervalId);
+                    setIsPolling(false);
+                    setUploading(false);
+                    toast.success('AI Cultivation Complete!');
+                    if (onSuccess) onSuccess(material);
+                } else if (status === 'FAILED') {
+                    clearInterval(intervalId);
+                    setIsPolling(false);
+                    setUploading(false);
+                    toast.error(`AI Processing failed: ${material.error_message || 'Unknown error'}`);
+                }
+            } catch (err) {
+                console.error('Polling error:', err);
+                // We keep polling on temporary network errors
+            }
+        }, 3000);
+        setPollInterval(intervalId);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!file && !content.trim()) {
@@ -98,16 +135,19 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
             }
 
             const res = await materialService.upload(payload);
-            toast.success('Document uploaded! AI processing started.');
-            if (onSuccess) onSuccess(res.data.data);
+            const material = res.data.data;
+            
+            toast.success('Document uploaded! AI is processing...');
+            
+            // Start polling for AI completion
+            startPolling(material.id);
         } catch (err) {
+            setUploading(false);
             if (err.code === 'VALIDATION_ERROR') {
                 setValidationErrors(err.validationErrors || {});
             } else {
                 toast.error(err.message || 'Upload failed');
             }
-        } finally {
-            setUploading(false);
         }
     };
 
@@ -227,7 +267,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     {uploading ? (
                         <>
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            Processing...
+                            {isPolling ? 'AI Cultivating...' : 'Uploading...'}
                         </>
                     ) : (
                         <>

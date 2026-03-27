@@ -3,23 +3,18 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
 import User from '../../models/user.model.js';
 
-const getCallbackURL = (provider) => {
-    const apiBase = process.env.BACKEND_URL || 'http://localhost:5000';
-    return `${apiBase}/${provider}/callback`;
-};
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 
 passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID || 'mock-id',
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'mock-secret',
-    callbackURL: getCallbackURL('google')
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: '/api/auth/google/callback'
 }, async (accessToken, refreshToken, profile, done) => {
     try {
         const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : `${profile.id}@google.com`;
         const name = profile.displayName || profile.name?.givenName || 'Google User';
-        const provider = 'google';
-        const providerId = profile.id;
 
-        const user = await User.findOrCreateByProvider(email, name, provider, providerId);
+        const user = await User.findOrCreateByProvider(email, name, 'google', profile.id);
         return done(null, user);
     } catch (err) {
         console.error('Google Auth Error:', err);
@@ -28,17 +23,16 @@ passport.use(new GoogleStrategy({
 }));
 
 passport.use(new GitHubStrategy({
-    clientID: process.env.GITHUB_CLIENT_ID || 'mock-id',
-    clientSecret: process.env.GITHUB_CLIENT_SECRET || 'mock-secret',
-    callbackURL: getCallbackURL('github')
+    clientID: process.env.GITHUB_CLIENT_ID,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET,
+    callbackURL: '/api/auth/github/callback',
+    scope: ['user:email']
 }, async (accessToken, refreshToken, profile, done) => {
     try {
-        const email = (profile.emails && profile.emails.length > 0) ? profile.emails[0].value : (profile._json?.email || `${profile.id}@github.com`);
+        const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : `${profile.id}@github.com`;
         const name = profile.displayName || profile.username || 'GitHub User';
-        const provider = 'github';
-        const providerId = profile.id;
 
-        const user = await User.findOrCreateByProvider(email, name, provider, providerId);
+        const user = await User.findOrCreateByProvider(email, name, 'github', profile.id);
         return done(null, user);
     } catch (err) {
         console.error('GitHub Auth Error:', err);
@@ -61,3 +55,4 @@ passport.deserializeUser(async (id, done) => {
 });
 
 export default passport;
+

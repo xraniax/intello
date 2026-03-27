@@ -15,14 +15,17 @@ const generateToken = (id) => {
 class AuthController {
     static register = asyncHandler(async (req, res) => {
         const { email, password, name } = req.body;
+        console.log(`[AUTH] Registration attempt for email: ${email}`);
 
         const userExists = await User.findByEmail(email);
         if (userExists) {
+            console.warn(`[AUTH] Registration failed: Email already registered: ${email}`);
             res.status(400);
             throw new Error('Email already registered');
         }
 
         const user = await User.create(email, password, name);
+        console.log(`[AUTH] Registration successful for email: ${email}, id: ${user.id}`);
 
         res.status(201).json({
             status: 'success',
@@ -39,29 +42,49 @@ class AuthController {
 
     static login = asyncHandler(async (req, res) => {
         const { email, password } = req.body;
+        console.log(`[AUTH] Login attempt for email: ${email}`);
 
         const user = await User.findByEmail(email);
-        if (user && (await User.comparePassword(password, user.password_hash))) {
-            if (user.status === 'suspended') {
-                res.status(403);
-                throw new Error('Your account has been suspended. Please contact support.');
-            }
-
-            res.json({
-                status: 'success',
-                data: {
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    status: user.status,
-                    token: generateToken(user.id),
-                },
-            });
-        } else {
+        if (!user) {
+            console.warn(`[AUTH] Login failed: User not found for email: ${email}`);
             res.status(401);
             throw new Error('Invalid email or password');
         }
+
+        console.log(`[AUTH] User found: ${user.id}, status: ${user.status}, provider: ${user.auth_provider}`);
+
+        const isMatch = await User.comparePassword(password, user.password_hash);
+        if (!isMatch) {
+            console.warn(`[AUTH] Login failed: Password mismatch for email: ${email}`);
+            res.status(401);
+            throw new Error('Invalid email or password');
+        }
+
+        if (user.status?.toUpperCase() !== 'ACTIVE') {
+            console.warn(`[AUTH] Login failed: Account ${user.status} for email: ${email}`);
+            res.status(403);
+            const errorMessage = user.status === 'suspended' 
+                ? 'Your account has been suspended. Please contact support.'
+                : 'Your account is currently inactive. Please contact support.';
+            throw new Error(errorMessage);
+        }
+
+        console.log(`[AUTH] Login successful for email: ${email}`);
+        
+        // Update login and activity timestamps (fire and forget)
+        User.updateLastLogin(user.id).catch(err => console.error('[AUTH] Failed to update login timestamp:', err.message));
+
+        res.json({
+            status: 'success',
+            data: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                status: user.status,
+                token: generateToken(user.id),
+            },
+        });
     });
 
     static getMe = asyncHandler(async (req, res) => {
@@ -77,17 +100,26 @@ class AuthController {
      * Generates a token and redirects back to frontend with the token.
      */
     static socialAuthCallback = asyncHandler(async (req, res) => {
+        console.log('[AUTH] Social Auth Callback reached');
         if (!req.user) {
+            console.warn('[AUTH] Social Auth failed: No user profile in request');
             return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
         }
 
         const user = req.user;
+        console.log(`[AUTH] Social Auth profile: ${user.email}, provider: ${user.auth_provider}, status: ${user.status}`);
         
-        if (user.status === 'suspended') {
-            return res.redirect(`${process.env.FRONTEND_URL}/login?error=account_suspended`);
+        if (user.status?.toUpperCase() !== 'ACTIVE') {
+            console.warn(`[AUTH] Social Auth failed: Account ${user.status} for email: ${user.email}`);
+            const errorType = user.status === 'suspended' ? 'account_suspended' : 'account_inactive';
+            return res.redirect(`${process.env.FRONTEND_URL}/login?error=${errorType}`);
         }
 
         const token = generateToken(user.id);
+        console.log(`[AUTH] Social Auth successful, redirecting user: ${user.id}`);
+
+        // Update login and activity timestamps (fire and forget)
+        User.updateLastLogin(user.id).catch(err => console.error('[AUTH] Failed to update login timestamp:', err.message));
 
         // Redirect to frontend dashboard with token in URL
         const redirectUrl = `${process.env.FRONTEND_URL}/dashboard?token=${token}`;

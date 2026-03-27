@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Save, AlertTriangle, FileText, DownloadCloud, HardDrive } from 'lucide-react';
+import { Save, AlertTriangle, FileText, DownloadCloud, HardDrive, RefreshCw, Trash2, ShieldAlert } from 'lucide-react';
+import { adminService } from '../../../services/api';
+import toast from 'react-hot-toast';
 
 const StorageSettings = ({ settings, stats, onUpdate }) => {
     const [formData, setFormData] = useState(settings || {
@@ -10,6 +12,8 @@ const StorageSettings = ({ settings, stats, onUpdate }) => {
     const [saving, setSaving] = useState(false);
     const [newType, setNewType] = useState('');
     const [customType, setCustomType] = useState('');
+    const [isCleaning, setIsCleaning] = useState(false);
+    const [cleanupResult, setCleanupResult] = useState(null);
 
     const formatBytes = (bytes) => {
         if (!bytes || bytes === 0) return '0 Bytes';
@@ -39,6 +43,21 @@ const StorageSettings = ({ settings, stats, onUpdate }) => {
             await onUpdate(formData);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleCleanup = async () => {
+        if (!window.confirm('Are you sure you want to run storage cleanup? This will permanently delete orphaned files on the server.')) return;
+        
+        setIsCleaning(true);
+        try {
+            const res = await adminService.cleanupStorage();
+            setCleanupResult(res.data.data);
+            toast.success(res.data.message);
+        } catch (err) {
+            toast.error(err.message || 'Cleanup failed');
+        } finally {
+            setIsCleaning(false);
         }
     };
 
@@ -189,6 +208,54 @@ const StorageSettings = ({ settings, stats, onUpdate }) => {
                     <p className="text-xs text-gray-500 font-medium leading-relaxed">
                         You can override individual user limits in the <strong>User Management</strong> section if a student requires additional research space.
                     </p>
+                </div>
+
+                <div className="card-minimal border-red-50 bg-red-50/10 p-6">
+                    <h4 className="text-red-900 font-bold flex items-center gap-2 mb-4">
+                        <ShieldAlert className="w-5 h-5 text-red-500" />
+                        Storage Maintenance
+                    </h4>
+                    <p className="text-xs text-red-700/70 font-medium mb-6 leading-relaxed">
+                        Orphaned files can accumulate if uploads are interrupted. Run a deep scan to reclaim disk space.
+                    </p>
+                    
+                    {cleanupResult ? (
+                        <div className="bg-white rounded-xl p-4 border border-red-100 mb-6 animate-in fade-in zoom-in-95">
+                            <div className="flex justify-between items-center mb-3">
+                                <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Cleanup Report</span>
+                                <button onClick={() => setCleanupResult(null)} className="text-gray-400 hover:text-gray-600 transition-colors">&times;</button>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-gray-500 font-bold">Orphans Deleted:</span>
+                                    <span className="text-red-600 font-black">{cleanupResult.orphansDeleted}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-gray-500 font-bold">Space Reclaimed:</span>
+                                    <span className="text-emerald-600 font-black">{formatBytes(cleanupResult.spaceFreedBytes)}</span>
+                                </div>
+                                {cleanupResult.brokenLinksFound > 0 && (
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-gray-500 font-bold">Broken DB Links:</span>
+                                        <span className="text-orange-500 font-black">{cleanupResult.brokenLinksFound}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={handleCleanup}
+                            disabled={isCleaning}
+                            className="w-full flex items-center justify-center gap-2 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-red-200 active:scale-95 disabled:opacity-50"
+                        >
+                            {isCleaning ? (
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Trash2 className="w-4 h-4" />
+                            )}
+                            {isCleaning ? 'Scanning...' : 'Run Storage Cleanup'}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

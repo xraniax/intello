@@ -21,9 +21,15 @@ const AdminDashboard = () => {
                 ]);
                 
                 const users = usersRes.data.data || [];
-                const activeUsers = users.filter(u => u.status === 'active').length;
+                const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+                const now = Date.now();
+                const onlineNow = users.filter(u => {
+                    const lastActive = u.last_active_at ? new Date(u.last_active_at).getTime() : 0;
+                    return now - lastActive < ONLINE_THRESHOLD_MS;
+                }).length;
                 const settings = settingsRes.data.data.storage || {};
-                const totalStorage = settings.total_storage_bytes || users.reduce((acc, u) => acc + (parseInt(u.storage_usage_bytes) || 0), 0) || 0;
+                const statsFromSettings = settingsRes.data.data.stats || {};
+                const totalStorage = statsFromSettings.total_storage_bytes || users.reduce((acc, u) => acc + (parseInt(u.storage_usage_bytes) || 0), 0) || 0;
                 
                 // Calculate ALerts dynamically
                 const defaultQuota = (settings.default_user_quota_mb || 100) * 1024 * 1024;
@@ -54,7 +60,7 @@ const AdminDashboard = () => {
 
                 setStats({
                     totalUsers: users.length,
-                    activeUsers,
+                    onlineNow,
                     totalStorage
                 });
                 setAlerts(newAlerts);
@@ -105,8 +111,12 @@ const AdminDashboard = () => {
                     <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-500 flex items-center justify-center mb-4 border border-purple-100">
                         <Activity className="w-5 h-5" />
                     </div>
-                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Active Accounts</p>
-                    <h3 className="text-3xl font-black text-gray-900">{loading ? <Skeleton className="w-16 h-8" /> : stats?.activeUsers}</h3>
+                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Online Now</p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                        <h3 className="text-3xl font-black text-gray-900">{loading ? <Skeleton className="w-16 h-8" /> : stats?.onlineNow}</h3>
+                    </div>
+                    <p className="text-[10px] font-medium text-gray-400 mt-1">Active within 5 min</p>
                 </div>
 
                 <div className="card-minimal flex flex-col relative overflow-hidden group lg:col-span-2">

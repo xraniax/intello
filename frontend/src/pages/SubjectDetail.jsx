@@ -51,6 +51,49 @@ const SubjectDetail = () => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatMessages, isThinking]);
 
+    useEffect(() => {
+        let pollInterval;
+        
+        const pollProcessing = async () => {
+            const processingIds = uploads
+                .filter(m => m.status === 'processing')
+                .map(m => m.id);
+
+            if (processingIds.length === 0) {
+                if (pollInterval) clearInterval(pollInterval);
+                return;
+            }
+
+            console.log(`[Polling] Checking status for ${processingIds.length} materials...`);
+            
+            for (const mid of processingIds) {
+                try {
+                    const res = await materialService.sync(mid);
+                    const updated = res.data.data;
+                    
+                    if (updated.status !== 'processing') {
+                        setUploads(prev => prev.map(m => m.id === mid ? updated : m));
+                        if (updated.status === 'completed') {
+                            toast.success(`"${updated.title}" refined successfully!`, { icon: '✨' });
+                        } else if (updated.status === 'failed') {
+                            toast.error(`AI analysis failed for "${updated.title}"`);
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Sync failed for ${mid}:`, err);
+                }
+            }
+        };
+
+        if (uploads.some(m => m.status === 'processing')) {
+            pollInterval = setInterval(pollProcessing, 3000);
+        }
+
+        return () => {
+            if (pollInterval) clearInterval(pollInterval);
+        };
+    }, [uploads]);
+
     const fetchDetails = async () => {
         try {
             const res = await subjectService.getOne(id);

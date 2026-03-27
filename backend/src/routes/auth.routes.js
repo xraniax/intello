@@ -15,20 +15,30 @@ router.get('/reset-password/:token', authLimiter, AuthController.validateResetTo
 router.post('/reset-password', authLimiter, validate(resetPasswordSchema), AuthController.resetPassword);
 router.get('/me', protect, AuthController.getMe);
 
-// --- Social Auth ---
-
-// Google
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-router.get('/google/callback',
-    passport.authenticate('google', { session: false, failureRedirect: '/login' }),
-    AuthController.socialAuthCallback
+// --- Google OAuth ---
+router.get('/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
 );
 
-// GitHub
-router.get('/github', passport.authenticate('github', { scope: ['user:email'] }));
+router.get('/google/callback',
+  passport.authenticate('google', { 
+    failureRedirect: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_failed`,
+    session: false 
+  }),
+  AuthController.socialAuthCallback
+);
+
+// --- GitHub OAuth ---
+router.get('/github',
+  passport.authenticate('github', { scope: ['user:email'] })
+);
+
 router.get('/github/callback',
-    passport.authenticate('github', { session: false, failureRedirect: '/login' }),
-    AuthController.socialAuthCallback
+  passport.authenticate('github', {
+    failureRedirect: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_failed`,
+    session: false
+  }),
+  AuthController.socialAuthCallback
 );
 
 export default router;

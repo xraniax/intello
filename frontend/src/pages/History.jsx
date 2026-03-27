@@ -30,6 +30,41 @@ const History = () => {
         fetchHistory();
     }, []);
 
+    useEffect(() => {
+        let pollInterval;
+        
+        const pollProcessing = async () => {
+            const processingIds = materials
+                .filter(m => m.status === 'processing')
+                .map(m => m.id);
+
+            if (processingIds.length === 0) {
+                if (pollInterval) clearInterval(pollInterval);
+                return;
+            }
+
+            for (const mid of processingIds) {
+                try {
+                    const res = await materialService.sync(mid);
+                    const updated = res.data.data;
+                    if (updated.status !== 'processing') {
+                        setMaterials(prev => prev.map(m => m.id === mid ? updated : m));
+                    }
+                } catch (err) {
+                    console.error(`Sync failed for ${mid}:`, err);
+                }
+            }
+        };
+
+        if (materials.some(m => m.status === 'processing')) {
+            pollInterval = setInterval(pollProcessing, 4000);
+        }
+
+        return () => {
+            if (pollInterval) clearInterval(pollInterval);
+        };
+    }, [materials]);
+
     const handleDelete = async (e, id) => {
         e.preventDefault();
         e.stopPropagation();
@@ -84,57 +119,73 @@ const History = () => {
                     <div className="h-px bg-gray-100 flex-grow"></div>
                 </div>
                 <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
-                    {items.map(m => (
-                        <div 
-                            key={m.id} 
-                            onClick={() => navigate(`/subjects/${m.subject_id}`, { state: { openMaterialId: m.id } })}
-                            className={`group relative bg-white border border-gray-100 rounded-[1.5rem] p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${viewMode === 'list' ? 'flex items-center justify-between py-4' : ''}`}
-                        >
-                            <div className="flex items-start gap-4">
-                                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-500 group-hover:text-white transition-all duration-500 shrink-0">
-                                    {m.type === 'upload' ? <FileText className="w-6 h-6" /> : <BookOpen className="w-6 h-6" />}
-                                </div>
-                                <div className="min-w-0 flex-grow">
-                                    <h4 className="font-bold text-gray-900 truncate group-hover:text-indigo-600 transition-colors">{m.title}</h4>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className="px-2 py-0.5 rounded-md bg-gray-50 text-gray-400 text-[10px] font-bold uppercase tracking-wider">
-                                            {m.subject_name || 'Imported'}
-                                        </span>
-                                        <span className="text-[10px] text-gray-300 font-medium flex items-center gap-1">
-                                            <Clock className="w-3 h-3" />
-                                            {format(new Date(m.created_at), 'h:mm a')}
-                                        </span>
+                    {items.map(m => {
+                        const isProcessing = m.status === 'processing';
+                        return (
+                            <div 
+                                key={m.id} 
+                                onClick={() => !isProcessing && navigate(`/subjects/${m.subject_id}`, { state: { openMaterialId: m.id } })}
+                                className={`group relative bg-white border border-gray-100 rounded-[1.5rem] p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${isProcessing ? 'cursor-wait opacity-80' : ''} ${viewMode === 'list' ? 'flex items-center justify-between py-4' : ''}`}
+                            >
+                                <div className="flex items-start gap-4">
+                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-500 shrink-0 ${isProcessing ? 'bg-indigo-50' : 'bg-indigo-50 text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white'}`}>
+                                        {isProcessing ? (
+                                            <div className="w-5 h-5 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+                                        ) : m.type === 'upload' ? (
+                                            <FileText className="w-6 h-6" />
+                                        ) : (
+                                            <BookOpen className="w-6 h-6" />
+                                        )}
+                                    </div>
+                                    <div className="min-w-0 flex-grow">
+                                        <div className="flex items-center gap-2">
+                                            <h4 className="font-bold text-gray-900 truncate group-hover:text-indigo-600 transition-colors">{m.title}</h4>
+                                            {isProcessing && (
+                                                <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest bg-indigo-50 px-1.5 py-0.5 rounded animate-pulse">
+                                                    AI Processing
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="px-2 py-0.5 rounded-md bg-gray-50 text-gray-400 text-[10px] font-bold uppercase tracking-wider">
+                                                {m.subject_name || 'Imported'}
+                                            </span>
+                                            <span className="text-[10px] text-gray-300 font-medium flex items-center gap-1">
+                                                <Clock className="w-3 h-3" />
+                                                {format(new Date(m.created_at), 'h:mm a')}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
+
+                                {viewMode === 'grid' && (
+                                    <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
+                                        <div className="text-xs text-gray-400 font-medium line-clamp-1">
+                                            {isProcessing ? "AI is refining knowledge..." : m.ai_generated_content?.result ? "AI Insights Ready" : "Document Active"}
+                                        </div>
+                                        <button 
+                                            onClick={(e) => handleDelete(e, m.id)}
+                                            className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {viewMode === 'list' && (
+                                    <div className="flex items-center gap-4">
+                                        <button 
+                                            onClick={(e) => handleDelete(e, m.id)}
+                                            className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                        {!isProcessing && <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500 transition-colors" />}
+                                    </div>
+                                )}
                             </div>
-
-                            {viewMode === 'grid' && (
-                                <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
-                                    <div className="text-xs text-gray-400 font-medium line-clamp-1">
-                                        {m.ai_generated_content?.result ? "AI Insights Ready" : "Processing Source..."}
-                                    </div>
-                                    <button 
-                                        onClick={(e) => handleDelete(e, m.id)}
-                                        className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            )}
-
-                            {viewMode === 'list' && (
-                                <div className="flex items-center gap-4">
-                                    <button 
-                                        onClick={(e) => handleDelete(e, m.id)}
-                                        className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                    <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500 transition-colors" />
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         );

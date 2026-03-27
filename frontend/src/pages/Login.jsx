@@ -42,7 +42,7 @@ const Login = () => {
     };
 
     const handleSocialLogin = (provider) => {
-        const backendBase = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+        const backendBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
         window.location.href = `${backendBase}/auth/${provider}`;
     };
 

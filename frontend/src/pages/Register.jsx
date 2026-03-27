@@ -30,7 +30,7 @@ const Register = () => {
     };
 
     const handleSocialLogin = (provider) => {
-        const backendBase = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+        const backendBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
         window.location.href = `${backendBase}/auth/${provider}`;
     };
 
@@ -137,6 +137,7 @@ const Register = () => {
                             </button>
                         </div>
                         {err.fields.password && <p className="text-xs text-red-500 mt-1.5 ml-1 font-medium">{err.fields.password}</p>}
+                        {!err.fields.password && <p className="text-xs text-gray-400 mt-1.5 ml-1">Minimum 8 characters</p>}
                     </div>
 
                     <button type="submit" className="btn-primary w-full mt-2 py-3.5 text-base" disabled={sending}>

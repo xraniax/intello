@@ -1,25 +1,22 @@
 import os
+import logging
 from typing import List, Dict, Optional
 
 try:
-   
     from typing import Literal  
 except ImportError:
-    
     from typing_extensions import Literal  
 
 from PyPDF2 import PdfReader
-
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DEFAULT_UPLOADS_DIR = os.path.join(_REPO_ROOT, "backend", "uploads")
-SUPPORTED_EXTENSIONS = {".pdf"}
 from pdf2image import convert_from_path
 from pytesseract import image_to_string
-import logging
 
 logger = logging.getLogger("engine-preprocessing")
 
-
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DEFAULT_UPLOADS_DIR = "/app/uploads"
+# PDF is the only currently supported extension; extensible in the future
+SUPPORTED_EXTENSIONS = {".pdf"}
 DocumentType = Literal["PDF", "ScannedDoc"]
 
 
@@ -75,39 +72,66 @@ def _clean_text(text: str) -> str:
     return "\n".join(lines).strip()
 
 #split the text into chunks to be used for embedding
-def _chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> List[str]:
-    if not text:
+def _chunk_text(text: str, max_tokens: int = 500, overlap_tokens: int = 50) -> List[str]:
+    if not text or not text.strip():
         return []
 
-    if max_chars <= 0:
-        return [text]
+    try:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        # Semantic chunking that respects paragraph and sentence boundaries, bound by token limits
+        splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+            model_name="gpt-4",
+            chunk_size=max_tokens,
+            chunk_overlap=overlap_tokens,
+        )
+        return splitter.split_text(text)
+    except Exception as e:
+        logger.warning(f"Semantic chunking failed, falling back to naive char split: {e}")
+        if max_tokens <= 0:
+            return [text]
 
-    if overlap < 0:
-        overlap = 0
+        if overlap_tokens < 0:
+            overlap_tokens = 0
 
-    chunks: List[str] = []
-    start = 0
-    length = len(text)
+        chunks: List[str] = []
+        start = 0
+        length = len(text)
+        # Approximate 4 chars per token for naive fallback
+        max_chars = max_tokens * 4
+        overlap_chars = overlap_tokens * 4
 
-    while start < length:
-        end = min(start + max_chars, length)
-        chunk = text[start:end]
-        chunks.append(chunk)
+        # Prevent infinite loop if overlap equals or exceeds chunk size
+        if overlap_chars >= max_chars:
+            overlap_chars = max_chars - 1
 
-        if end == length:
-            break
+        while start < length:
+            end = min(start + max_chars, length)
+            chunk = text[start:end]
+            chunks.append(chunk)
 
-        start = max(0, end - overlap)
+            if end == length:
+                break
 
-    return chunks
+            start = max(0, end - overlap_chars)
+
+        return chunks
 
 #high level preprocessing function
+def extract_text_from_pdf(file_path: str) -> str:
+    """Detect type and extract text from either digital or scanned PDF."""
+    doc_type = _detect_document_type(file_path)
+    if doc_type == "PDF":
+        return _extract_text_from_digital_pdf(file_path)
+    else:
+        return _extract_text_from_scanned_pdf(file_path)
+
+
 def preprocess_document(
     file_path: str,
     *,
     forced_type: Optional[DocumentType] = None,
-    max_chunk_chars: int = 1500,
-    chunk_overlap: int = 200,
+    max_chunk_tokens: int = 500,
+    chunk_overlap_tokens: int = 50,
 ) -> Dict:
     logger.info(f"Preprocessing document: {file_path}")
     if not os.path.isfile(file_path):
@@ -142,7 +166,7 @@ def preprocess_document(
 
     logger.info("Cleaning and chunking text...")
     cleaned_text = _clean_text(raw_text)
-    chunks = _chunk_text(cleaned_text, max_chars=max_chunk_chars, overlap=chunk_overlap)
+    chunks = _chunk_text(cleaned_text, max_tokens=max_chunk_tokens, overlap_tokens=chunk_overlap_tokens)
 
     logger.info(f"Finished preprocessing. Extracted {len(chunks)} chunks.")
     return {
@@ -153,35 +177,5 @@ def preprocess_document(
         "num_chunks": len(chunks),
     }
 
-#preprocess all the docs in the uploads folder
-def preprocess_uploads_folder(
-    uploads_dir: Optional[str] = None,
-    *,
-    forced_type: Optional[DocumentType] = None,
-    max_chunk_chars: int = 1500,
-    chunk_overlap: int = 200,
-) -> Dict[str, Dict]:
-
-    directory = uploads_dir if uploads_dir is not None else DEFAULT_UPLOADS_DIR
-    if not os.path.isdir(directory):
-        raise FileNotFoundError(f"Uploads directory not found: {directory}")
-
-    results: Dict[str, Dict] = {}
-    for entry in os.scandir(directory):
-        if not entry.is_file():
-            continue
-        base, ext = os.path.splitext(entry.name)
-        if ext.lower() not in SUPPORTED_EXTENSIONS:
-            continue
-        try:
-            results[entry.name] = preprocess_document(
-                entry.path,
-                forced_type=forced_type,
-                max_chunk_chars=max_chunk_chars,
-                chunk_overlap=chunk_overlap,
-            )
-        except Exception as e:
-            results[entry.name] = {"error": str(e)}
-
-    return results
+# preprocess_uploads_folder moved to document_processor.py
 

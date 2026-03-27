@@ -17,7 +17,7 @@ class User {
         }
 
         const result = await query(
-            'INSERT INTO users (email, password_hash, name, role, auth_provider, provider_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, role, status, last_login_at, created_at',
+            'INSERT INTO users (email, password_hash, name, role, auth_provider, provider_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, role, status, last_login_at, created_at, avatar_url, settings, achievements',
             [email, hashedPassword, name, role, authProvider, providerId]
         );
         return result.rows[0];
@@ -42,7 +42,7 @@ class User {
         if (existingByEmail) {
             // Link existing account to this provider
             const result = await query(
-                'UPDATE users SET auth_provider = $1, provider_id = $2 WHERE id = $3 RETURNING id, email, name, role, status, last_login_at, created_at',
+                'UPDATE users SET auth_provider = $1, provider_id = $2 WHERE id = $3 RETURNING id, email, name, role, status, last_login_at, created_at, avatar_url, settings, achievements',
                 [provider, providerId, existingByEmail.id]
             );
             return result.rows[0];
@@ -65,10 +65,24 @@ class User {
      */
     static async findById(id) {
         const result = await query(
-            'SELECT id, email, name, role, created_at, reset_token_hash, reset_token_expires FROM users WHERE id = $1',
+            'SELECT id, email, name, role, status, created_at, last_login_at, last_active_at, reset_token_hash, reset_token_expires, avatar_url, settings, achievements FROM users WHERE id = $1',
             [id]
         );
         return result.rows[0];
+    }
+
+    /**
+     * Update user's last_active_at timestamp.
+     */
+    static async updateLastActive(id) {
+        await query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [id]);
+    }
+
+    /**
+     * Update user's last_login_at timestamp.
+     */
+    static async updateLastLogin(id) {
+        await query('UPDATE users SET last_login_at = NOW(), last_active_at = NOW() WHERE id = $1', [id]);
     }
 
     /**
@@ -140,15 +154,26 @@ class User {
      * Fetch all users for admin management.
      * Includes material counts and storage estimation.
      */
-    static async findAll() {
+    static async findAll(filters = {}) {
+        const { sortBy = 'created_at', order = 'DESC', page = 1, limit = 1000 } = filters;
+        const validSortColumns = ['name', 'email', 'role', 'status', 'created_at', 'last_active_at', 'storage_usage_bytes'];
+        const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
+        const sortDirection = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        const offset = (Math.max(1, page) - 1) * limit;
+
         const result = await query(
-            `SELECT u.id, u.email, u.name, u.role, u.status, u.created_at, u.last_login_at, u.storage_limit_bytes,
-             COUNT(m.id)::int as material_count,
-             COALESCE(SUM(LENGTH(m.content)), 0)::int as storage_usage_bytes
+            `SELECT u.id, u.email, u.name, u.role, u.status, u.created_at, u.last_active_at, u.storage_limit_bytes, u.avatar_url, u.settings, u.achievements,
+             (SELECT COUNT(*)::int FROM materials m WHERE m.user_id = u.id AND UPPER(m.status) != 'FAILED') as material_count,
+             (SELECT COUNT(*)::int FROM subjects s WHERE s.user_id = u.id) as workspace_count,
+             ((SELECT COALESCE(SUM(f.size_bytes), 0)::bigint FROM files f
+               WHERE f.user_id = u.id) + 
+              (SELECT COALESCE(SUM(OCTET_LENGTH(COALESCE(m.content, ''))), 0)::bigint FROM materials m
+               WHERE m.user_id = u.id AND UPPER(m.status) != 'FAILED')
+             ) as storage_usage_bytes
              FROM users u
-             LEFT JOIN materials m ON u.id = m.user_id
-             GROUP BY u.id
-             ORDER BY u.created_at DESC`
+             ORDER BY ${sortColumn} ${sortDirection}
+             LIMIT $1 OFFSET $2`,
+             [limit, offset]
         );
         return result.rows;
     }
@@ -170,7 +195,7 @@ class User {
 
         values.push(id);
         const result = await query(
-            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, email, name, role, status, storage_limit_bytes`,
+            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, email, name, role, status, storage_limit_bytes, avatar_url, settings, achievements`,
             values
         );
         return result.rows[0];
@@ -188,6 +213,7 @@ class User {
      * Compare provided password with stored hash
      */
     static async comparePassword(password, hashedPassword) {
+        if (!hashedPassword) return false;
         return bcrypt.compare(password, hashedPassword);
     }
 }

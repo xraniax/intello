@@ -58,9 +58,7 @@ class MaterialController {
                 data: uploadedDocument,
             });
         } catch (error) {
-            // Only delete if processing failed and we haven't tracked it yet
-            // (In a real app, we might keep failed ones for debugging, 
-            // but here we clean up to save space if it's a fatal error)
+            // Only scrape the physical file from the NFS drive if a database/processing error halted the pipeline
             if (file) {
                 safeDelete(file.path);
             }
@@ -96,6 +94,15 @@ class MaterialController {
 
         const result = await MaterialService.generateWithContext(req.user.id, materialIds, taskType);
         res.status(200).json({ status: 'success', data: result });
+    });
+
+    static syncStatus = asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        const updated = await MaterialService.checkJobStatus(req.user.id, id);
+        res.status(200).json({
+            status: 'success',
+            data: updated
+        });
     });
 
     static delete = asyncHandler(async (req, res) => {

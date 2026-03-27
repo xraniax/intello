@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/AuthContext';
+import { User as UserIcon } from 'lucide-react';
 
 const Navbar = () => {
     const { user, logout } = useAuth();
@@ -35,8 +36,10 @@ const Navbar = () => {
 
                             <div className="h-4 w-[1px] bg-gray-200 mx-2"></div>
 
-                            <div className="flex items-center gap-4">
-                                <span className="text-sm font-semibold text-gray-700">{user.name}</span>
+                            <div className="flex items-center gap-3">
+                                <Link to="/profile" className="p-2 hover:bg-fuchsia-50 rounded-full transition-all group" title="Profile">
+                                    <UserIcon className="w-5 h-5 text-gray-600 group-hover:text-fuchsia-600" />
+                                </Link>
                                 <button
                                     onClick={handleLogout}
                                     className="text-sm font-medium text-peach-600 bg-red-50 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-all duration-200"

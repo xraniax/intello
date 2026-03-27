@@ -3,6 +3,7 @@ Subject document processor: fetches documents by subject_id from DB,
 preprocesses (or uses existing chunks), and returns a JSON-like structure.
 """
 import os
+import sys
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -10,36 +11,34 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from .preprocessing import DEFAULT_UPLOADS_DIR, preprocess_document
+from services.preprocessing import DEFAULT_UPLOADS_DIR
+from services.document_processor import process_document
 
 logger = logging.getLogger("engine-processor")
 
 # DB integration: expect database.SessionLocal and models.Document when running with backend
 try:
-    logger.debug("Attempting imports from engine root...")
     import database
     import models
     SessionLocal = database.SessionLocal
     Document = models.Document
+    Chunk = models.Chunk
     logger.info("Successfully imported database and models from engine root.")
-except ImportError as e:
-    logger.debug(f"Root imports failed: {e}. Trying relative imports...")
+except ImportError:
+    # Fallback for different execution contexts (e.g. within services/ folder)
     try:
-        from . import database as local_db
-        from . import models as local_models
-        SessionLocal = local_db.SessionLocal
-        Document = local_models.Document
-        logger.info("Successfully imported database and models via relative paths.")
-    except (ImportError, ValueError) as e2:
-        logger.debug(f"Relative imports also failed: {e2}. Trying parent relative imports...")
-        try:
-            from ..database import SessionLocal
-            from ..models import Document
-            logger.info("Successfully imported database and models via parent relative paths.")
-        except (ImportError, ValueError) as e3:
-            logger.error(f"All import attempts failed. Last error: {e3}")
-            SessionLocal = None  # type: ignore[misc, assignment]
-            Document = None  # type: ignore[misc, assignment]
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+        import database
+        import models
+        SessionLocal = database.SessionLocal
+        Document = models.Document
+        Chunk = models.Chunk
+        logger.info("Successfully imported database and models via sys.path adjustment.")
+    except ImportError as e:
+        logger.error(f"Failed to import database/models: {e}")
+        SessionLocal = None  # type: ignore[misc, assignment]
+        Document = None  # type: ignore[misc, assignment]
+        Chunk = None  # type: ignore[misc, assignment]
 
 
 def get_db() -> Optional[Session]:
@@ -110,8 +109,8 @@ def _build_document_result(
     file_path: str,
     uploads_dir: str,
     db: Optional[Session],
-    max_chunk_chars: int = 1500,
-    chunk_overlap: int = 200,
+    max_chunk_tokens: int = 500,
+    chunk_overlap_tokens: int = 50,
 ) -> Dict[str, Any]:
     """
     For one document: load from file (preprocess) or from DB chunks; return chunks with metadata.
@@ -159,22 +158,32 @@ def _build_document_result(
         return result
 
     try:
-        preprocessed = preprocess_document(
+        # Professional Pipeline: Extraction + Chunking + Embedding
+        processed = process_document(
             file_path,
-            max_chunk_chars=max_chunk_chars,
-            chunk_overlap=chunk_overlap,
+            max_chunk_tokens=max_chunk_tokens,
+            chunk_overlap_tokens=chunk_overlap_tokens,
         )
         logger.info(f"Preprocessed {filename} successfully.")
     except Exception as e:
-        logger.error(f"Preprosessing failed for {filename}: {e}")
+        logger.error(f"Preprocessing failed for {filename}: {e}")
         result["error"] = str(e)
         return result
 
-    chunks_raw = preprocessed.get("chunks", [])
-    doc_type = preprocessed.get("type", "PDF")
+    chunks_raw = processed.get("chunks", [])
+    doc_type = processed.get("type", "PDF")
     result["processed"] = True
     result["doc_type"] = doc_type
     result["num_chunks"] = len(chunks_raw)
+    result["provider"] = processed.get("provider")
+    result["model"] = processed.get("model")
+    
+    embeddings = processed.get("embeddings", [])
+    result["embeddings"] = embeddings
+
+    # The engine is stateless — no DB writes here.
+    # Results are returned to the caller or via Celery backend.
+    # The Node.js backend handles final persistence.
     result["chunks"] = [
         {
             "index": i,
@@ -198,8 +207,8 @@ def process_subject(
     *,
     uploads_dir: Optional[str] = None,
     topic: Optional[str] = None,
-    max_chunk_chars: int = 1500,
-    chunk_overlap: int = 200,
+    max_chunk_tokens: int = 500,
+    chunk_overlap_tokens: int = 50,
 ) -> Dict[str, Any]:
     """
     Main entry: take a subject_id, pull all documents from DB, preprocess each (if not already
@@ -208,7 +217,7 @@ def process_subject(
     - subject_id: ID of the subject whose documents to process.
     - uploads_dir: Base directory for document files (default: preprocessing.DEFAULT_UPLOADS_DIR).
     - topic: If set, only include chunks whose content contains this topic (case-insensitive).
-    - max_chunk_chars, chunk_overlap: Passed to preprocessing.
+    - max_chunk_tokens, chunk_overlap_tokens: Passed to preprocessing.
 
     Returns a dict suitable for JSON:
       - subject_id, documents[], total_chunks, errors[]
@@ -283,8 +292,8 @@ def process_subject(
                 file_path,
                 base_dir,
                 db,
-                max_chunk_chars=max_chunk_chars,
-                chunk_overlap=chunk_overlap,
+                max_chunk_tokens=max_chunk_tokens,
+                chunk_overlap_tokens=chunk_overlap_tokens,
             )
 
             if doc_result.get("error"):

@@ -21,9 +21,10 @@ router.delete('/users/:id', AdminController.deleteUser);
 router.get('/files', AdminController.getAllFiles);
 router.delete('/files/:id', AdminController.deleteFile);
 
-// System Settings
+// System Settings & Maintenance
 router.get('/settings', AdminController.getSettings);
 router.patch('/settings', AdminController.updateSettings);
+router.post('/storage/cleanup', AdminController.cleanupStorage);
 
 // Audit Logs
 router.get('/logs', AdminController.getLogs);

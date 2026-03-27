@@ -1,19 +1,23 @@
 import os
-import tempfile
 import logging
 import traceback
 from typing import Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, Request
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import JSONResponse
 
-from .preprocessing import (
-    DEFAULT_UPLOADS_DIR,
-    preprocess_document,
-    preprocess_uploads_folder,
+from celery import chain
+from celery.result import AsyncResult
+from celery_app import celery_app
+from tasks import (
+    task_ocr,
+    task_chunk,
+    task_embed,
+    task_store,
+    task_record_failure,
+    process_subject_task,
 )
-from .document_processor import process_document
-from .processor import process_subject
+from services.preprocessing import DEFAULT_UPLOADS_DIR
 
 # Configure logging
 logging.basicConfig(
@@ -27,6 +31,7 @@ app = FastAPI(
     description="API for document preprocessing and processing.",
     version="0.1.0",
 )
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -46,7 +51,7 @@ async def root():
         "docs": "/docs",
         "endpoints": {
             "process_document": "POST /process-document (upload a file)",
-            "process_uploads_folder": "GET /process-uploads (process all files in backend/uploads)",
+            "get_job_status": "GET /job/{job_id}",
         },
     }
 
@@ -57,89 +62,97 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/job/{job_id}")
+async def get_job_status(job_id: str):
+    """Check the status of a background task."""
+    task_result = AsyncResult(job_id, app=celery_app)
+
+    response = {
+        "job_id": job_id,
+        "status": task_result.status,  # PENDING, STARTED, SUCCESS, FAILURE
+        "result": None,
+        "error": None,
+    }
+
+    if task_result.status == "FAILURE":
+        response["error"] = str(task_result.result)
+    elif task_result.status == "SUCCESS":
+        response["result"] = task_result.result
+    elif task_result.status == "STARTED":
+        response["meta"] = task_result.info
+
+    return response
+
+
+def _trigger_pipeline(file_path: str, document_id: Optional[str], subject_id: Optional[str]) -> str:
+    """
+    Build and dispatch the Celery chain:
+        task_ocr → task_chunk → task_embed → task_store
+    with task_record_failure wired as a link_error callback.
+    Returns the chain's root task ID (used as the job_id).
+    """
+    pipeline = chain(
+        task_ocr.s(file_path, document_id, subject_id, None),
+        task_chunk.s(),
+        task_embed.s(),
+        task_store.s(),
+    )
+    # The chain's apply_async allows attaching a link_error (errback)
+    # which is triggered if any task in the chain fails.
+    result = pipeline.apply_async(
+        link_error=task_record_failure.s(document_id, None)
+    )
+    return result.id
+
+
 @app.post("/process-document")
-async def process_document_route(file: UploadFile = File(...)):
-    """
-    Upload a single file and run it through the processing pipeline.
-    Returns type, raw_text, cleaned_text, chunks, and num_chunks.
-    """
-    logger.info(f"Received document process request for: {file.filename}")
-    
-    suffix = os.path.splitext(file.filename or "")[1] or ".pdf"
-    if suffix.lower() != ".pdf":
-        logger.warning(f"Unsupported file type: {suffix}")
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "Only PDF files are supported."}
-        )
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode='wb') as tmp:
-        try:
-            # Optimize: Stream the file to disk in chunks instead of loading entirely into memory
-            while chunk := await file.read(1024 * 1024):  # 1MB chunks
-                tmp.write(chunk)
-            tmp_path = tmp.name
-            logger.info(f"Saved temporary file to: {tmp_path}")
-        except Exception as e:
-            logger.error(f"Failed to save temporary file: {e}")
-            return JSONResponse(
-                status_code=500,
-                content={"status": "error", "message": "Failed to save uploaded file.", "details": str(e)}
-            )
-
-    try:
-        logger.info(f"Starting pipeline for: {tmp_path}")
-        result = process_document(tmp_path)
-        logger.info(f"Successfully processed: {file.filename}")
-        return {"status": "success", "message": "Document processed", "filename": file.filename, **result}
-    except Exception as e:
-        logger.error(f"Pipeline crashed for {file.filename}: {e}")
-        logger.error(traceback.format_exc())
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": "Processing failed", "details": str(e)}
-        )
-    finally:
-        try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-                logger.info(f"Cleaned up temporary file: {tmp_path}")
-        except Exception as e:
-            logger.error(f"Cleanup failed: {e}")
-
-
-@app.get("/process-uploads")
-async def process_uploads_route(
-    uploads_dir: Optional[str] = None,
+async def process_document_route(
+    file: Optional[UploadFile] = File(None),
+    file_path: Optional[str] = Form(None),
+    document_id: Optional[str] = Form(None),
+    subject_id: Optional[str] = Form(None),
 ):
     """
-    Process all supported documents in backend/uploads (or the given directory).
-    Returns a dict mapping each filename to its preprocessing result.
+    Trigger background processing for a document via the modular Celery pipeline.
+    Accepts either an NFS file_path or a direct file upload.
     """
+    if file_path and os.path.exists(file_path):
+        logger.info(f"Triggering pipeline for NFS file: {file_path} (document_id={document_id})")
+        job_id = _trigger_pipeline(file_path, document_id, subject_id)
+        return {"status": "accepted", "job_id": job_id, "message": "Processing started in background"}
+
+    if not file:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "No file or valid file_path provided."},
+        )
+
+    # HTTP upload fallback: save to shared uploads dir then process
+    filename = file.filename
+    target_path = os.path.join(DEFAULT_UPLOADS_DIR, f"async_{filename}")
+
     try:
-        results = preprocess_uploads_folder(uploads_dir=uploads_dir)
-        return {
-            "message": f"Processed {len(results)} file(s) from uploads.",
-            "uploads_dir": uploads_dir or DEFAULT_UPLOADS_DIR,
-            "results": results,
-        }
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
+        os.makedirs(DEFAULT_UPLOADS_DIR, exist_ok=True)
+        with open(target_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                f.write(chunk)
+
+        logger.info(f"Saved upload to {target_path}, triggering pipeline.")
+        job_id = _trigger_pipeline(target_path, document_id, subject_id)
+        return {"status": "accepted", "job_id": job_id, "message": "Upload success, processing started"}
+    except Exception as e:
+        logger.error(f"Failed to handle upload: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 @app.get("/subjects/{subject_id}/process")
 async def process_subject_route(
-    subject_id: int,
+    subject_id: str,
     uploads_dir: Optional[str] = None,
-    topic: Optional[str] = None,
 ):
     """
-    Trigger the database-backed processor for a given subject.
-    This uses the engine's PostgreSQL connection (service name 'db').
+    Trigger async processing for all documents in a subject.
     """
-    result = process_subject(
-        subject_id,
-        uploads_dir=uploads_dir,
-        topic=topic,
-    )
-    return result
+    logger.info(f"Triggering async subject processing for id={subject_id}")
+    task = process_subject_task.delay(subject_id, uploads_dir=uploads_dir)
+    return {"status": "accepted", "job_id": task.id, "message": "Subject processing task queued"}

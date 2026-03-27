@@ -1,25 +1,29 @@
 import User from '../models/user.model.js';
 import File from '../models/file.model.js';
+import Log from '../models/log.model.js';
 import SettingsService from './settings.service.js';
+import QuotaService from './quota.service.js';
 import { query } from '../utils/config/db.js';
 import fs from 'fs';
+import { performStorageCleanup } from '../utils/cleanup.util.js';
 
 class AdminService {
     /**
      * Get all users with stats
      */
-    static async getAllUsers() {
-        return await User.findAll();
+    static async getAllUsers(filters = {}) {
+        return await User.findAll(filters);
     }
 
     /**
      * Suspend or activate a user
      */
     static async updateUserStatus(adminId, targetUserId, status, reason = '') {
-        const updatedUser = await User.adminUpdate(targetUserId, { status });
+        const normalizedStatus = status.toUpperCase();
+        const updatedUser = await User.adminUpdate(targetUserId, { status: normalizedStatus });
         
         await this.logAction(adminId, 'UPDATE_STATUS', 'users', targetUserId, {
-            status,
+            status: normalizedStatus,
             reason
         });
 
@@ -42,7 +46,7 @@ class AdminService {
      */
     static async updateUserStorageLimit(adminId, targetUserId, limitBytes) {
         const updatedUser = await User.adminUpdate(targetUserId, { storage_limit_bytes: limitBytes });
-        await this.logAction(adminId, 'UPDATE_STORAGE_LIMIT', 'users', targetUserId, { limitBytes });
+        await this.logAction(adminId, 'UPDATE_STORAGE_LIMIT', 'users', targetUserId, { limit_bytes: limitBytes });
         return updatedUser;
     }
 
@@ -98,13 +102,12 @@ class AdminService {
      * System Settings Management
      */
     static async getSettings() {
-        const result = await query('SELECT COALESCE(SUM(size_bytes), 0)::bigint as total_bytes FROM files');
-        const totalStorageBytes = result.rows[0].total_bytes;
+        const globalStats = await QuotaService.getGlobalStorageStats();
 
         return {
             storage: await SettingsService.getStorageControls(),
             stats: {
-                total_storage_bytes: totalStorageBytes
+                total_storage_bytes: globalStats.totalUsedBytes
             }
         };
     }
@@ -121,24 +124,29 @@ class AdminService {
      * Record an administrative action in the audit log
      */
     static async logAction(adminId, action, targetType, targetId, details) {
-        await query(
-            'INSERT INTO admin_logs (admin_id, action, target_type, target_id, details) VALUES ($1, $2, $3, $4, $5)',
-            [adminId, action, targetType, targetId, JSON.stringify(details)]
-        );
+        await Log.create(adminId, action, targetType, targetId, details);
     }
 
     /**
      * Get audit logs for the admin panel
      */
-    static async getAdminLogs() {
-        const result = await query(
-            `SELECT l.*, u.name as admin_name, u.email as admin_email
-             FROM admin_logs l
-             JOIN users u ON l.admin_id = u.id
-             ORDER BY l.created_at DESC
-             LIMIT 100`
-        );
-        return result.rows;
+    static async getAdminLogs(filters = {}) {
+        return await Log.findAll(filters);
+    }
+
+    /**
+     * Run system-wide storage cleanup
+     */
+    static async cleanupStorage(adminId) {
+        const stats = await performStorageCleanup();
+        
+        await this.logAction(adminId, 'STORAGE_CLEANUP', 'system', 'storage', {
+            orphans_deleted: stats.orphansDeleted,
+            space_freed_bytes: stats.spaceFreedBytes,
+            broken_links_found: stats.brokenLinksFound
+        });
+
+        return stats;
     }
 }
 

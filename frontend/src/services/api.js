@@ -70,6 +70,7 @@ export const materialService = {
     chatCombined: (materialIds, question) => api.post('/materials/chat-combined', { materialIds, question }),
     generateCombined: (materialIds, taskType) => api.post('/materials/generate-combined', { materialIds, taskType }),
     delete: (id) => api.delete(`/materials/${id}`),
+    sync: (id) => api.get(`/materials/${id}/sync`),
 };
 
 export const subjectService = {
@@ -97,8 +98,14 @@ export const adminService = {
     // Settings Management
     getSettings: () => api.get('/admin/settings'),
     updateSettings: (settings) => api.patch('/admin/settings', settings),
+    cleanupStorage: () => api.post('/admin/storage/cleanup'),
     
     getLogs: () => api.get('/admin/logs')
+};
+
+export const profileService = {
+    getProfile: () => api.get('/profile'),
+    updateProfile: (data) => api.put('/profile', data),
 };
 
 export default api;

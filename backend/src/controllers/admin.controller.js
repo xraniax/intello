@@ -6,7 +6,8 @@ class AdminController {
      */
     static async getUsers(req, res) {
         try {
-            const users = await AdminService.getAllUsers();
+            const { sortBy, order, page, limit } = req.query;
+            const users = await AdminService.getAllUsers({ sortBy, order, page, limit });
             res.json({ success: true, data: users });
         } catch (error) {
             console.error('Admin Fetch Users Error:', error);
@@ -18,7 +19,7 @@ class AdminController {
      * Update user status (Active/Suspended)
      */
     static async updateStatus(req, res) {
-        const { id } = req.params;
+        const id = req.params.id || req.params.userId;
         const { status, reason } = req.body;
         
         console.log(`[Admin] Updating status for user ${id} to ${status} by admin ${req.user.id}`);
@@ -40,7 +41,7 @@ class AdminController {
      * Update user role (e.g., Promote to Admin)
      */
     static async updateRole(req, res) {
-        const { id } = req.params;
+        const id = req.params.id || req.params.userId;
         const { role } = req.body;
 
         try {
@@ -77,7 +78,8 @@ class AdminController {
      */
     static async getLogs(req, res) {
         try {
-            const logs = await AdminService.getAdminLogs();
+            const { sortBy, order, page, limit, action, entityType } = req.query;
+            const logs = await AdminService.getAdminLogs({ sortBy, order, page, limit, action, entityType });
             res.json({ success: true, data: logs });
         } catch (error) {
             console.error('Admin Fetch Logs Error:', error);
@@ -89,8 +91,8 @@ class AdminController {
      */
     static async getAllFiles(req, res) {
         try {
-            const { userId, subjectId, minSizeMb, mimeType } = req.query;
-            const files = await AdminService.getAllFiles({ userId, subjectId, minSizeMb, mimeType });
+            const { userId, subjectId, minSizeMb, mimeType, sortBy, order, page, limit } = req.query;
+            const files = await AdminService.getAllFiles({ userId, subjectId, minSizeMb, mimeType, sortBy, order, page, limit });
             res.status(200).json({ success: true, data: files });
         } catch (error) {
             console.error('Admin Fetch Files Error:', error);
@@ -137,13 +139,30 @@ class AdminController {
      */
     static async updateStorageLimit(req, res) {
         try {
-            const { userId } = req.params; // Wait, admin.routes.js mapped this to :userId. Let me double check that. In admin.routes.js: router.patch('/users/:userId/storage-limit', ...)
+            const { userId } = req.params;
             const { limitBytes } = req.body;
             const user = await AdminService.updateUserStorageLimit(req.user.id, userId, limitBytes);
             res.status(200).json({ success: true, data: user });
         } catch (error) {
             console.error('Admin Update Storage Limit Error:', error);
             res.status(500).json({ success: false, message: error.message || 'Failed to update storage limit' });
+        }
+    }
+
+    /**
+     * Trigger global storage maintenance
+     */
+    static async cleanupStorage(req, res) {
+        try {
+            const stats = await AdminService.cleanupStorage(req.user.id);
+            res.status(200).json({ 
+                success: true, 
+                data: stats, 
+                message: `Storage cleanup complete. Freed ${Math.round(stats.spaceFreedBytes / 1024)} KB.` 
+            });
+        } catch (error) {
+            console.error('Admin Cleanup Storage Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to perform storage cleanup' });
         }
     }
 }

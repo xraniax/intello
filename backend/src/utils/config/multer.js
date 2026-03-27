@@ -2,12 +2,19 @@ import multer from 'multer';
 import path from 'path';
 import SettingsService from '../../services/settings.service.js';
 
+import fs from 'fs';
+
+// Initialize the storage path (defaults to 'uploads' for local dev, can be '/shared_nfs/uploads' in prod)
+const destPath = process.env.PDF_STORAGE_PATH || 'uploads';
+// Ensure the directory exists (crucial for freshly mounted NFS volumes or fresh clones)
+fs.mkdirSync(destPath, { recursive: true });
+
 /**
  * Multer disk storage configuration.
- * Files are saved to the `uploads/` directory with a timestamped, unique filename.
+ * Files are saved to the defined destination directory with a timestamped, unique filename.
  */
 const storage = multer.diskStorage({
-  destination: 'uploads',
+  destination: destPath,
   filename: (req, file, cb) => {
     // Sanitize the original filename to prevent directory traversal
     const safeName = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');

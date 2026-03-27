@@ -28,6 +28,8 @@ services:
         condition: service_healthy
       engine:
         condition: service_started
+      redis:
+        condition: service_started
     volumes:
       - ./backend:/app
       - backend_node_modules:/app/node_modules
@@ -41,9 +43,36 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    depends_on:
+      - redis
     volumes:
       - ./engine:/app
+      - ./backend/uploads:/app/uploads
     command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  celery_worker:
+    build:
+      context: ./engine
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./engine:/app
+      - ./backend/uploads:/app/uploads
+    command: celery -A celery_app worker --loglevel=info
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   db:
     image: pgvector/pgvector:pg16

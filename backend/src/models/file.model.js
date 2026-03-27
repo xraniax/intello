@@ -2,14 +2,14 @@ import { query } from '../utils/config/db.js';
 
 class File {
     /**
-     * Track a new file upload.
+     * Track a new file upload linked to a material.
      */
-    static async create(userId, subjectId, filename, originalName, mimeType, sizeBytes, path) {
+    static async create(userId, subjectId, materialId, filename, originalName, mimeType, sizeBytes, path) {
         const result = await query(
-            `INSERT INTO files (user_id, subject_id, filename, original_name, mime_type, size_bytes, path)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `INSERT INTO files (user_id, subject_id, material_id, filename, original_name, mime_type, size_bytes, path)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
-            [userId, subjectId, filename, originalName, mimeType, sizeBytes, path]
+            [userId, subjectId, materialId, filename, originalName, mimeType, sizeBytes, path]
         );
         return result.rows[0];
     }
@@ -23,9 +23,19 @@ class File {
     }
 
     /**
+     * Find a file by its associated material ID.
+     */
+    static async findByMaterialId(materialId) {
+        const result = await query('SELECT * FROM files WHERE material_id = $1', [materialId]);
+        return result.rows[0];
+    }
+
+    /**
      * Find all files for an admin (with user and subject details).
      */
     static async findAll(filters = {}) {
+        const { sortBy = 'created_at', order = 'DESC', page = 1, limit = 1000 } = filters;
+
         let sql = `
             SELECT f.*, u.name as user_name, u.email as user_email, s.name as subject_name
             FROM files f
@@ -57,7 +67,18 @@ class File {
             idx++;
         }
 
-        sql += ` ORDER BY f.created_at DESC`;
+        const validSortColumns = ['name', 'filename', 'original_name', 'size_bytes', 'created_at', 'size'];
+        let sortColumn = 'f.created_at';
+        if (validSortColumns.includes(sortBy)) {
+             if (sortBy === 'name') sortColumn = 'f.original_name';
+             else if (sortBy === 'size') sortColumn = 'f.size_bytes';
+             else sortColumn = `f.${sortBy}`;
+        }
+        const sortDirection = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        const offset = (Math.max(1, page) - 1) * limit;
+
+        sql += ` ORDER BY ${sortColumn} ${sortDirection} LIMIT $${idx} OFFSET $${idx + 1}`;
+        params.push(limit, offset);
 
         const result = await query(sql, params);
         return result.rows;
@@ -73,10 +94,14 @@ class File {
 
     /**
      * Get total storage usage for a user.
+     * Excludes files linked to FAILED materials.
      */
     static async getUserStorageUsage(userId) {
         const result = await query(
-            'SELECT COALESCE(SUM(size_bytes), 0)::bigint as usage_bytes FROM files WHERE user_id = $1',
+            `SELECT COALESCE(SUM(f.size_bytes), 0)::bigint as usage_bytes 
+             FROM files f
+             LEFT JOIN materials m ON f.material_id = m.id
+             WHERE f.user_id = $1 AND (m.status IS NULL OR UPPER(m.status) != 'FAILED')`,
             [userId]
         );
         return result.rows[0].usage_bytes;

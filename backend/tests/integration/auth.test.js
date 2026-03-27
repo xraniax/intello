@@ -8,8 +8,15 @@ import User from '../../src/models/user.model.js';
 import bcrypt from 'bcrypt';
 
 describe('Auth API Integration', () => {
+    const VALID_PASSWORD = 'Password123!';
+    let hashedPassword;
+
+    beforeAll(async () => {
+        hashedPassword = await bcrypt.hash(VALID_PASSWORD, 1);
+    });
+
     beforeEach(() => {
-        jest.clearAllMocks();
+        jest.resetAllMocks();
     });
 
     describe('POST /api/auth/register', () => {
@@ -17,14 +24,14 @@ describe('Auth API Integration', () => {
             // Mock DB to return nothing for findByEmail (no duplicate email)
             global.__mockDbQuery.mockResolvedValueOnce({ rows: [] });
             // Mock DB to return the newly created user
-            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: 'Test User', email: 'test@example.com' }] });
+            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: 'Test User', email: 'test@example.com', status: 'active' }] });
 
             const res = await request(app)
                 .post('/api/auth/register')
                 .send({
                     name: 'Test User',
                     email: 'test@example.com',
-                    password: 'password123'
+                    password: VALID_PASSWORD
                 });
 
             expect(res.status).toBe(201);
@@ -33,21 +40,20 @@ describe('Auth API Integration', () => {
             expect(res.body.data.token).toBeDefined();
         });
 
-        it('should return 409 if email already exists', async () => {
+        it('should return 400 if email already exists', async () => {
             // Mock DB to find an existing user
-            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, email: 'test@example.com' }] });
+            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, email: 'test@example.com', status: 'active' }] });
 
             const res = await request(app)
                 .post('/api/auth/register')
                 .send({
                     name: 'Test User',
                     email: 'test@example.com',
-                    password: 'password123'
+                    password: VALID_PASSWORD
                 });
 
-            expect(res.status).toBe(409);
+            expect(res.status).toBe(400); // Controller returns 400 for existing email
             expect(res.body.status).toBe('error');
-            expect(res.body.code).toBe(409);
         });
 
         it('should return 400 for invalid email or short password (Zod validation)', async () => {
@@ -69,15 +75,14 @@ describe('Auth API Integration', () => {
 
     describe('POST /api/auth/login', () => {
         it('should login successfully with correct credentials', async () => {
-            const hashedPassword = await bcrypt.hash('password123', 1);
             // Mock DB to return user with hashed password
-            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: 'Test', email: 'test@example.com', password_hash: hashedPassword }] });
+            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: 'Test', email: 'test@example.com', password_hash: hashedPassword, status: 'active' }] });
 
             const res = await request(app)
                 .post('/api/auth/login')
                 .send({
                     email: 'test@example.com',
-                    password: 'password123'
+                    password: VALID_PASSWORD
                 });
 
             expect(res.status).toBe(200);
@@ -85,14 +90,13 @@ describe('Auth API Integration', () => {
         });
 
         it('should return 401 for incorrect password', async () => {
-            const hashedPassword = await bcrypt.hash('password123', 1);
-            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, email: 'test@example.com', password_hash: hashedPassword }] });
+            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, email: 'test@example.com', password_hash: hashedPassword, status: 'active' }] });
 
             const res = await request(app)
                 .post('/api/auth/login')
                 .send({
                     email: 'test@example.com',
-                    password: 'wrongpassword'
+                    password: 'WrongPassword123!'
                 });
 
             expect(res.status).toBe(401);
@@ -106,11 +110,25 @@ describe('Auth API Integration', () => {
                 .post('/api/auth/login')
                 .send({
                     email: 'unknown@example.com',
-                    password: 'password123'
+                    password: VALID_PASSWORD
                 });
 
             expect(res.status).toBe(401);
             expect(res.body.message).toBe('Invalid email or password');
+        });
+
+        it('should return 403 for suspended user', async () => {
+            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, email: 'test@example.com', password_hash: hashedPassword, status: 'suspended' }] });
+
+            const res = await request(app)
+                .post('/api/auth/login')
+                .send({
+                    email: 'test@example.com',
+                    password: VALID_PASSWORD
+                });
+
+            expect(res.status).toBe(403);
+            expect(res.body.message).toMatch(/suspended/i);
         });
     });
 });

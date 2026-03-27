@@ -23,10 +23,12 @@ const AdminUsers = () => {
     const [users, setUsers] = useState([]);
     const [settings, setSettings] = useState(null); // to get global quota
     const [isLoading, setIsLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
     const [filterRole, setFilterRole] = useState('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [sortBy, setSortBy] = useState('created_at');
+    const [sortOrder, setSortOrder] = useState('desc');
     
     const [expandedUserId, setExpandedUserId] = useState(null);
     const [activeDropdownId, setActiveDropdownId] = useState(null);
@@ -45,7 +47,7 @@ const AdminUsers = () => {
                 adminService.getSettings()
             ]);
             setUsers(usersRes.data.data);
-            setSettings(settingsRes.data.data.storage);
+            setSettings(settingsRes.data.data);
         } catch (error) {
             toast.error('Failed to load users');
         } finally {
@@ -64,23 +66,49 @@ const AdminUsers = () => {
     }, [searchQuery]);
 
     const filteredUsers = useMemo(() => {
-        return users.filter(user => {
+        let result = users.filter(user => {
             const matchesSearch = user.name.toLowerCase().includes(debouncedSearch.toLowerCase()) || 
                                 user.email.toLowerCase().includes(debouncedSearch.toLowerCase());
-            const matchesStatus = filterStatus === 'all' || user.status === filterStatus;
+            const matchesStatus = filterStatus === 'all' || user.status?.toUpperCase() === filterStatus;
             const matchesRole = filterRole === 'all' || user.role === filterRole;
             return matchesSearch && matchesStatus && matchesRole;
         });
-    }, [users, debouncedSearch, filterStatus, filterRole]);
+
+        return result.sort((a, b) => {
+            let valA = a[sortBy];
+            let valB = b[sortBy];
+            
+            if (sortBy === 'storage_usage_bytes' || sortBy === 'workspace_count') {
+                valA = parseInt(valA) || 0;
+                valB = parseInt(valB) || 0;
+            } else if (sortBy === 'created_at' || sortBy === 'last_active_at') {
+                valA = valA ? new Date(valA).getTime() : 0;
+                valB = valB ? new Date(valB).getTime() : 0;
+            } else {
+                valA = (valA || '').toString().toLowerCase();
+                valB = (valB || '').toString().toLowerCase();
+            }
+
+            if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+            if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [users, debouncedSearch, filterStatus, filterRole, sortBy, sortOrder]);
 
     // Metrics
     const metrics = useMemo(() => {
         const total = users.length;
-        const active = users.filter(u => u.status === 'active').length;
-        const inactive = total - active;
-        const totalStorageBytes = users.reduce((acc, u) => acc + (parseInt(u.storage_usage_bytes) || 0), 0);
-        return { total, active, inactive, totalStorageBytes };
-    }, [users]);
+        const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+        const now = Date.now();
+        const onlineNow = users.filter(u => {
+            const lastActive = u.last_active_at ? new Date(u.last_active_at).getTime() : 0;
+            return now - lastActive < ONLINE_THRESHOLD_MS;
+        }).length;
+        const suspended = users.filter(u => u.status?.toUpperCase() === 'SUSPENDED').length;
+        const totalStorageBytes = settings?.stats?.total_storage_bytes || 
+                               users.reduce((acc, u) => acc + (parseInt(u.storage_usage_bytes) || 0), 0);
+        return { total, onlineNow, suspended, totalStorageBytes };
+    }, [users, settings]);
 
     const handleAction = async () => {
         if (!selectedUser || !modalType) return;
@@ -130,8 +158,8 @@ const AdminUsers = () => {
     const UserCard = ({ user }) => {
         const isExpanded = expandedUserId === user.id;
         const isDropdownOpen = activeDropdownId === user.id;
-        const defaultQuotaBytes = settings?.default_user_quota_mb * 1024 * 1024;
-        const maxQuota = user.storage_limit_bytes || defaultQuotaBytes || (100 * 1024 * 1024);
+        const defaultQuotaBytes = (settings?.default_user_quota_mb || 100) * 1024 * 1024;
+        const maxQuota = user.storage_limit_bytes || defaultQuotaBytes;
         const usageBytes = parseInt(user.storage_usage_bytes) || 0;
         const usagePercent = Math.min((usageBytes / maxQuota) * 100, 100);
         
@@ -170,7 +198,7 @@ const AdminUsers = () => {
                                             <Settings className="w-4 h-4" /> Adjust Quota
                                         </button>
                                         <div className="h-px bg-gray-100 my-1"></div>
-                                        {user.status === 'active' ? (
+                                        {user.status?.toUpperCase() === 'ACTIVE' ? (
                                             <button onClick={(e) => { e.stopPropagation(); confirmAction(user, 'suspend'); }} className="flex items-center gap-3 w-full text-left px-4 py-2.5 text-orange-600 hover:bg-orange-50 transition-colors">
                                                 <ShieldAlert className="w-4 h-4" /> Suspend
                                             </button>
@@ -202,7 +230,7 @@ const AdminUsers = () => {
                     <div className="flex gap-2 mb-6">
                         <UserRoleBadge role={user.role} />
                         <UserStatusBadge status={user.status} />
-                        {user.storage_limit_bytes && (
+                        {(user.storage_limit_bytes && parseInt(user.storage_limit_bytes) !== defaultQuotaBytes) && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-50 text-orange-600 border border-orange-100">
                                 Custom Quota
                             </span>
@@ -225,13 +253,15 @@ const AdminUsers = () => {
                     {/* Quick Stats */}
                     <div className="grid grid-cols-2 gap-4 mt-6 p-4 bg-gray-50 rounded-2xl">
                         <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Materials</p>
-                            <p className="text-lg font-black text-gray-900 leading-none">{user.material_count || 0}</p>
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Workspaces</p>
+                            <p className="text-lg font-black text-gray-900 leading-none">{user.workspace_count || 0}</p>
                         </div>
                         <div>
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Last Active</p>
                             <p className="text-sm font-bold text-gray-900 truncate">
-                                {user.last_login_at ? formatDistanceToNow(new Date(user.last_login_at), {addSuffix: true}) : 'Never'}
+                                {user.last_active_at 
+                                    ? formatDistanceToNow(new Date(user.last_active_at), {addSuffix: true}) 
+                                    : (user.last_login_at ? formatDistanceToNow(new Date(user.last_login_at), {addSuffix: true}) : 'Never')}
                             </p>
                         </div>
                     </div>
@@ -315,12 +345,16 @@ const AdminUsers = () => {
                         <span className="text-3xl font-black text-gray-900">{isLoading ? <Skeleton className="w-10 h-8" /> : metrics.total}</span>
                     </div>
                     <div className="card-minimal p-5 flex flex-col justify-between group">
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 group-hover:text-mint-500 transition-colors">Active Now</span>
-                        <span className="text-3xl font-black text-mint-600">{isLoading ? <Skeleton className="w-10 h-8" /> : metrics.active}</span>
+                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 group-hover:text-emerald-500 transition-colors">Online Now</span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                            <span className="text-3xl font-black text-emerald-600">{isLoading ? <Skeleton className="w-10 h-8" /> : metrics.onlineNow}</span>
+                        </div>
+                        <span className="text-[10px] font-medium text-gray-400 mt-1">Active within 5 min</span>
                     </div>
                     <div className="card-minimal p-5 flex flex-col justify-between group">
                         <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 group-hover:text-orange-400 transition-colors">Suspended</span>
-                        <span className="text-3xl font-black text-orange-500">{isLoading ? <Skeleton className="w-10 h-8" /> : metrics.inactive}</span>
+                        <span className="text-3xl font-black text-orange-500">{isLoading ? <Skeleton className="w-10 h-8" /> : metrics.suspended}</span>
                     </div>
                     <div className="card-minimal p-5 flex flex-col justify-between group">
                         <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 group-hover:text-indigo-400 transition-colors">Storage Consumed</span>
@@ -358,10 +392,36 @@ const AdminUsers = () => {
                                 onChange={(e) => setFilterStatus(e.target.value)}
                             >
                                 <option value="all">All Statuses</option>
-                                <option value="active">Active</option>
-                                <option value="suspended">Suspended</option>
+                                <option value="ACTIVE">Active</option>
+                                <option value="SUSPENDED">Suspended</option>
                             </select>
                             <Filter className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
+                        <div className="relative flex-1 lg:w-44">
+                            <select 
+                                className="w-full h-full pl-4 pr-10 py-3 md:py-0 bg-gray-50/50 hover:bg-gray-100 text-sm font-bold text-gray-600 border border-transparent focus:bg-white focus:border-indigo-100 focus:ring-4 focus:ring-indigo-50/50 outline-none rounded-xl appearance-none cursor-pointer transition-all"
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                            >
+                                <option value="created_at">Date Joined</option>
+                                <option value="name">Name</option>
+                                <option value="email">Email</option>
+                                <option value="last_active_at">Last Active</option>
+                                <option value="storage_usage_bytes">Storage Used</option>
+                                <option value="workspace_count">Workspaces</option>
+                            </select>
+                            <ChevronDown className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
+                        <div className="relative flex-1 lg:w-36">
+                            <select 
+                                className="w-full h-full pl-4 pr-10 py-3 md:py-0 bg-gray-50/50 hover:bg-gray-100 text-sm font-bold text-gray-600 border border-transparent focus:bg-white focus:border-indigo-100 focus:ring-4 focus:ring-indigo-50/50 outline-none rounded-xl appearance-none cursor-pointer transition-all"
+                                value={sortOrder}
+                                onChange={(e) => setSortOrder(e.target.value)}
+                            >
+                                <option value="desc">Descending</option>
+                                <option value="asc">Ascending</option>
+                            </select>
+                            <ChevronDown className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                         </div>
                     </div>
                     

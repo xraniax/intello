@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-    File as FileIcon, Trash2, User, Book, Eye, 
+    File as FileIcon, Trash2, User, Book, Eye, Search,
     Filter, LayoutGrid, LayoutList, CheckSquare, Square, 
     Download, RefreshCw, X
 } from 'lucide-react';
@@ -141,6 +141,28 @@ const FileList = ({ files, onDelete, filters, setFilters, settings, selectedIds,
                             ))}
                         </select>
                         <Filter className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    <div className="h-8 w-px bg-gray-100 hidden xl:block mx-1"></div>
+                    <div className="relative flex-1 md:w-36">
+                        <select 
+                            className="w-full h-full pl-3 pr-8 py-2.5 bg-gray-50 hover:bg-gray-100 text-sm font-bold text-gray-600 border border-transparent focus:bg-white focus:border-indigo-100 outline-none rounded-xl appearance-none cursor-pointer transition-all"
+                            value={filters.sortBy}
+                            onChange={(e) => setFilters({...filters, sortBy: e.target.value})}
+                        >
+                            <option value="created_at">Date Uploaded</option>
+                            <option value="original_name">Filename</option>
+                            <option value="size_bytes">Size</option>
+                        </select>
+                    </div>
+                    <div className="relative flex-1 md:w-32">
+                        <select 
+                            className="w-full h-full pl-3 pr-8 py-2.5 bg-gray-50 hover:bg-gray-100 text-sm font-bold text-gray-600 border border-transparent focus:bg-white focus:border-indigo-100 outline-none rounded-xl appearance-none cursor-pointer transition-all"
+                            value={filters.order}
+                            onChange={(e) => setFilters({...filters, order: e.target.value})}
+                        >
+                            <option value="desc">Descending</option>
+                            <option value="asc">Ascending</option>
+                        </select>
                     </div>
                 </div>
 

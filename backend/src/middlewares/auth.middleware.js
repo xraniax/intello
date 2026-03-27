@@ -17,6 +17,10 @@ const extractBearerToken = (authHeader) => {
     return null;
 };
 
+// Throttle cache for tracking user activity
+const activePings = new Map();
+const PING_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Authentication middleware.
  * Validates the JWT from the Authorization header and attaches the user to req.user.
@@ -56,6 +60,16 @@ const protect = async (req, res, next) => {
         }
 
         req.user = user;
+
+        // Throttled last_active_at update
+        const now = Date.now();
+        const lastPing = activePings.get(user.id) || 0;
+        if (now - lastPing > PING_THROTTLE_MS) {
+            activePings.set(user.id, now);
+            // Fire and forget, catch any errors quietly
+            User.updateLastActive(user.id).catch(err => console.error('[Auth] Failed to update last_active_at:', err.message));
+        }
+
         return next();
     } catch (error) {
         // Differentiate between expired tokens and other JWT errors

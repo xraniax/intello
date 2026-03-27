@@ -42,25 +42,13 @@ import authRoutes from './routes/auth.routes.js';
 import materialRoutes from './routes/material.routes.js';
 import subjectRoutes from './routes/subject.routes.js';
 import adminRoutes from './routes/admin.routes.js';
-import AuthController from './controllers/auth.controller.js';
-
-// Root-level OAuth routes (Direct backend callback support)
-app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-app.get('/google/callback', 
-    passport.authenticate('google', { session: false, failureRedirect: '/login' }),
-    AuthController.socialAuthCallback
-);
-
-app.get('/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
-app.get('/google/callback/github', // Keeping GitHub callback separate if needed, or follow same root pattern
-    passport.authenticate('github', { session: false, failureRedirect: '/login' }),
-    AuthController.socialAuthCallback
-);
+import profileRoutes from './routes/profile.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/profile', profileRoutes);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Cognify Backend is healthy' });

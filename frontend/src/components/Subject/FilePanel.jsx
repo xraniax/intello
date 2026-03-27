@@ -54,49 +54,71 @@ const FilePanel = ({
                             <p className="text-xs text-gray-400 mt-2 max-w-[140px]">Upload a PDF or paste text to begin your AI journey.</p>
                         </div>
                     ) : (
-                        materials.map((m) => (
-                            <div
-                                key={m.id}
-                                className={`group relative bg-white border rounded-2xl p-4 transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 ${
-                                    selectedMaterials.includes(m.id) 
-                                        ? 'border-indigo-500 bg-indigo-50/30 ring-2 ring-indigo-500/10' 
-                                        : 'border-gray-100 hover:border-indigo-200 hover:shadow-md'
-                                }`}
-                                onClick={() => toggleSelection(m.id)}
-                            >
-                                <div className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                    selectedMaterials.includes(m.id) ? 'bg-indigo-500 text-white' : 'bg-gray-50 text-gray-400'
-                                }`}>
-                                    {selectedMaterials.includes(m.id) ? <CheckCircle2 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-                                </div>
-                                <div className="min-w-0 flex-grow">
-                                    <h4 className={`text-sm font-bold truncate ${selectedMaterials.includes(m.id) ? 'text-indigo-900' : 'text-gray-700'}`}>
-                                        {m.title}
-                                    </h4>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
-                                            {new Date(m.created_at).toLocaleDateString()}
-                                        </span>
-                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all ml-auto">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onGenerate(m.id); }}
-                                                className="p-1.5 text-indigo-500 hover:bg-white rounded-lg transition-all"
-                                                title="AI Insight"
-                                            >
-                                                <Sparkles className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onDelete(m.id); }}
-                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-all"
-                                                title="Delete"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
+                        materials.map((m) => {
+                            const isProcessing = m.status === 'processing';
+                            const isSelected = selectedMaterials.includes(m.id);
+                            
+                            return (
+                                <div
+                                    key={m.id}
+                                    className={`group relative bg-white border rounded-2xl p-4 transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 ${
+                                        isSelected 
+                                            ? 'border-indigo-500 bg-indigo-50/30 ring-2 ring-indigo-500/10' 
+                                            : isProcessing
+                                                ? 'border-indigo-200 bg-indigo-50/10 cursor-wait opacity-80'
+                                                : 'border-gray-100 hover:border-indigo-200 hover:shadow-md'
+                                    }`}
+                                    onClick={() => !isProcessing && toggleSelection(m.id)}
+                                >
+                                    <div className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                        isSelected ? 'bg-indigo-500 text-white' : 'bg-gray-50 text-gray-400'
+                                    }`}>
+                                        {isProcessing ? (
+                                            <div className="w-4 h-4 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+                                        ) : isSelected ? (
+                                            <CheckCircle2 className="w-4 h-4" />
+                                        ) : (
+                                            <FileText className="w-4 h-4" />
+                                        )}
+                                    </div>
+                                    <div className="min-w-0 flex-grow">
+                                        <div className="flex items-center gap-2">
+                                            <h4 className={`text-sm font-bold truncate ${isSelected ? 'text-indigo-900' : 'text-gray-700'}`}>
+                                                {m.title}
+                                            </h4>
+                                            {isProcessing && (
+                                                <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest bg-indigo-50 px-1.5 py-0.5 rounded">
+                                                    AI Refining...
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                                {new Date(m.created_at).toLocaleDateString()}
+                                            </span>
+                                            <div className="flex gap-2 transition-all ml-auto">
+                                                {!isProcessing && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onGenerate(m.id); }}
+                                                        className="p-1.5 text-indigo-500 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                        title="AI Insight"
+                                                    >
+                                                        <Sparkles className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onDelete(m.id); }}
+                                                    className={`p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             </div>

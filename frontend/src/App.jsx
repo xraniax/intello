@@ -8,6 +8,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import History from './pages/History';
+import Profile from './pages/Profile';
 import AdminUsers from './pages/Admin/AdminUsers';
 import AdminFiles from './pages/Admin/AdminFiles';
 import AdminDashboard from './pages/Admin/AdminDashboard';
@@ -71,6 +72,7 @@ const AppContent = () => {
           <Route path="/subjects/:id" element={<ProtectedRoute><SubjectDetail /></ProtectedRoute>} />
           <Route path="/upload" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           
           {/* Admin Routes */}
           <Route path="/admin" element={<AdminRoute><AdminLayout><AdminDashboard /></AdminLayout></AdminRoute>} />
