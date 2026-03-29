@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useMaterialStore } from '../../store/useMaterialStore';
-import { useSubjectStore } from '../../store/useSubjectStore';
 import { useUIStore } from '../../store/useUIStore';
+import { useSubjectStore } from '../../store/useSubjectStore';
 import { materialService } from '../../services/api';
-import { File as FileIcon, Upload as UploadIcon, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { Cloud, X, AlertCircle, FileText, CheckCircle2, Loader2 } from 'lucide-react';
+import { validateRequired } from '../../utils/validators';
 
 const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline = false }) => {
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const [file, setFile] = useState(null);
     const [fileError, setFileError] = useState('');
+    const [isTouched, setIsTouched] = useState(false);
+    const [titleError, setTitleError] = useState('');
     const [subjectId, setSubjectId] = useState(initialSubjectId || '');
     const [validationErrors, setValidationErrors] = useState({});
     const [systemLimits, setSystemLimits] = useState({ 
@@ -19,7 +21,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
     });
 
     const uploadMaterial = useMaterialStore((state) => state.actions.uploadMaterial);
-    const uploading = useMaterialStore((state) => state.loading);
+    const uploading = useUIStore((state) => !!state.data.loadingStates['upload']?.loading);
     const uiError = useUIStore(state => state.data.errors['upload']);
     const subjects = useSubjectStore((state) => state.data.subjects);
     const fetchSubjects = useSubjectStore((state) => state.actions.fetchSubjects);
@@ -64,29 +66,40 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
 
         setFileError('');
         setFile(selected);
-        if (!title) setTitle(selected.name.replace(`.${ext}`, ''));
+        if (!title) {
+            const newTitle = selected.name.replace(`.${ext}`, '');
+            setTitle(newTitle);
+            if (isTouched) runValidation(newTitle);
+        }
+    };
+
+    const runValidation = (value) => {
+        const result = validateRequired(value, 'Title');
+        setTitleError(result.valid ? '' : result.message);
+        return result.valid;
     };
 
     const validate = () => {
         const errors = {};
-        if (!title.trim() && !file) {
-            errors.title = 'Title or file is required';
-        }
+        const titleValid = runValidation(title);
+        
+        if (!titleValid) errors.title = titleError || 'Title is required';
         if (!file && !content.trim()) {
             errors.content = 'Document content or PDF is required';
         }
+        
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (uploading) return;
+        setIsTouched(true);
         if (!validate()) return;
 
         try {
             const payload = file ? new FormData() : {};
-            const finalTitle = title.trim() || (file ? file.name : 'Untitled Document');
+            const finalTitle = title.trim();
 
             if (file) {
                 payload.append('file', file);
@@ -104,16 +117,16 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
             }
 
             await uploadMaterial(payload);
-            toast.success('Document seeded! AI is cultivating your material...');
             if (onSuccess) onSuccess();
         } catch (err) {
-            if (err.code === 'VALIDATION_ERROR') {
-                setValidationErrors(err.validationErrors || {});
-            } else {
-                // Global error handled by MaterialStore -> UIStore
+            if (err.fieldErrors) {
+                setValidationErrors(err.fieldErrors);
+                if (err.fieldErrors.title) setTitleError(err.fieldErrors.title);
             }
         }
     };
+
+    const titleErrorVisible = (isTouched && titleError) || validationErrors.title;
 
     return (
         <form onSubmit={handleSubmit} className={`space-y-6 ${inline ? '' : 'animate-in fade-in duration-500'}`}>
@@ -123,15 +136,19 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     <input
                         type="text"
                         placeholder="e.g. Machine Learning Basics"
-                        className={`input-field text-sm ${validationErrors.title ? 'border-red-400 ring-4 ring-red-50' : ''}`}
+                        className={`input-field text-sm ${titleErrorVisible ? 'border-red-400 ring-4 ring-red-50' : ''}`}
                         value={title}
                         onChange={(e) => {
                             setTitle(e.target.value);
+                            if (isTouched) runValidation(e.target.value);
                             if (validationErrors.title) setValidationErrors(prev => ({ ...prev, title: '' }));
                         }}
-                        disabled={uploading}
+                        onBlur={() => {
+                            setIsTouched(true);
+                            runValidation(title);
+                        }}
                     />
-                    {validationErrors.title && <p className="text-[10px] text-red-500 font-bold mt-1 ml-1">{validationErrors.title}</p>}
+                    {titleErrorVisible && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{titleError || validationErrors.title}</p>}
                 </div>
                 {!initialSubjectId && (
                     <div className="space-y-2">
@@ -140,7 +157,6 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                             className="input-field text-sm bg-white"
                             value={subjectId}
                             onChange={(e) => setSubjectId(e.target.value)}
-                            disabled={uploading}
                         >
                             <option value="">Quick Import (No Subject)</option>
                             {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -149,7 +165,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                 )}
             </div>
 
-            {uiError && (
+            {uiError && !titleErrorVisible && !validationErrors.content && (
                 <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl text-xs font-bold animate-in slide-in-from-top-2">
                     {uiError}
                 </div>
@@ -172,7 +188,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                         {file ? (
                             <div className="flex flex-col items-center text-center">
                                 <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-indigo-500 mb-3 border border-indigo-100">
-                                    <FileIcon className="w-6 h-6" />
+                                    <FileText className="w-6 h-6" />
                                 </div>
                                 <span className="text-sm font-bold text-gray-900 mb-1">{file.name}</span>
                                 <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
@@ -182,7 +198,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                         ) : (
                             <div className="flex flex-col items-center text-center">
                                 <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 mb-3 border border-gray-100 group-hover:text-indigo-500 group-hover:scale-110 transition-all">
-                                    <UploadIcon className="w-6 h-6" />
+                                    <Cloud className="w-6 h-6" />
                                 </div>
                                 <span className="text-sm font-bold text-gray-700">Drop file here or click to browse</span>
                                 <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mt-1">Up to {systemLimits.max_file_size_mb}MB</span>
@@ -192,7 +208,10 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     {file && !uploading && (
                         <button
                             type="button"
-                            onClick={() => setFile(null)}
+                            onClick={() => {
+                                setFile(null);
+                                setFileError('');
+                            }}
                             className="absolute top-2 right-2 p-1.5 bg-white border border-gray-100 rounded-lg text-gray-400 hover:text-red-500 hover:border-red-100 shadow-sm transition-all"
                         >
                             <X className="w-3.5 h-3.5" />
@@ -225,9 +244,8 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                             setContent(e.target.value);
                             if (validationErrors.content) setValidationErrors(prev => ({ ...prev, content: '' }));
                         }}
-                        disabled={uploading}
                     ></textarea>
-                    {validationErrors.content && <p className="text-[10px] text-red-500 font-bold mt-1 ml-1">{validationErrors.content}</p>}
+                    {validationErrors.content && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{validationErrors.content}</p>}
                 </div>
             </div>
 
@@ -253,7 +271,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                         </>
                     ) : (
                         <>
-                            <CheckCircle className="w-4 h-4" />
+                            <CheckCircle2 className="w-4 h-4" />
                             Seed Document
                         </>
                     )}

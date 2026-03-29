@@ -1,7 +1,9 @@
-import React from 'react';
-import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2, Lock } from 'lucide-react';
 import { PROCESSING, normalizeStatus } from '../../constants/statusConstants';
 import StatusBadge from '../Common/StatusBadge';
+import { requireAuth } from '../../utils/requireAuth';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const FilePanel = ({
     materials,
@@ -10,8 +12,10 @@ const FilePanel = ({
     onDelete,
     onGenerate,
     onOpenUpload,
-    onCollapse
+    onCollapse,
+    isPublic
 }) => {
+    const user = useAuthStore((state) => state.data.user);
 
     return (
         <div className="panel-inner h-full flex flex-col">
@@ -34,10 +38,10 @@ const FilePanel = ({
             <div className="px-4 py-4 border-b border-gray-100 bg-gray-50/30">
                 <button
                     className="w-full py-4 px-4 bg-white border-2 border-dashed border-indigo-100 rounded-2xl flex flex-col items-center justify-center gap-1 group hover:border-indigo-400 hover:bg-indigo-50/50 transition-all duration-300 shadow-sm hover:shadow-md"
-                    onClick={onOpenUpload}
+                    onClick={() => requireAuth(onOpenUpload)}
                 >
                     <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Sparkles className="w-5 h-5 text-indigo-500" />
+                        {(isPublic && !user) ? <Lock className="w-5 h-5 text-indigo-400" /> : <Sparkles className="w-5 h-5 text-indigo-500" />}
                     </div>
                     <span className="text-xs font-black text-indigo-600 uppercase tracking-widest mt-1">Grow Your Space</span>
                     <span className="text-[10px] text-gray-400 font-medium">Add PDF or Text Source</span>
@@ -56,13 +60,22 @@ const FilePanel = ({
                             <p className="text-xs text-gray-400 mt-2 max-w-[140px]">Upload a PDF or paste text to begin your AI journey.</p>
                         </div>
                     ) : (
-                        materials.map((m) => {
+                    <AnimatePresence initial={false}>
+                        {materials.map((m, index) => {
                             const isProcessing = normalizeStatus(m.status) === PROCESSING;
                             const isSelected = selectedMaterials.includes(m.id);
                             
                             return (
-                                <div
+                                <motion.div
                                     key={m.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ 
+                                        opacity: 1, 
+                                        y: 0,
+                                        transition: { delay: index * 0.05 }
+                                    }}
+                                    exit={{ opacity: 0, x: -20, transition: { duration: 0.2 } }}
+                                    layout
                                     className={`group relative bg-white border rounded-2xl p-4 transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 ${
                                         isSelected 
                                             ? 'border-indigo-500 bg-indigo-50/30 ring-2 ring-indigo-500/10' 
@@ -95,26 +108,27 @@ const FilePanel = ({
                                             <div className="flex gap-2 transition-all ml-auto">
                                                 {!isProcessing && (
                                                     <button
-                                                        onClick={(e) => { e.stopPropagation(); onGenerate(m.id); }}
+                                                        onClick={(e) => { e.stopPropagation(); requireAuth(() => onGenerate(m.id)); }}
                                                         className="p-1.5 text-indigo-500 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                                        title="AI Insight"
+                                                        title={(isPublic && !user) ? 'Login required' : 'AI Insight'}
                                                     >
-                                                        <Sparkles className="w-3.5 h-3.5" />
+                                                        {(isPublic && !user) ? <Lock className="w-3.5 h-3.5 opacity-50" /> : <Sparkles className="w-3.5 h-3.5" />}
                                                     </button>
                                                 )}
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); onDelete(m.id); }}
+                                                    onClick={(e) => { e.stopPropagation(); requireAuth(() => onDelete(m.id, m.title)); }}
                                                     className={`p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
-                                                    title="Delete"
+                                                    title={(isPublic && !user) ? 'Login required' : 'Delete'}
                                                 >
-                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    {(isPublic && !user) ? <Lock className="w-3.5 h-3.5 opacity-50" /> : <Trash2 className="w-3.5 h-3.5" />}
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
+                                </motion.div>
                             );
-                        })
+                        })}
+                    </AnimatePresence>
                     )}
                 </div>
             </div>

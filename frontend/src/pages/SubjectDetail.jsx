@@ -2,12 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { materialService } from '../services/api';
 import { useSpeech } from '../hooks/useSpeech';
-import { PanelLeft, PanelRight } from 'lucide-react';
+import { PanelLeft, PanelRight, Upload, BookOpen, Lock } from 'lucide-react';
 import { useSubjectStore } from '../store/useSubjectStore';
 import { useMaterialStore } from '../store/useMaterialStore';
+import { useUIStore } from '../store/useUIStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { PROCESSING, normalizeStatus } from '../constants/statusConstants';
 import toast from 'react-hot-toast';
 import CustomModal from '../components/Common/CustomModal';
+import MobilePanelSwitcher from '../components/Common/MobilePanelSwitcher';
+import FloatingActionButton from '../components/Common/FloatingActionButton';
+import { requireAuth } from '../utils/requireAuth';
 
 import WorkspaceLayout from '../components/Subject/WorkspaceLayout';
 import FilePanel from '../components/Subject/FilePanel';
@@ -23,15 +28,22 @@ const SubjectDetail = () => {
     const redirectedMaterialId = location.state?.openMaterialId;
     
     const subjects = useSubjectStore((state) => state.data.subjects);
-    const subjectsLoading = useSubjectStore((state) => state.loading);
+    const isPublic = useSubjectStore((state) => state.data.isPublic);
+    const user = useAuthStore((state) => state.data.user);
+    const subjectsLoading = useUIStore(state => state.data.loadingStates['subjects']?.loading);
     const fetchSubjects = useSubjectStore((state) => state.actions.fetchSubjects);
     const materials = useMaterialStore((state) => state.data.materials);
-    const materialsLoading = useMaterialStore((state) => state.loading);
+    const materialsLoading = useUIStore(state => state.data.loadingStates['materials']?.loading);
     const fetchMaterials = useMaterialStore((state) => state.actions.fetchMaterials);
     const clearAllPolling = useMaterialStore((state) => state.actions.clearAllPolling);
     
+    const setWorkspacePanel = useUIStore(state => state.actions.setWorkspacePanel);
+    
     const subject = subjects.find((s) => String(s.id) === normalizedId);
-    const uploads = materials.filter((m) => String(m.subject_id) === normalizedId);
+    const uploads = (materials || []).filter((m) => {
+        const mid = m.subject_id || (m.subject && m.subject.id);
+        return String(mid) == String(normalizedId);
+    });
     const loading = subjectsLoading || materialsLoading;
 
     // Modal state
@@ -49,26 +61,26 @@ const SubjectDetail = () => {
     const [isThinking, setIsThinking] = useState(false);
     const [chatCollapsed, setChatCollapsed] = useState(false);
     const [filePanelCollapsed, setFilePanelCollapsed] = useState(false);
-    const chatEndRef = useRef(null);
-
+    
     // Generation state
     const [genError, setGenError] = useState('');
     const [genType, setGenType] = useState('summary');
     const [isGenerating, setIsGenerating] = useState(false);
     const [genResult, setGenResult] = useState('');
 
-    const { isListening, speak, listen } = useSpeech();
+    const chatEndRef = useRef(null);
+    const { speak, listen, isListening, cancel } = useSpeech();
 
     useEffect(() => {
         const init = async () => {
             try {
                 await Promise.all([fetchSubjects(), fetchMaterials()]);
+                setWorkspacePanel('content');
                 
                 // Handle redirected material selection
                 if (redirectedMaterialId) {
                     const mid = redirectedMaterialId;
                     setSelectedUploads([mid]);
-                    // Summary generation helper could be added here if needed
                 }
             } catch {
                 console.error('Failed to load subject details');
@@ -77,8 +89,9 @@ const SubjectDetail = () => {
         init();
         return () => {
             clearAllPolling();
+            cancel();
         };
-    }, [id, fetchSubjects, fetchMaterials, clearAllPolling, redirectedMaterialId]);
+    }, [id, fetchSubjects, fetchMaterials, clearAllPolling, redirectedMaterialId, setWorkspacePanel, cancel, user]);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -86,13 +99,13 @@ const SubjectDetail = () => {
 
     const handleUploadSuccess = async () => {
         await fetchMaterials();
+        setShowUploadModal(false);
     };
 
-    const handleDeleteUpload = (materialId) => {
-        const material = uploads.find(m => m.id === materialId);
+    const handleDeleteUpload = (materialId, materialName) => {
         setModalConfig({
             title: 'Delete document?',
-            message: `Are you sure you want to delete "${material?.title || 'this file'}"? This cannot be undone.`,
+            message: `Are you sure you want to delete "${materialName || 'this file'}"? This cannot be undone.`,
             type: 'warning',
             confirmText: 'Delete permanently',
             onConfirm: async () => {
@@ -201,11 +214,26 @@ const SubjectDetail = () => {
         );
     }
 
+    if (!subject && isPublic) {
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-in fade-in bg-[#FFF8F0]/30 h-[calc(100vh-80px)]">
+                <div className="w-16 h-16 bg-purple-50 text-purple-300 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                    <BookOpen className="w-8 h-8" />
+                </div>
+                <h2 className="text-2xl font-black text-gray-900 mb-2">Subject Unavailable</h2>
+                <p className="text-gray-500 max-w-sm mb-6">This space may be private or deleted. Please log in if it belongs to you.</p>
+                <Link to="/login" className="btn-vibrant px-8 py-3 w-auto shadow-xl">
+                    Log In to Cognify
+                </Link>
+            </div>
+        );
+    }
+
     return (
-        <div className="subject-page flex-1 min-h-0 flex flex-col bg-[#FFF8F0]/30 animate-in fade-in duration-700">
+        <div className="subject-page flex-1 min-h-0 flex flex-col bg-[#FFF8F0]/30 animate-in fade-in duration-700 pb-20 md:pb-0">
             {/* Page Header */}
-            <div className="px-8 py-6 border-b border-purple-100/50 bg-white/80 backdrop-blur-md flex items-center justify-between sticky top-0 z-20">
-                <div className="flex items-center gap-6">
+            <div className="px-6 md:px-8 py-4 md:py-6 border-b border-purple-100/50 bg-white/80 backdrop-blur-md flex items-center justify-between sticky top-0 z-20">
+                <div className="flex items-center gap-4 md:gap-6">
                     <Link 
                         to="/dashboard" 
                         className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-all group"
@@ -215,21 +243,21 @@ const SubjectDetail = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                     </Link>
-                    <div className="flex flex-col">
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-2xl font-black text-gray-900 tracking-tight">{subject?.name}</h1>
-                            <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-600 text-[10px] font-black uppercase tracking-widest">
+                    <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-2 md:gap-3">
+                            <h1 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight truncate">{subject?.name}</h1>
+                            <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-purple-100 text-purple-600 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
                                 {uploads.length} Sources
                             </span>
                         </div>
-                        <p className="text-sm text-gray-400 font-medium truncate max-w-md">
+                        <p className="text-xs md:text-sm text-gray-400 font-medium truncate max-w-[150px] sm:max-w-md">
                             {subject?.description || 'Refining knowledge with AI clarity.'}
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <div className="hidden md:flex items-center bg-gray-50 p-1 rounded-xl border border-gray-100">
+                <div className="flex items-center gap-2 md:gap-3">
+                    <div className="hidden lg:flex items-center bg-gray-50 p-1 rounded-xl border border-gray-100">
                         <button
                             onClick={() => setFilePanelCollapsed(!filePanelCollapsed)}
                             className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${!filePanelCollapsed ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
@@ -247,9 +275,10 @@ const SubjectDetail = () => {
                     </div>
                     
                     <button 
-                        onClick={() => setShowUploadModal(true)}
-                        className="btn-primary py-2.5 px-6 text-sm"
+                        onClick={() => requireAuth(() => setShowUploadModal(true))}
+                        className="btn-primary py-2 px-4 md:px-6 text-xs md:text-sm whitespace-nowrap hidden md:block"
                     >
+                        {(isPublic && !user) && <Lock className="w-3.5 h-3.5 inline-block mr-1.5" />}
                         Grow Space
                     </button>
                 </div>
@@ -266,8 +295,9 @@ const SubjectDetail = () => {
                         toggleSelection={toggleSelection}
                         onDelete={handleDeleteUpload}
                         onGenerate={handleGenerate}
-                        onOpenUpload={() => setShowUploadModal(true)}
+                        onOpenUpload={() => requireAuth(() => setShowUploadModal(true))}
                         onCollapse={() => setFilePanelCollapsed(true)}
+                        isPublic={isPublic}
                     />
                 }
                 middlePanel={
@@ -299,6 +329,13 @@ const SubjectDetail = () => {
                         onCollapse={() => setChatCollapsed(true)}
                     />
                 }
+            />
+
+            <MobilePanelSwitcher />
+            <FloatingActionButton 
+                onClick={() => requireAuth(() => setShowUploadModal(true))} 
+                icon={(isPublic && !user) ? Lock : Upload}
+                label="Grow Space"
             />
 
             <UploadModal

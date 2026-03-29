@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
+import { useUIStore } from '../../store/useUIStore';
 
 const MIN_PCT = 12; // minimum panel width as a percentage
 
@@ -13,6 +14,9 @@ const WorkspaceLayout = ({
     const [widths, setWidths] = useState([22, 50, 28]);
     const containerRef = useRef(null);
     const dragging = useRef(null); // { separatorIndex, startX, startWidths }
+    
+    // Mobile View State
+    const activePanel = useUIStore((state) => state.data.activeWorkspacePanel);
 
     const onMouseDown = useCallback((separatorIndex) => (e) => {
         e.preventDefault();
@@ -48,49 +52,66 @@ const WorkspaceLayout = ({
         document.addEventListener('mouseup', onMouseUp);
     }, [widths]);
 
-    // Calculate effective widths based on collapse states
     const leftWidth = leftPanelCollapsed ? 0 : widths[0];
     const rightWidth = rightPanelCollapsed ? 0 : widths[2];
     const middleWidth = 100 - leftWidth - rightWidth;
+    
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
     return (
-        <div ref={containerRef} className="flex-1 flex overflow-hidden bg-[#FFF8F0]/20 select-none">
+        <div ref={containerRef} className="flex-1 flex overflow-hidden bg-[#FFF8F0]/20 select-none pb-20 md:pb-0 relative">
             {/* Left Panel */}
-            {!leftPanelCollapsed && (
-                <>
-                    <div className="h-full overflow-hidden bg-white/40 backdrop-blur-sm border-r border-purple-100/30 transition-all duration-300 ease-in-out" style={{ width: `${leftWidth}%` }}>
-                        {leftPanel}
-                    </div>
-                    {/* Separator 0 */}
-                    <div
-                        className="w-1.5 h-full cursor-col-resize hover:bg-purple-200/50 transition-colors z-10 -mx-0.75 relative group"
-                        onMouseDown={onMouseDown(0)}
-                    >
-                        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-purple-100/50 group-hover:bg-purple-300 transition-colors"></div>
-                    </div>
-                </>
+            <div 
+                className={`h-full border-r border-purple-100/30 transition-all duration-300 ease-in-out bg-white/40 backdrop-blur-sm overflow-hidden
+                    ${isMobile ? (activePanel === 'files' ? 'flex w-full' : 'hidden') : 'md:flex'}`}
+                style={{ flex: isMobile ? '1 1 100%' : `0 0 ${leftWidth}%` }}
+            >
+                <div className="w-full h-full">
+                    {leftPanel}
+                </div>
+            </div>
+
+            {/* Separator 0 */}
+            {!leftPanelCollapsed && !isMobile && (
+                <div
+                    className="hidden md:block w-1.5 h-full cursor-col-resize hover:bg-purple-200/50 transition-colors z-10 -mx-0.75 relative group"
+                    onMouseDown={onMouseDown(0)}
+                >
+                    <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-purple-100/50 group-hover:bg-purple-300 transition-colors"></div>
+                </div>
             )}
 
             {/* Middle Panel */}
-            <div className="h-full overflow-hidden relative flex flex-col" style={{ width: `${middleWidth}%` }}>
-                {middlePanel}
+            <div 
+                className={`h-full border-r border-purple-100/30 transition-all duration-300 ease-in-out bg-white/10 overflow-hidden
+                    ${isMobile ? (activePanel === 'content' ? 'flex w-full' : 'hidden') : 'md:flex'}`}
+                style={{ flex: isMobile ? '1 1 100%' : `0 0 ${middleWidth}%` }}
+            >
+                <div className="w-full h-full">
+                    {middlePanel}
+                </div>
             </div>
 
-            {/* Right Panel */}
-            {!rightPanelCollapsed && (
-                <>
-                    {/* Separator 1 */}
-                    <div
-                        className="w-1.5 h-full cursor-col-resize hover:bg-purple-200/50 transition-colors z-10 -mx-0.75 relative group"
-                        onMouseDown={onMouseDown(1)}
-                    >
-                        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-purple-100/50 group-hover:bg-purple-300 transition-colors"></div>
-                    </div>
-                    <div className="h-full overflow-hidden bg-white/40 backdrop-blur-sm border-l border-purple-100/30 transition-all duration-300 ease-in-out" style={{ width: `${rightWidth}%` }}>
-                        {rightPanel}
-                    </div>
-                </>
+            {/* Separator 1 */}
+            {!rightPanelCollapsed && !isMobile && (
+                <div
+                    className="hidden md:block w-1.5 h-full cursor-col-resize hover:bg-purple-200/50 transition-colors z-10 -mx-0.75 relative group"
+                    onMouseDown={onMouseDown(1)}
+                >
+                    <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-purple-100/50 group-hover:bg-purple-300 transition-colors"></div>
+                </div>
             )}
+
+            {/* Right Panel */}
+            <div 
+                className={`h-full transition-all duration-300 ease-in-out bg-white/40 backdrop-blur-sm overflow-hidden
+                    ${isMobile ? (activePanel === 'tutor' ? 'flex w-full' : 'hidden') : 'md:flex'}`}
+                style={{ flex: isMobile ? '1 1 100%' : `0 0 ${rightWidth}%` }}
+            >
+                <div className="w-full h-full">
+                    {rightPanel}
+                </div>
+            </div>
         </div>
     );
 };

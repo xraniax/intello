@@ -1,14 +1,17 @@
 import { create } from 'zustand';
 import { materialService } from '../services/api';
 import { COMPLETED, FAILED, PROCESSING, SUCCESS, normalizeStatus } from '../constants/statusConstants';
+import toast from 'react-hot-toast';
 import { useUIStore } from './useUIStore';
+import { requireAuth } from '../utils/requireAuth';
 
 const pollingIntervals = new Map();
 
 export const useMaterialStore = create((set, get) => ({
     data: {
         materials: [],
-        jobProgress: null // { jobId, materialId, stage, progress, message }
+        jobProgress: null, // { jobId, materialId, stage, progress, message }
+        isPublic: false
     },
     error: null,
     actions: {
@@ -25,6 +28,11 @@ export const useMaterialStore = create((set, get) => ({
             })),
 
         fetchMaterials: async () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                set((state) => ({ ...state, data: { ...state.data, materials: [], isPublic: true }, error: null }));
+                return [];
+            }
             const uiActions = useUIStore.getState().actions;
             uiActions.setLoading('materials', true, 'Loading your materials...', false);
             set({ error: null });
@@ -34,7 +42,7 @@ export const useMaterialStore = create((set, get) => ({
                 set((state) => ({
                     ...state,
                     error: null,
-                    data: { ...state.data, materials }
+                    data: { ...state.data, materials, isPublic: false }
                 }));
                 return materials;
             } catch (err) {
@@ -45,9 +53,9 @@ export const useMaterialStore = create((set, get) => ({
             }
         },
 
-        uploadMaterial: async (formData) => {
+        uploadMaterial: (formData) => requireAuth(async () => {
             const uiActions = useUIStore.getState().actions;
-            uiActions.setLoading('upload', true, 'Uploading document...', true);
+            uiActions.setLoading('upload', true, 'Uploading document...', false); // Non-blocking
             uiActions.clearError('upload');
             set({ error: null });
 
@@ -66,20 +74,22 @@ export const useMaterialStore = create((set, get) => ({
                     await get().actions.fetchMaterials();
                 }
 
+                toast.success('Document seeded! AI is cultivating your material...');
                 return material;
             } catch (err) {
                 const message = err.message || 'Upload failed';
+                const fieldErrors = err.validationErrors || {};
                 set((state) => ({
                     ...state,
                     error: message,
                     data: { ...state.data, jobProgress: null }
                 }));
                 uiActions.setError('upload', message);
-                throw err;
+                throw { message, fieldErrors };
             } finally {
                 uiActions.setLoading('upload', false);
             }
-        },
+        }),
 
         clearPolling: (materialId) => {
             const intervalId = pollingIntervals.get(materialId);
@@ -96,7 +106,7 @@ export const useMaterialStore = create((set, get) => ({
             pollingIntervals.clear();
         },
 
-        cancelJob: async (materialId) => {
+        cancelJob: (materialId) => requireAuth(async () => {
             try {
                 await materialService.cancel(materialId);
                 set((state) => ({
@@ -107,7 +117,7 @@ export const useMaterialStore = create((set, get) => ({
             } catch (err) {
                 set({ error: err.message || 'Failed to cancel job' });
             }
-        },
+        }),
 
         startPolling: (materialId) => {
             // Prevent duplicated pollers when uploads are retried quickly.

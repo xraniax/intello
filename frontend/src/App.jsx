@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import { Toaster } from 'react-hot-toast';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Welcome from './pages/Welcome';
 import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import History from './pages/History';
@@ -23,6 +24,7 @@ import JobProgress from './components/Common/JobProgress';
 import { useAuthStore } from './store/useAuthStore';
 import { useMaterialStore } from './store/useMaterialStore';
 import { useUIStore } from './store/useUIStore';
+import AuthModal from './components/Auth/AuthModal';
 
 const RouteLoadingState = () => (
   <div className="flex-1 flex items-center justify-center bg-white">
@@ -77,10 +79,10 @@ const AppContent = () => {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/subjects/:id" element={<ProtectedRoute><SubjectDetail /></ProtectedRoute>} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/subjects/:id" element={<SubjectDetail />} />
           <Route path="/upload" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
-          <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+          <Route path="/history" element={<History />} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           
           <Route path="/admin" element={<AdminRoute><AdminLayout><AdminDashboard /></AdminLayout></AdminRoute>} />
@@ -89,7 +91,8 @@ const AppContent = () => {
           <Route path="/admin/logs" element={<AdminRoute><AdminLayout><AdminLogs /></AdminLayout></AdminRoute>} />
           <Route path="/admin/settings" element={<AdminRoute><AdminLayout><AdminSettings /></AdminLayout></AdminRoute>} />
           
-          <Route path="/" element={<Navigate to="/dashboard" />} />
+          <Route path="/welcome" element={<Welcome />} />
+          <Route path="/" element={<Navigate to="/welcome" />} />
         </Routes>
       </main>
     </div>
@@ -97,7 +100,10 @@ const AppContent = () => {
 };
 
 const App = () => {
-  const globalLoading = useUIStore((state) => state.actions.getGlobalLoading());
+  const globalLoading = useUIStore((state) => {
+    const loadingStates = state.data.loadingStates || {};
+    return Object.values(loadingStates).find(s => s?.loading) || null;
+  });
   const jobProgress = useMaterialStore((state) => state.data.jobProgress);
 
   const isVisible = !!globalLoading;
@@ -109,6 +115,7 @@ const App = () => {
       <Toaster position="top-right" />
       <LoadingOverlay visible={isVisible} message={loadingMessage} blocking={isBlocking} />
       <JobProgress job={jobProgress} />
+      <AuthModal />
       <Router>
         <AppContent />
       </Router>

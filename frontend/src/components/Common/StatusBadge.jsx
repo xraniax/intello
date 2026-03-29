@@ -48,10 +48,12 @@ const StatusBadge = ({ status }) => {
             <AnimatePresence mode="wait">
                 <motion.span
                     key={normalized}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm transition-all duration-300 ${config.color}`}
+                    initial={{ opacity: 0, scale: 0.9, y: 5 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: -5 }}
+                    layout
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm transition-all duration-500 ${config.color}`}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 >
                     {config.icon}
                     {config.label}

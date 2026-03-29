@@ -9,7 +9,7 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
     const data = useAuthStore((state) => state.data);
-    const globalLoading = useUIStore((state) => state.actions.getGlobalLoading(['auth']));
+    const globalLoading = useUIStore((state) => state.data.loadingStates['auth']?.loading || false);
     const error = useAuthStore((state) => state.error);
     const actions = useAuthStore((state) => state.actions);
     

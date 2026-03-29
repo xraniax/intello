@@ -1,25 +1,33 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { subjectService } from '../services/api';
-import { Search, Filter, SortAsc, Plus, X, Edit2, Trash2, BookOpen } from 'lucide-react';
+import { Search, Filter, SortAsc, Plus, X, Edit2, Trash2, BookOpen, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import CustomModal from '../components/Common/CustomModal';
 import Skeleton from '../components/Common/Skeleton';
+import { validateName } from '../utils/validators';
+import FloatingActionButton from '../components/Common/FloatingActionButton';
 
 import { useAuthStore } from '../store/useAuthStore';
 import { useSubjectStore } from '../store/useSubjectStore';
 import { useUIStore } from '../store/useUIStore';
+import { requireAuth } from '../utils/requireAuth';
 
 const Dashboard = () => {
     const user = useAuthStore((state) => state.data.user);
     const subjects = useSubjectStore((state) => state.data.subjects);
-    const loading = useSubjectStore((state) => state.loading);
+    const isPublic = useSubjectStore((state) => state.data.isPublic);
+    const loading = useUIStore(state => state.data.loadingStates['subjects']?.loading);
     const fetchError = useSubjectStore((state) => state.error);
     const { fetchSubjects, createSubject } = useSubjectStore((state) => state.actions);
     const uiError = useUIStore(state => state.data.errors['createSubject']);
+    const clearUIError = useUIStore(state => state.actions.clearError);
 
     const [newSubjectName, setNewSubjectName] = useState('');
+    const [isTouched, setIsTouched] = useState(false);
+    const [fieldError, setFieldError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalConfig, setModalConfig] = useState({});
 
@@ -30,7 +38,7 @@ const Dashboard = () => {
 
     useEffect(() => {
         fetchSubjects().catch(() => {});
-    }, [fetchSubjects]);
+    }, [fetchSubjects, user]);
 
     // Client-side filtering and sorting
     const filteredAndSortedSubjects = React.useMemo(() => {
@@ -67,28 +75,29 @@ const Dashboard = () => {
         return result;
     }, [subjects, searchQuery, filterType]);
 
+    const runValidation = (value) => {
+        const result = validateName(value);
+        setFieldError(result.valid ? '' : result.message);
+        return result.valid;
+    };
+
     const handleCreateSubject = async (e) => {
         e.preventDefault();
-        const trimmedName = newSubjectName.trim();
-        
-        if (!trimmedName) {
-            toast.error('Subject name is required');
-            return;
-        }
-
-        if (trimmedName.length < 2) {
-            toast.error('Subject name is too short (min 2 chars)');
-            return;
-        }
+        setIsTouched(true);
+        if (!runValidation(newSubjectName)) return;
 
         try {
-            await createSubject(trimmedName);
+            await createSubject(newSubjectName.trim());
             setNewSubjectName('');
+            setIsTouched(false);
             setIsAdding(false);
-            toast.success(`Subject "${trimmedName}" created!`);
+            toast.success(`Subject "${newSubjectName.trim()}" created!`);
         } catch (err) {
-            // Error is handled via UIStore/SubjectStore
-            toast.error(err.message || 'Failed to create subject');
+            if (err.fieldErrors?.name) {
+                setFieldError(err.fieldErrors.name);
+            } else {
+                toast.error(err.message || 'Failed to create subject');
+            }
         }
     };
 
@@ -139,10 +148,10 @@ const Dashboard = () => {
         setIsModalOpen(true);
     };
 
+    const errorVisible = (isTouched && fieldError) || uiError;
+
     return (
         <div className="dashboard-page max-w-7xl mx-auto px-6 py-12 animate-in fade-in duration-700">
-            {/* ... navigation / header ... */}
-
             {/* Welcome Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-6 group">
                 <div className="space-y-2">
@@ -156,11 +165,11 @@ const Dashboard = () => {
                     <p className="text-gray-500 font-medium text-lg">Your cognitive garden is thriving. What shall we explore today?</p>
                 </div>
                 <button
-                    onClick={() => setIsAdding(true)}
-                    className="btn-vibrant group flex items-center gap-3 px-8 py-4 shadow-xl shadow-purple-200/50 hover:shadow-purple-300 transition-all border border-purple-400/20"
+                    onClick={() => requireAuth(() => setIsAdding(true))}
+                    className="btn-vibrant group flex items-center gap-3 px-8 py-4 shadow-xl shadow-purple-100/30 hover:shadow-purple-200 transition-all border border-purple-400/20"
                 >
                     <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center group-hover:rotate-90 transition-transform duration-500">
-                        <Plus className="w-4 h-4" />
+                        {(isPublic && !user) ? <Lock className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                     </div>
                     <span className="font-extrabold uppercase tracking-widest text-sm">New Subject</span>
                 </button>
@@ -171,7 +180,12 @@ const Dashboard = () => {
                 <div className="mb-8 p-8 bg-white/80 backdrop-blur-md rounded-[2.5rem] border-2 border-purple-100/50 shadow-2xl shadow-purple-100/10 animate-in zoom-in-95 duration-300 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-purple-100/30 to-indigo-50/30 rounded-bl-[6rem] -z-10"></div>
                     <button
-                        onClick={() => setIsAdding(false)}
+                        onClick={() => {
+                            setIsAdding(false);
+                            setIsTouched(false);
+                            setFieldError('');
+                            clearUIError('createSubject');
+                        }}
                         className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all"
                     >
                         <X className="w-5 h-5" />
@@ -188,12 +202,17 @@ const Dashboard = () => {
                         <div className="flex-grow">
                             <input
                                 type="text"
-                                className={`input-field h-14 text-lg ${uiError ? 'border-red-300 ring-2 ring-red-50' : ''}`}
+                                className={`input-field h-14 text-lg ${errorVisible ? 'border-red-300 ring-2 ring-red-50' : ''}`}
                                 placeholder="Enter subject name (e.g. Molecular Biology)"
                                 value={newSubjectName}
                                 onChange={(e) => { 
                                     setNewSubjectName(e.target.value); 
-                                    if (uiError) useUIStore.getState().actions.clearError('createSubject');
+                                    if (isTouched) runValidation(e.target.value);
+                                    if (uiError) clearUIError('createSubject');
+                                }}
+                                onBlur={() => {
+                                    setIsTouched(true);
+                                    runValidation(newSubjectName);
                                 }}
                                 autoFocus
                                 disabled={loading}
@@ -203,7 +222,7 @@ const Dashboard = () => {
                             <button
                                 type="submit"
                                 className="btn-vibrant px-10 h-14 min-w-[180px] flex items-center justify-center gap-2"
-                                disabled={loading || !newSubjectName.trim()}
+                                disabled={loading}
                             >
                                 {loading ? (
                                     <>
@@ -214,9 +233,9 @@ const Dashboard = () => {
                             </button>
                         </div>
                     </form>
-                    {uiError && (
+                    {errorVisible && (
                         <p className="mt-4 text-sm text-red-500 font-medium ml-1 flex items-center gap-1 animate-in slide-in-from-top-1">
-                            <X className="w-4 h-4" /> {uiError}
+                            <X className="w-4 h-4" /> {fieldError || uiError}
                         </p>
                     )}
                 </div>
@@ -297,16 +316,43 @@ const Dashboard = () => {
                     <button onClick={fetchSubjects} className="btn-primary bg-red-500 border-red-500 hover:bg-red-600">Reconnect to Backend</button>
                 </div>
             ) : subjects.length === 0 ? (
-                <div className="p-20 border-2 border-dashed border-gray-200 bg-white/50 text-center rounded-[2rem] flex flex-col items-center">
+                <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-20 border-2 border-dashed border-gray-200 bg-white/50 text-center rounded-[2rem] flex flex-col items-center"
+                >
                     <div className="w-20 h-20 bg-purple-50 text-purple-300 rounded-full flex items-center justify-center mb-8">
                         <Plus className="w-10 h-10" />
                     </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">A clean slate awaits</h3>
-                    <p className="mb-10 text-gray-500 font-medium text-lg max-w-sm">Create your first subject to start organizing your knowledge with AI power.</p>
-                    <button onClick={() => setIsAdding(true)} className="btn-vibrant px-12 py-4 text-lg shadow-2xl">Initialize First Subject</button>
-                </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                        {(isPublic && !user) ? 'Welcome to Cognify' : 'A clean slate awaits'}
+                    </h3>
+                    <p className="mb-10 text-gray-500 font-medium text-lg max-w-sm">
+                        {(isPublic && !user) 
+                            ? 'Log in to create your first space and start organizing your knowledge.' 
+                            : 'Create your first subject to start organizing your knowledge with AI power.'}
+                    </p>
+                    {(isPublic && !user) ? (
+                        <Link to="/login" className="btn-vibrant px-12 py-4 text-lg shadow-2xl">Log In to Cognify</Link>
+                    ) : (
+                        <button onClick={() => setIsAdding(true)} className="btn-vibrant px-12 py-4 text-lg shadow-2xl">Initialize First Subject</button>
+                    )}
+                </motion.div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <motion.div 
+                    initial="hidden"
+                    animate="show"
+                    variants={{
+                        hidden: { opacity: 0 },
+                        show: {
+                            opacity: 1,
+                            transition: {
+                                staggerChildren: 0.05
+                            }
+                        }
+                    }}
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                >
                     {filteredAndSortedSubjects.length === 0 ? (
                         <div className="col-span-full p-20 border-2 border-dashed border-gray-200 text-center rounded-[2rem] bg-white/40">
                             <Search className="w-12 h-12 text-gray-200 mx-auto mb-4" />
@@ -322,7 +368,17 @@ const Dashboard = () => {
                     ) : (
                         <>
                             {filteredAndSortedSubjects.map((subject) => (
-                                <div key={subject.id} className="card-minimal flex flex-col group hover:scale-[1.02] transition-transform duration-300 h-full">
+                                <motion.div 
+                                    key={subject.id}
+                                    initial="hidden"
+                                    animate="show"
+                                    variants={{
+                                        hidden: { opacity: 0, y: 20 },
+                                        show: { opacity: 1, y: 0 }
+                                    }}
+                                    layout
+                                    className="card-minimal flex flex-col group hover:scale-[1.02] transition-transform duration-300 h-full"
+                                >
                                     <div className="flex justify-between items-start mb-6">
                                         <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-100 to-indigo-50 flex items-center justify-center group-hover:from-purple-500 group-hover:to-indigo-500 transition-all duration-500">
                                             <span className="text-purple-600 group-hover:text-white font-black text-lg transition-colors duration-500">
@@ -331,18 +387,18 @@ const Dashboard = () => {
                                         </div>
                                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); handleRenameSubject(subject.id, subject.name); }}
-                                                className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-xl transition-all"
-                                                title="Rename"
+                                                onClick={(e) => { e.stopPropagation(); requireAuth(() => handleRenameSubject(subject.id, subject.name)); }}
+                                                className="p-2 text-gray-400 hover:text-indigo-50 hover:bg-indigo-50 rounded-xl transition-all"
+                                                title={(isPublic && !user) ? 'Login required' : 'Rename'}
                                             >
-                                                <Edit2 className="w-4 h-4" />
+                                                {(isPublic && !user) ? <Lock className="w-4 h-4 opacity-50" /> : <Edit2 className="w-4 h-4" />}
                                             </button>
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); handleDeleteSubject(subject.id, subject.name); }}
+                                                onClick={(e) => { e.stopPropagation(); requireAuth(() => handleDeleteSubject(subject.id, subject.name)); }}
                                                 className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                                title="Delete"
+                                                title={(isPublic && !user) ? 'Login required' : 'Delete'}
                                             >
-                                                <Trash2 className="w-4 h-4" />
+                                                {(isPublic && !user) ? <Lock className="w-4 h-4 opacity-50" /> : <Trash2 className="w-4 h-4" />}
                                             </button>
                                         </div>
                                     </div>
@@ -386,27 +442,40 @@ const Dashboard = () => {
                                             </svg>
                                         </Link>
                                     </div>
-                                </div>
+                                </motion.div>
                             ))}
 
-                            <button
-                                onClick={() => setIsAdding(true)}
+                            <motion.button
+                                variants={{
+                                    hidden: { opacity: 0, scale: 0.95 },
+                                    show: { opacity: 1, scale: 1 }
+                                }}
+                                onClick={() => requireAuth(() => setIsAdding(true))}
                                 className="border-2 border-dashed border-gray-200 p-8 rounded-[2rem] flex flex-col items-center justify-center text-gray-400 hover:border-purple-300 hover:bg-purple-50/50 hover:text-purple-500 transition-all group duration-300 h-full min-h-[220px]"
                             >
                                 <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-200 flex items-center justify-center mb-4 group-hover:border-purple-300 group-hover:bg-white transition-all">
-                                    <Plus className="w-6 h-6 transition-transform group-hover:rotate-90" />
+                                    {(isPublic && !user) ? <Lock className="w-5 h-5 opacity-50" /> : <Plus className="w-6 h-6 transition-transform group-hover:rotate-90" />}
                                 </div>
-                                <span className="font-bold text-sm uppercase tracking-widest">Add Subject</span>
-                            </button>
+                                <span className="font-bold text-sm uppercase tracking-widest">{(isPublic && !user) ? 'Login to Add Space' : 'Add Subject'}</span>
+                            </motion.button>
                         </>
                     )}
-                </div>
+                </motion.div>
             )}
             {/* Custom Modal for Confirms/Prompts */}
             <CustomModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 {...modalConfig}
+            />
+
+            <FloatingActionButton 
+                onClick={() => requireAuth(() => {
+                    setIsAdding(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                })}
+                icon={(isPublic && !user) ? Lock : Plus}
+                label="New Subject"
             />
         </div>
     );

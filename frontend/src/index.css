@@ -35,7 +35,7 @@
   .btn-primary {
     background-color: var(--color-lilac);
     color: var(--text-dark);
-    @apply font-semibold py-2.5 px-6 rounded-lg transition-all duration-200 shadow-sm border border-black/5;
+    @apply font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-sm border border-black/5 min-h-[44px] flex items-center justify-center;
   }
   .btn-primary:hover {
     @apply shadow-md transform scale-[1.02];
@@ -46,7 +46,7 @@
   }
 
   .btn-secondary {
-    @apply bg-white/50 text-gray-700 font-semibold py-2.5 px-6 rounded-lg transition-all duration-200 border border-gray-200;
+    @apply bg-white/50 text-gray-700 font-semibold py-3 px-6 rounded-lg transition-all duration-200 border border-gray-200 min-h-[44px] flex items-center justify-center;
   }
   .btn-secondary:hover {
     @apply bg-white shadow-sm;
@@ -55,7 +55,7 @@
   .btn-mint {
     background-color: var(--color-mint);
     color: var(--text-dark);
-    @apply font-semibold py-2.5 px-6 rounded-lg transition-all duration-200 shadow-sm;
+    @apply font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-sm min-h-[44px] flex items-center justify-center;
   }
   .btn-mint:hover {
     @apply shadow-md scale-[1.02];
@@ -63,7 +63,7 @@
   }
 
   .btn-vibrant {
-    @apply bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black py-4 px-8 rounded-2xl transition-all duration-300 shadow-xl shadow-purple-200/50 border border-purple-400/20 active:scale-95;
+    @apply bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black py-4 px-8 rounded-2xl transition-all duration-300 shadow-xl shadow-purple-200/50 border border-purple-400/20 active:scale-95 min-h-[52px];
   }
   .btn-vibrant:hover {
     @apply shadow-purple-300 scale-[1.02] -translate-y-0.5;
@@ -71,7 +71,7 @@
   }
 
   .input-field {
-    @apply bg-white/80 border border-gray-200 rounded-lg px-4 py-2.5 w-full transition-all duration-200 outline-none;
+    @apply bg-white/80 border border-gray-200 rounded-lg px-4 py-3 w-full transition-all duration-200 outline-none min-h-[44px];
   }
   .input-field:focus {
     @apply border-purple-300 ring-4 ring-purple-100;
@@ -86,8 +86,56 @@
   }
 
   .nav-link {
-    @apply text-sm font-medium text-gray-600 hover:text-purple-600 transition-colors px-3 py-2 rounded-lg hover:bg-purple-100/10;
+    @apply text-sm font-bold text-gray-500 hover:text-purple-600 transition-colors px-4 py-3 rounded-xl hover:bg-purple-50/50 flex items-center gap-2;
   }
+
+  /* Responsive Utilities */
+  .responsive-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6;
+  }
+
+  .mobile-only {
+    @apply block md:hidden;
+  }
+
+  .desktop-only {
+    @apply hidden md:block;
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+  }
+
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-xl;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-200 rounded-full hover:bg-gray-300 transition-colors;
+  }
+}
+
+/* ─── Global Animation Tokens ───────────────────────────────── */
+:root {
+  --transition-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift {
+  @apply transition-transform duration-300;
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
 }
 
 @keyframes fadeIn {

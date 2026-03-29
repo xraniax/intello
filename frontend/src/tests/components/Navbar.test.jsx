@@ -4,11 +4,14 @@ import { MemoryRouter } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { vi } from 'vitest';
 
-// Mock AuthContext
-vi.mock('../../hooks/AuthContext', () => ({
-    useAuth: () => ({
-        user: { name: 'Test User' },
-        logout: vi.fn()
+// Mock Zustand useAuthStore
+vi.mock('../../store/useAuthStore', () => ({
+    useAuthStore: vi.fn((selector) => {
+        const state = {
+            data: { user: { name: 'Test User' } },
+            actions: { logout: vi.fn() }
+        };
+        return selector(state);
     })
 }));
 
@@ -28,7 +31,7 @@ describe('Navbar Component', () => {
                 <Navbar />
             </MemoryRouter>
         );
-        expect(screen.getByText(/Upload/i)).toBeInTheDocument();
-        expect(screen.getByText(/History/i)).toBeInTheDocument();
+        expect(screen.getByText(/Dashboard/i)).toBeInTheDocument();
+        expect(screen.getByText(/Sign out/i)).toBeInTheDocument();
     });
 });

@@ -1,18 +1,23 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useMaterialStore } from '../store/useMaterialStore';
+import { useUIStore } from '../store/useUIStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { materialService } from '../services/api';
 import { PROCESSING, normalizeStatus } from '../constants/statusConstants';
-import { Search, Calendar, BookOpen, ChevronRight, Clock, FileText, Trash2, LayoutGrid, List } from 'lucide-react';
+import { Search, Calendar, BookOpen, ChevronRight, Clock, FileText, Trash2, LayoutGrid, List, Lock } from 'lucide-react';
 import { format, isToday, isYesterday, subDays, startOfDay } from 'date-fns';
 import Skeleton from '../components/Common/Skeleton';
 import StatusBadge from '../components/Common/StatusBadge';
 import toast from 'react-hot-toast';
+import { requireAuth } from '../utils/requireAuth';
 
 const History = () => {
     const navigate = useNavigate();
+    const user = useAuthStore((state) => state.data.user);
     const materials = useMaterialStore((state) => state.data.materials);
-    const loading = useMaterialStore((state) => state.loading);
+    const isPublic = useMaterialStore((state) => state.data.isPublic);
+    const loading = useUIStore(state => state.data.loadingStates['materials']?.loading);
     const fetchMaterials = useMaterialStore((state) => state.actions.fetchMaterials);
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState('grid');
@@ -21,7 +26,7 @@ const History = () => {
         fetchMaterials().catch(() => {
             toast.error('Failed to load study history');
         });
-    }, [fetchMaterials]);
+    }, [fetchMaterials, user]);
 
     const handleDelete = async (e, id) => {
         e.preventDefault();
@@ -130,10 +135,11 @@ const History = () => {
                                             {m.ai_generated_content?.result ? "Brain Analysis Ready" : "Source Document Active"}
                                         </div>
                                         <button 
-                                            onClick={(e) => handleDelete(e, m.id)}
+                                            onClick={(e) => requireAuth(() => handleDelete(e, m.id))}
                                             className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                            title={(isPublic && !user) ? 'Login required' : 'Delete'}
                                         >
-                                            <Trash2 className="w-4 h-4" />
+                                            {(isPublic && !user) ? <Lock className="w-4 h-4 opacity-50 text-gray-300" /> : <Trash2 className="w-4 h-4" />}
                                         </button>
                                     </div>
                                 )}
@@ -141,10 +147,11 @@ const History = () => {
                                 {viewMode === 'list' && (
                                     <div className="flex items-center gap-4">
                                         <button 
-                                            onClick={(e) => handleDelete(e, m.id)}
+                                            onClick={(e) => requireAuth(() => handleDelete(e, m.id))}
                                             className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                            title={(isPublic && !user) ? 'Login required' : 'Delete'}
                                         >
-                                            <Trash2 className="w-4 h-4" />
+                                            {(isPublic && !user) ? <Lock className="w-4 h-4 opacity-50 text-gray-300" /> : <Trash2 className="w-4 h-4" />}
                                         </button>
                                         {!isProcessing && <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500 transition-colors" />}
                                     </div>
@@ -225,9 +232,19 @@ const History = () => {
                     <div className="w-20 h-20 bg-indigo-50 text-indigo-200 rounded-full flex items-center justify-center mx-auto mb-6">
                         <BookOpen className="w-10 h-10" />
                     </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">The archives are empty</h3>
-                    <p className="text-gray-400 font-medium max-w-sm mx-auto mb-8">Start your learning journey by uploading sources or chatting with your AI garden.</p>
-                    <button onClick={() => navigate('/upload')} className="btn-vibrant px-10 py-4 shadow-xl shadow-purple-200/50">Grow First Document</button>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                        {isPublic ? "Welcome to Cognify" : "The archives are empty"}
+                    </h3>
+                    <p className="text-gray-400 font-medium max-w-sm mx-auto mb-8">
+                        {isPublic 
+                            ? "Log in to view your learning journey." 
+                            : "Start your learning journey by uploading sources or chatting with your AI garden."}
+                    </p>
+                    {isPublic ? (
+                        <Link to="/login" className="btn-vibrant px-10 py-4 shadow-xl shadow-purple-200/50">Log In to Cognify</Link>
+                    ) : (
+                        <button onClick={() => navigate('/upload')} className="btn-vibrant px-10 py-4 shadow-xl shadow-purple-200/50">Grow First Document</button>
+                    )}
                 </div>
             ) : (
                 <div className="animate-in slide-in-from-bottom-4 duration-700">

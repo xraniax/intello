@@ -26,7 +26,7 @@ const formatBytes = (bytes) => {
 const Profile = () => {
     const { user, updateUser } = useAuth();
     const [profileData, setProfileData] = useState(null);
-    const uiLoading = useUIStore(state => state.actions.getGlobalLoading(['profile']));
+    const uiLoading = useUIStore(state => state.data.loadingStates['profile']?.loading || false);
     const uiActions = useUIStore(state => state.actions);
     const [activeTab, setActiveTab] = useState('info');
     

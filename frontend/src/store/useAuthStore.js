@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { authService } from '../services/api';
 import { useUIStore } from './useUIStore';
+import toast from 'react-hot-toast';
 
 export const useAuthStore = create((set, get) => ({
     data: {
@@ -54,7 +55,7 @@ export const useAuthStore = create((set, get) => ({
         },
         login: async (email, password) => {
             const uiActions = useUIStore.getState().actions;
-            uiActions.setLoading('auth', true, 'Signing you in...', true);
+            uiActions.setLoading('auth', true, 'Signing you in...', false); // Non-blocking
             uiActions.clearError('auth');
             set({ error: null });
             try {
@@ -66,12 +67,14 @@ export const useAuthStore = create((set, get) => ({
                     error: null,
                     data: { ...state.data, user: userData, isInitialized: true }
                 }));
+                toast.success('Welcome back!');
                 return res.data;
             } catch (err) {
                 const message = err.message || 'Login failed';
+                const fieldErrors = err.validationErrors || {};
                 set({ error: message });
                 uiActions.setError('auth', message);
-                throw err;
+                throw { message, fieldErrors };
             } finally {
                 uiActions.setLoading('auth', false);
             }
@@ -79,7 +82,7 @@ export const useAuthStore = create((set, get) => ({
 
         register: async (userData) => {
             const uiActions = useUIStore.getState().actions;
-            uiActions.setLoading('auth', true, 'Creating your account...', true);
+            uiActions.setLoading('auth', true, 'Creating your account...', false); // Non-blocking
             uiActions.clearError('auth');
             set({ error: null });
             try {
@@ -91,12 +94,14 @@ export const useAuthStore = create((set, get) => ({
                     error: null,
                     data: { ...state.data, user, isInitialized: true }
                 }));
+                toast.success('Account created successfully!');
                 return res.data;
             } catch (err) {
                 const message = err.message || 'Registration failed';
+                const fieldErrors = err.validationErrors || {};
                 set({ error: message });
                 uiActions.setError('auth', message);
-                throw err;
+                throw { message, fieldErrors };
             } finally {
                 uiActions.setLoading('auth', false);
             }

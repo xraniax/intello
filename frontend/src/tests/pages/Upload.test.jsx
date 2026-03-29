@@ -4,19 +4,41 @@ import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
 import Upload from '../../pages/Upload';
 
-// Vitest mocks are better in ESM
-vi.mock('../../services/api', () => ({
-    materialService: {
-        upload: vi.fn()
-    },
-    subjectService: {
-        getAll: vi.fn().mockResolvedValue({ data: { data: [] } })
-    }
+// Mock Zustand Stores
+vi.mock('../../store/useAuthStore', () => ({
+    useAuthStore: vi.fn((selector) => {
+        const state = { data: { user: { id: '123' } }, actions: {} };
+        return selector(state);
+    })
 }));
 
-vi.mock('../../hooks/AuthContext', () => ({
-    useAuth: () => ({
-        user: { id: '123' }
+vi.mock('../../store/useMaterialStore', () => ({
+    useMaterialStore: vi.fn((selector) => {
+        const state = { 
+            data: { materials: [], isPublic: false }, 
+            actions: { uploadMaterial: vi.fn(), fetchMaterials: vi.fn(), getSettings: vi.fn() } 
+        };
+        return selector(state);
+    })
+}));
+
+vi.mock('../../store/useUIStore', () => ({
+    useUIStore: vi.fn((selector) => {
+        const state = { 
+            data: { loadingStates: {}, errors: {} }, 
+            actions: { setLoading: vi.fn(), clearError: vi.fn() } 
+        };
+        return selector(state);
+    })
+}));
+
+vi.mock('../../store/useSubjectStore', () => ({
+    useSubjectStore: vi.fn((selector) => {
+        const state = { 
+            data: { subjects: [] }, 
+            actions: { fetchSubjects: vi.fn() } 
+        };
+        return selector(state);
     })
 }));
 
@@ -31,8 +53,8 @@ describe('Upload Page', () => {
                 <Upload />
             </MemoryRouter>
         );
-        expect(screen.getByPlaceholderText(/e.g. Introduction/i)).toBeInTheDocument();
-        expect(screen.getByText(/Upload Document/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/Machine Learning Basics/i)).toBeInTheDocument();
+        expect(screen.getByText(/Grow Your Knowledge/i)).toBeInTheDocument();
     });
 
     it('handles file selection', () => {
@@ -42,7 +64,8 @@ describe('Upload Page', () => {
             </MemoryRouter>
         );
         const file = new File(['hello'], 'hello.pdf', { type: 'application/pdf' });
-        const input = screen.getByLabelText(/Upload PDF file/i);
+        // The file input is hidden, but accessible by its ID or by the label text
+        const input = screen.getByLabelText(/Drop file here/i);
         fireEvent.change(input, { target: { files: [file] } });
         expect(input.files[0].name).toBe('hello.pdf');
     });

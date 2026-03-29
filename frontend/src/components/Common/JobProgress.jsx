@@ -61,7 +61,8 @@ const JobProgress = ({ job }) => {
                     <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${progress}%` }}
-                        className={`h-full rounded-full transition-all duration-700 ease-out ${
+                        transition={{ type: 'spring', stiffness: 50, damping: 20 }}
+                        className={`h-full rounded-full ${
                             isError ? 'bg-red-500' : isSuccess ? 'bg-emerald-500' : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-blue-500'
                         }`}
                     ></motion.div>

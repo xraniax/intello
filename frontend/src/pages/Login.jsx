@@ -1,20 +1,27 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
+import { validateEmail, validatePassword } from '../utils/validators';
 
 const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [touched, setTouched] = useState({ email: false, password: false });
     const [fieldErrors, setFieldErrors] = useState({ email: '', password: '' });
     const [showPassword, setShowPassword] = useState(false);
 
     const login = useAuthStore(state => state.actions.login);
     const uiError = useUIStore(state => state.data.errors['auth']);
-    const globalLoading = useUIStore(state => state.actions.getGlobalLoading(['auth']));
-    const sending = !!globalLoading;
+    const clearUIError = useUIStore(state => state.actions.clearError);
+    const sending = useUIStore(state => state.data.loadingStates['auth']?.loading || false);
     const navigate = useNavigate();
     const location = useLocation();
+
+    // Clear global error when user types
+    useEffect(() => {
+        if (uiError) clearUIError('auth');
+    }, [email, password]);
 
     const authErrorFromQuery = useMemo(() => {
         const params = new URLSearchParams(location.search);
@@ -28,39 +35,49 @@ const Login = () => {
 
     const displayedGlobalError = uiError || authErrorFromQuery;
 
-    const validate = () => {
-        const errors = { email: '', password: '' };
-        let isValid = true;
+    const runValidation = (field, value) => {
+        let result = { valid: true };
+        if (field === 'email') result = validateEmail(value);
+        if (field === 'password') result = validatePassword(value);
+        
+        setFieldErrors(prev => ({ 
+            ...prev, 
+            [field]: result.valid ? '' : result.message 
+        }));
+        return result.valid;
+    };
 
-        if (!email) {
-            errors.email = 'Email is required';
-            isValid = false;
-        } else if (!/\S+@\S+\.\S+/.test(email)) {
-            errors.email = 'Please enter a valid email';
-            isValid = false;
+    const handleBlur = (field) => {
+        setTouched(prev => ({ ...prev, [field]: true }));
+        runValidation(field, field === 'email' ? email : password);
+    };
+
+    const handleChange = (field, value) => {
+        if (field === 'email') setEmail(value);
+        if (field === 'password') setPassword(value);
+        
+        if (touched[field]) {
+            runValidation(field, value);
         }
-
-        if (!password) {
-            errors.password = 'Password is required';
-            isValid = false;
-        } else if (password.length < 6) {
-            errors.password = 'Password must be at least 6 characters';
-            isValid = false;
-        }
-
-        setFieldErrors(errors);
-        return isValid;
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!validate()) return;
+        
+        // Final validation check for all fields
+        const emailValid = runValidation('email', email);
+        const passValid = runValidation('password', password);
+        setTouched({ email: true, password: true });
+
+        if (!emailValid || !passValid) return;
 
         try {
             await login(email, password);
             navigate('/dashboard');
-        } catch (error) {
-            // Error is handled via UIStore/AuthStore
+        } catch (err) {
+            if (err.fieldErrors) {
+                setFieldErrors(prev => ({ ...prev, ...err.fieldErrors }));
+            }
         }
     };
 
@@ -69,9 +86,12 @@ const Login = () => {
         window.location.href = `${backendBase}/auth/${provider}`;
     };
 
+    const emailErrorVisible = touched.email && fieldErrors.email;
+    const passwordErrorVisible = touched.password && fieldErrors.password;
+
     return (
         <div className="flex flex-col items-center justify-center min-h-[90vh] p-6 animate-in fade-in duration-700">
-            <div className={`w-full max-w-[400px] card-minimal transition-opacity duration-300 ${sending ? 'opacity-70' : ''}`}>
+            <div className="w-full max-w-[400px] card-minimal">
                 <div className="text-center mb-10">
                     <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">Welcome Back</h1>
                     <p className="text-gray-500 font-medium">Please enter your details to sign in</p>
@@ -89,7 +109,6 @@ const Login = () => {
                         disabled={sending}
                         className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 py-3 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 text-sm font-semibold text-gray-700 shadow-sm disabled:opacity-50"
                     >
-                        {/* Google Icon SVG */}
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
                             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
                             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
@@ -103,7 +122,6 @@ const Login = () => {
                         disabled={sending}
                         className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 py-3 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 text-sm font-semibold text-gray-700 shadow-sm disabled:opacity-50"
                     >
-                        {/* GitHub Icon SVG */}
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
                             <path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
                         </svg>
@@ -125,17 +143,13 @@ const Login = () => {
                         <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Email Address</label>
                         <input
                             type="email"
-                            className={`input-field ${fieldErrors.email ? 'border-red-400 ring-4 ring-red-50' : ''}`}
+                            className={`input-field ${emailErrorVisible ? 'border-red-400 ring-4 ring-red-50' : ''}`}
                             placeholder="name@example.com"
-                            required
                             value={email}
-                            onChange={(e) => {
-                                setEmail(e.target.value);
-                                if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
-                            }}
-                            disabled={sending}
+                            onChange={(e) => handleChange('email', e.target.value)}
+                            onBlur={() => handleBlur('email')}
                         />
-                        {fieldErrors.email && <p className="text-xs text-red-500 mt-1.5 ml-1 font-medium">{fieldErrors.email}</p>}
+                        {emailErrorVisible && <p className="text-xs text-red-500 mt-1.5 ml-1 font-medium">{fieldErrors.email}</p>}
                     </div>
 
                     <div>
@@ -143,21 +157,16 @@ const Login = () => {
                         <div className="relative">
                             <input
                                 type={showPassword ? 'text' : 'password'}
-                                className={`input-field pr-12 ${fieldErrors.password ? 'border-red-400 ring-4 ring-red-50' : ''}`}
+                                className={`input-field pr-12 ${passwordErrorVisible ? 'border-red-400 ring-4 ring-red-50' : ''}`}
                                 placeholder="••••••••"
-                                required
                                 value={password}
-                                onChange={(e) => {
-                                    setPassword(e.target.value);
-                                    if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: '' }));
-                                }}
-                                disabled={sending}
+                                onChange={(e) => handleChange('password', e.target.value)}
+                                onBlur={() => handleBlur('password')}
                             />
                             <button
                                 type="button"
                                 className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-indigo-400 transition-colors focus:outline-none"
                                 onClick={() => setShowPassword(!showPassword)}
-                                disabled={sending}
                             >
                                 {showPassword ? (
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -171,7 +180,7 @@ const Login = () => {
                                 )}
                             </button>
                         </div>
-                        {fieldErrors.password && <p className="text-xs text-red-500 mt-1.5 ml-1 font-medium">{fieldErrors.password}</p>}
+                        {passwordErrorVisible && <p className="text-xs text-red-500 mt-1.5 ml-1 font-medium">{fieldErrors.password}</p>}
                     </div>
 
                     <div className="flex justify-end">

@@ -46,9 +46,17 @@ export const useSpeech = () => {
         return { recognition };
     }, []);
 
+    const cancel = useCallback(() => {
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+        setIsListening(false);
+    }, []);
+
     return {
         isListening,
         speak,
-        listen
+        listen,
+        cancel
     };
 };

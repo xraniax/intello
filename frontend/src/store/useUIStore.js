@@ -9,11 +9,46 @@ import { create } from 'zustand';
 export const useUIStore = create((set, get) => ({
     data: {
         loadingStates: {},
-        errors: {}
+        errors: {},
+        activeWorkspacePanel: 'content', // 'files', 'content', 'tutor'
+        modal: null, // 'authPrompt', etc.
+        pendingAction: null // function
     },
     loading: false,
     error: null,
     actions: {
+        setWorkspacePanel: (panel) => 
+            set((state) => ({
+                ...state,
+                data: { ...state.data, activeWorkspacePanel: panel }
+            })),
+
+        setModal: (modalType) =>
+            set((state) => ({
+                ...state,
+                data: { ...state.data, modal: modalType }
+            })),
+
+        setPendingAction: (action) =>
+            set((state) => ({
+                ...state,
+                data: { ...state.data, pendingAction: action }
+            })),
+
+        runPendingAction: () => {
+            const { pendingAction } = get().data;
+            if (pendingAction && typeof pendingAction === 'function') {
+                pendingAction();
+            }
+            get().actions.clearPendingAction();
+        },
+
+        clearPendingAction: () =>
+            set((state) => ({
+                ...state,
+                data: { ...state.data, pendingAction: null }
+            })),
+
         setLoading: (key, isLoading, message = 'Loading...', blocking = true) =>
             set((state) => ({
                 ...state,

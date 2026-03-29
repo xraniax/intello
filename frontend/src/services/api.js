@@ -27,8 +27,8 @@ api.interceptors.response.use(
     (error) => {
         // Handle 401 Unauthorized errors (expired or invalid token)
         if (error.response?.status === 401) {
-            const code = error.response?.data?.code;
-            if (code === 'TOKEN_EXPIRED' || code === 'TOKEN_INVALID' || !localStorage.getItem('token')) {
+            const hadToken = !!localStorage.getItem('token');
+            if (hadToken) {
                 // Clear the token and redirect to login
                 localStorage.removeItem('token');
                 // Use window.location to redirect as we are outside React component context
