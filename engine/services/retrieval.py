@@ -1,5 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from uuid import UUID
 from sqlalchemy import select
 try:
     from models import Chunk, Document
@@ -10,7 +11,7 @@ from .embeddings import embed_step  #Ollama embedding function
 
 def retrieve_chunks_by_topic(
     session: Session,
-    subject_id: str,
+    subject_id: UUID,
     topic: Optional[str] = None,
     top_k: int = 5
 ) -> List[Chunk]:

@@ -2,10 +2,10 @@ import os
 import requests
 import json
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama_gpu:11434").rstrip("/")
 TAGS_URL = f"{OLLAMA_BASE_URL}/api/tags"
 GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
-OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", "qwen2.5:7b")
+OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", "dreamingbumblebee/qwen2.5vl-3b-qlora-ko-1.5k_q4_k_m")
 
 def check_ollama():
     print(f"Checking Ollama at: {OLLAMA_BASE_URL} (Model: {OLLAMA_GENERATION_MODEL})")

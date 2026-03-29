@@ -8,9 +8,13 @@ from requests.exceptions import RequestException, Timeout
 
 logger = logging.getLogger("engine-generation")
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama_gpu:11434").rstrip("/")
 OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
-OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", "qwen2.5:7b")
+OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", "dreamingbumblebee/qwen2.5vl-3b-qlora-ko-1.5k_q4_k_m")
+
+OLLAMA_GENERATION_TIMEOUT = int(os.getenv("OLLAMA_GENERATION_TIMEOUT", "300"))
+OLLAMA_CHAT_TIMEOUT = int(os.getenv("OLLAMA_CHAT_TIMEOUT", "120"))
+OLLAMA_MAX_CONTEXT_CHARS = int(os.getenv("OLLAMA_MAX_CONTEXT_CHARS", "15000"))
 
 def build_prompt(material_type: str, context: str, topic: Optional[str], language: str) -> str:
     """Build a structured prompt for the LLM based on material type."""
@@ -89,15 +93,15 @@ def generate_study_material(
     material_type: str,
     topic: Optional[str] = None,
     language: str = "en",
-    timeout: int = 300,
+    timeout: int = OLLAMA_GENERATION_TIMEOUT,
     retries: int = 1
 ) -> Union[str, Dict[str, Any]]:
     """Combine chunks into context and call Ollama to generate study material."""
     if not chunks:
         return "Not enough context to generate material."
 
-    # Combine chunks, limit to roughly 15000 characters to prevent context overflow
-    MAX_CHARS = 15000
+    # Combine chunks, limit to MAX_CHARS to prevent context overflow
+    MAX_CHARS = OLLAMA_MAX_CONTEXT_CHARS
     context = "\n\n".join(chunks)
     if len(context) > MAX_CHARS:
         context = context[:MAX_CHARS] + "...\n[Context truncated due to length]"
@@ -138,6 +142,24 @@ def generate_study_material(
                     generated_text = generated_text.split("```")[1].split("```")[0].strip()
                 
                 parsed_json = json.loads(generated_text)
+                
+                # Structural validation
+                from .schemas import ExamOutput, QuizOutput, FlashcardsOutput
+                from pydantic import ValidationError
+                
+                try:
+                    if material_type == "quiz":
+                        parsed_json = QuizOutput(**parsed_json).model_dump()
+                    elif material_type == "exam":
+                        parsed_json = ExamOutput(**parsed_json).model_dump()
+                    elif material_type == "flashcards":
+                        parsed_json = FlashcardsOutput(**parsed_json).model_dump()
+                except ValidationError as ve:
+                    logger.error(f"Structural validation failed for {material_type}: {ve}")
+                    if attempt == retries - 1:
+                        return {"error": "Invalid structure from LLM", "raw": generated_text, "details": str(ve)}
+                    continue # Retry on validation error
+
                 return parsed_json
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse JSON for {material_type}: {e}")
@@ -162,7 +184,7 @@ def generate_chat_response(
     context: str,
     question: str,
     language: str = "en",
-    timeout: int = 120,
+    timeout: int = OLLAMA_CHAT_TIMEOUT,
     retries: int = 1
 ) -> str:
     """Generate a conversational response based on context."""
