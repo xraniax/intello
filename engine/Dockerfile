@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
 WORKDIR /app
-
+#hedha i needed to copy it expelicitly khater didnt work before 
+COPY services/credentials/service-account.json service-account.json
 #poppler, tesseract + language support
 RUN apt-get update && apt-get install -y \
     poppler-utils \
@@ -12,7 +13,6 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
 
 EXPOSE 8000

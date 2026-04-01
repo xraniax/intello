@@ -1,83 +1,79 @@
 import os
 import logging
+import asyncio
+import threading
 from typing import Any, Dict, List, Optional
 
 import requests
-from requests.exceptions import RequestException, Timeout
+import httpx
 
 logger = logging.getLogger("engine-embeddings")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama_gpu:11434").rstrip("/")
-# Full URL override keeps Docker/local setups working when only the base host changes.
 OLLAMA_EMBEDDINGS_URL = os.getenv("OLLAMA_EMBEDDINGS_URL") or f"{OLLAMA_BASE_URL}/api/embeddings"
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 
+# Control how many requests hit Ollama concurrently
+MAX_CONCURRENT_REQUESTS = int(os.getenv("OLLAMA_MAX_CONCURRENT", "10"))
 
 def ollama_tags_url() -> str:
     return f"{OLLAMA_BASE_URL}/api/tags"
 
-
-def generate_embedding(text: str, timeout: int = 10, retries: int = 3) -> List[float]:
-    """Generate an embedding for a single text chunk using Ollama"""
+async def _generate_embedding_async(client: httpx.AsyncClient, text: str, timeout: int, retries: int) -> Optional[List[float]]:
     if not text or not text.strip():
-        return []
+        return None
 
-    payload: Dict[str, Any] = {
-        "model": OLLAMA_EMBEDDING_MODEL,
-        "prompt": text,
-    }
+    payload: Dict[str, Any] = {"model": OLLAMA_EMBEDDING_MODEL, "prompt": text}
 
     for attempt in range(retries):
         try:
-            logger.debug(f"Requesting embedding for chunk (attempt {attempt + 1}/{retries})")
-            response = requests.post(OLLAMA_EMBEDDINGS_URL, json=payload, timeout=timeout)
+            response = await client.post(OLLAMA_EMBEDDINGS_URL, json=payload, timeout=timeout)
             response.raise_for_status()
-
-            response_data = response.json()
-            embedding = response_data.get("embedding") or response_data.get("embeddings")
-
-            if embedding is None:
-                logger.warning("Ollama embeddings response missing embedding field for text length %d", len(text))
-                raise ValueError("No embedding returned by Ollama")
-
-            # Ollama may return one of these shapes; normalize to list of float.
-            if isinstance(embedding, list):
+            
+            data = response.json()
+            embedding = data.get("embedding") or data.get("embeddings")
+            
+            if embedding and isinstance(embedding, list):
                 return [float(x) for x in embedding]
+            return None
+            
+        except httpx.TimeoutException:
+            logger.warning("Embedding timeout (attempt %d/%d)", attempt + 1, retries)
+        except httpx.RequestError as err:
+            logger.warning("Embedding request failed (attempt %d/%d): %s", attempt + 1, retries, err)
+            
+    return None
 
-            raise ValueError("Unexpected embedding format returned by Ollama")
+async def _generate_embeddings_batch(texts: List[str], timeout: int, retries: int) -> List[Optional[List[float]]]:
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    
+    async def bound_fetch(client: httpx.AsyncClient, text: str):
+        async with semaphore:
+            return await _generate_embedding_async(client, text, timeout, retries)
 
-        except Timeout:
-            logger.warning("Ollama embedding request timed out (attempt %d/%d)", attempt + 1, retries)
-            if attempt == retries - 1:
-                raise
-        except RequestException as err:
-            logger.warning("Ollama embedding request failed (attempt %d/%d): %s", attempt + 1, retries, err)
-            if attempt == retries - 1:
-                raise
+    limits = httpx.Limits(max_keepalive_connections=MAX_CONCURRENT_REQUESTS, max_connections=MAX_CONCURRENT_REQUESTS)
+    async with httpx.AsyncClient(limits=limits) as client:
+        tasks = [bound_fetch(client, text) for text in texts]
+        return await asyncio.gather(*tasks)
 
-    raise RuntimeError("All retry attempts failed")
-
-
-def generate_embeddings(texts: List[str], timeout: int = 10, retries: int = 3) -> List[Optional[List[float]]]:
-    """Generate embeddings for a list of text chunks, with graceful handling."""
-    embeddings: List[Optional[List[float]]] = []
-    for idx, chunk in enumerate(texts):
+def embed_step(texts: List[str], *, timeout: int = 15, retries: int = 3) -> List[Optional[List[float]]]:
+    """Pipeline entry point with a synchronous thread wrapper to avoid event loop conflicts."""
+    if not texts:
+        return []
+        
+    result_container = []
+    
+    def _run_in_thread():
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
         try:
-            emb = generate_embedding(chunk, timeout=timeout, retries=retries)
-            # Stability: avoid persisting empty vectors into pgvector.
-            embeddings.append(emb if emb else None)
-        except Exception as err:
-            logger.warning("Embedding for chunk %d failed after retries: %s", idx, err)
-            embeddings.append(None)
+            res = new_loop.run_until_complete(_generate_embeddings_batch(texts, timeout, retries))
+            result_container.append(res)
+        finally:
+            new_loop.close()
 
-    return embeddings
-
-
-def embed_step(
-    texts: List[str],
-    *,
-    timeout: int = 10,
-    retries: int = 3,
-) -> List[Optional[List[float]]]:
-    """Pipeline entry point: same behavior as generate_embeddings (batch, per-chunk errors as null)."""
-    return generate_embeddings(texts, timeout=timeout, retries=retries)
+    thread = threading.Thread(target=_run_in_thread)
+    thread.start()
+    thread.join()
+    
+    return result_container[0]

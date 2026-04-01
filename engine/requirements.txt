@@ -13,3 +13,8 @@ psycopg2-binary
 sqlalchemy
 tiktoken
 typing-extensions
+httpx
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib

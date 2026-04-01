@@ -6,7 +6,7 @@ from typing import List, Optional
 from uuid import UUID
 
 import requests
-from fastapi import FastAPI, File, HTTPException, UploadFile, Request, Depends, Form
+from fastapi import FastAPI, File, HTTPException, UploadFile, Request, Depends, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -21,6 +21,7 @@ from .schemas import (
     EmbedRequest, ProcessTextRequest, RetrieveRequest, GenerateRequest,
     ChatRequest, QuizEvaluateRequest, QuizEvaluateResponse
 )
+from .google_drive import upload_file_to_drive_from_bytes
 
 try:
     import database
@@ -271,31 +272,12 @@ def get_db():
     finally:
         db.close()
 
-@app.post("/process-document")
-async def process_document_route(
-    file: UploadFile = File(...),
-    subject_id: Optional[UUID] = Form(None),
-    db: Session = Depends(get_db)
-):
-    """
-    Upload a single file and run the full pipeline: preprocess → chunk → embed.
-    If subject_id is provided, the document and chunks are saved to the database.
-    Response includes prior fields plus `embeddings` when embedding succeeds.
-    """
-    logger.info("Full pipeline request for: %s (subject_id: %s)", file.filename, subject_id)
-    tmp_path: Optional[str] = None
+def background_process_document(tmp_path: str, filename: str, original_filename: str, subject_id: Optional[UUID], google_file_id: Optional[str] = None):
+    """Background worker for document extraction, chunking, embedding, and DB persistence."""
+    # We must create a new DB session because the HTTP request's session is already closed!
+    db = SessionLocal()
     try:
-        try:
-            tmp_path = await _save_upload_to_temp(file)
-        except ValueError as e:
-            return _stage_error_response(
-                "preprocess",
-                "Invalid or unsupported upload",
-                details=str(e),
-                status_code=400,
-            )
-        
-        logger.info("Saved temporary file to: %s", tmp_path)
+        logger.info("Background processing started for: %s (subject_id: %s)", filename, subject_id)
         result = process_document(tmp_path, include_embeddings=True)
         
         # Persistence Logic
@@ -304,8 +286,9 @@ async def process_document_route(
                 # 1. Create Document record
                 new_doc = Document(
                     subject_id=subject_id,
-                    filename=file.filename,
-                    file_path=tmp_path # Note: this is a temp path, but follows existing model
+                    filename=original_filename,
+                    # Store Google Drive file_id
+                    file_path=f"https://drive.google.com/file/d/{google_file_id}/view" if google_file_id else tmp_path 
                 )
                 db.add(new_doc)
                 db.commit()
@@ -326,51 +309,69 @@ async def process_document_route(
                     db.add(new_chunk)
                 
                 db.commit()
-                logger.info("Persisted document %d and %d chunks to DB", new_doc.id, len(chunks))
-                result["document_id"] = new_doc.id
+                logger.info("Successfully persisted document %d and %d chunks to DB", new_doc.id, len(chunks))
             except Exception as e:
                 db.rollback()
-                logger.error("Failed to persist document/chunks: %s", e)
-                # We continue since the extraction was successful, but we add a warning
-                result["persistence_error"] = str(e)
+                logger.error("Failed to persist document/chunks to DB: %s", e)
 
-        out = {
-            "status": "success",
-            "message": "Document processed",
-            "stage": "processing",
-            "filename": file.filename,
-            **result,
-        }
         if _all_embeddings_failed(result.get("embeddings") or []):
-            out["embedding_warning"] = (
-                "all_embedding_requests_failed; check Ollama and OLLAMA_BASE_URL"
-            )
-            logger.error("[%s] %s", "embedding", out["embedding_warning"])
-        return out
-    except ValueError as e:
-        return _stage_error_response(
-            "preprocess",
-            "Text extraction or validation failed",
-            details=str(e),
-            status_code=422,
-        )
-    except FileNotFoundError as e:
-        return _stage_error_response(
-            "preprocess",
-            "Uploaded file missing on disk",
-            details=str(e),
-            status_code=400,
-        )
+            logger.error("[%s] all_embedding_requests_failed; check Ollama via background task", "embedding")
+
     except Exception as e:
-        logger.exception("Pipeline crashed for %s", file.filename)
-        return _stage_error_response(
-            "processing",
-            "Processing failed",
-            details=str(e),
-            status_code=500,
-        )
+        logger.exception("Background pipeline crashed for %s", filename)
     finally:
         _safe_remove(tmp_path)
+        db.close()
+
+
+@app.post("/process-document")
+async def process_document_route(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    subject_id: Optional[UUID] = Form(None)
+):
+    """
+    Upload a single file, save it to disk, and deploy the processing pipeline 
+    to a background task. Returns immediately to prevent HTTP timeouts.
+    """
+    import uuid
+    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+    logger.info("Received file for background processing: %s (subject_id: %s)", file.filename, subject_id)
+    try:
+        # Read file content once to avoid double reading
+        content = await file.read()
+        
+        # Validate file type
+        suffix = os.path.splitext(file.filename or "")[1].lower() or ".pdf"
+        if suffix not in ALLOWED_UPLOAD_SUFFIXES:
+            raise ValueError("Only PDF and image files are supported (.pdf, .png, .jpg, .jpeg).")
+        
+        # Save temp file from content (processor still requires local file path)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="wb") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        
+        # Upload to Google Drive from bytes
+        google_file_id = await upload_file_to_drive_from_bytes(content, unique_filename)
+        
+    except ValueError as e:
+        return _stage_error_response(
+            "preprocess", "Invalid or unsupported upload", details=str(e), status_code=400
+        )
+    except Exception as e:
+        return _stage_error_response(
+            "preprocess", "Failed to upload file to Google Drive", details=str(e), status_code=500
+        )
+
+    # Queue the background task!
+    background_tasks.add_task(background_process_document, tmp_path, unique_filename, file.filename, subject_id, google_file_id)
+
+    return {
+        "status": "success",
+        "stage": "processing",
+        "filename": file.filename,
+        "message": "Document uploaded successfully. AI processing and embedding generation has started in the background."
+    }
 
 
 @app.get("/process-uploads")
