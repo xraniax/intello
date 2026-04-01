@@ -35,8 +35,8 @@ const WorkspaceTabs = ({
 
     return (
         <div className="flex flex-col h-full bg-white/10 overflow-hidden">
-            {/* Tab Header Bar */}
-            <div className="flex-shrink-0 bg-white/40 pb-0 pt-2 px-2 border-b border-purple-100 flex items-end overflow-hidden custom-scrollbar">
+            {/* Tab Header Bar - Horizontal Scroll Enabled */}
+            <div className="flex-shrink-0 bg-white/40 pb-0 pt-1.5 px-2 border-b border-purple-100 flex items-end overflow-x-auto no-scrollbar scroll-smooth">
                 <Reorder.Group 
                     axis="x" 
                     values={tabs} 
@@ -50,7 +50,7 @@ const WorkspaceTabs = ({
                                 <Reorder.Item
                                     key={tab.id}
                                     value={tab}
-                                    className={`relative flex items-center gap-2 px-4 py-2.5 rounded-t-xl cursor-pointer select-none transition-all 
+                                    className={`relative flex items-center gap-2 px-3 py-2 rounded-t-xl cursor-pointer select-none transition-all flex-shrink-0 group
                                         ${isActive 
                                             ? 'bg-white border-t border-x border-purple-100 shadow-[0_-4px_10px_rgba(0,0,0,0.02)] translate-y-[1px] z-10' 
                                             : 'bg-white/50 border-t border-x border-transparent text-gray-500 hover:bg-white/80 hover:text-gray-700 -translate-y-[1px]'
@@ -89,6 +89,7 @@ const WorkspaceTabs = ({
                                             <button 
                                                 onClick={(e) => handleClose(e, tab.id)}
                                                 className={`p-0.5 rounded-md hover:bg-red-50 hover:text-red-500 transition-colors ${isActive ? 'text-gray-400' : 'text-gray-300 opacity-0 group-hover:opacity-100'}`}
+                                                title="Close tab"
                                             >
                                                 <X className="w-3 h-3" />
                                             </button>

@@ -72,21 +72,26 @@ def build_prompt(material_type: str, context: str, topic: Optional[str], languag
 
     elif material_type == "exam":
         base_instructions = (
-            f"Create an exam based on the context in {language}. "
-            f"Include 5 questions. Each question must have an 'answer_space' (e.g. '__________'). "
-            f"DO NOT include answers in the questions list. "
-            f"Provide a SEPARATE 'answer_sheet' section with 'question_id', 'answer', and 'explanation'."
+            f"Create a {language} mock exam with 5 questions. "
+            f"Questions should be challenging. "
+            f"Provide a separate 'answer_sheet' where 'question_id' matches the question number (1-5)."
         )
         json_structure = {
             "type": "exam",
             "questions": [
-                {"question": "Explain the significance of the Magna Carta.", "answer_space": "____________________"}
+                {"question": "Question text?", "answer_space": "__________"}
             ],
             "answer_sheet": [
-                {"question_id": 1, "answer": "It established that everyone is subject to the law, even the king.", "explanation": "It's a cornerstone of British constitutional law."}
+                {"question_id": 1, "answer": "The correct answer.", "explanation": "Why it is correct."}
             ]
         }
-        base_instructions += f"\nExample JSON output:\n{json.dumps(json_structure, indent=2)}"
+        prompt = (
+            f"Context:\n{context}\n\n"
+            f"Task: {base_instructions}\n"
+            f"Output JSON format:\n{json.dumps(json_structure, indent=2)}\n"
+            f"Generate now:"
+        )
+        return prompt
     else:
         base_instructions = f"Process the given context and generate {material_type} in {language}."
 

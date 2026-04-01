@@ -74,14 +74,42 @@ const SubjectDetail = () => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [genResult, setGenResult] = useState('');
 
-    // Tabs State
-    const [tabs, setTabs] = useState([
-        { id: 'generator', title: 'Study Intelligence', type: 'generator', pinned: true }
-    ]);
-    const [activeTabId, setActiveTabId] = useState('generator');
+    // Tabs State & Persistence
+    const savedTabsKey = `cognify_tabs_${id}`;
+    const savedActiveTabKey = `cognify_active_tab_${id}`;
+
+    const [tabs, setTabs] = useState(() => {
+        const saved = localStorage.getItem(savedTabsKey);
+        const base = { id: 'generator', title: 'Study Intelligence', type: 'generator', pinned: true };
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                const otherTabs = parsed.filter(t => t.id !== 'generator');
+                return [base, ...otherTabs];
+            } catch (e) {
+                return [base];
+            }
+        }
+        return [base];
+    });
+
+    const [activeTabId, setActiveTabId] = useState(() => {
+        return localStorage.getItem(savedActiveTabKey) || 'generator';
+    });
 
     const chatEndRef = useRef(null);
     const { speak, listen, isListening, cancel } = useSpeech();
+
+    // Persistence Sync
+    useEffect(() => {
+        localStorage.setItem(savedTabsKey, JSON.stringify(tabs));
+    }, [tabs, savedTabsKey]);
+
+    useEffect(() => {
+        if (activeTabId) {
+            localStorage.setItem(savedActiveTabKey, activeTabId);
+        }
+    }, [activeTabId, savedActiveTabKey]);
 
     useEffect(() => {
         const init = async () => {
@@ -415,6 +443,17 @@ const SubjectDetail = () => {
         const tab = tabs.find(t => t.id === tabId);
         if (!tab) return null;
 
+        // Ensure we have the material object (fallback to store if missing from persisted tab)
+        const material = tab.material || (materials || []).find(m => String(m.id) === String(tabId));
+        
+        if (!material) {
+            return (
+                <div className="flex-1 flex items-center justify-center p-12">
+                    <Skeleton className="w-full max-w-2xl h-64 rounded-[2rem]" />
+                </div>
+            );
+        }
+
         if (tab.type === 'upload') {
             const hasFile = !!tab.material?.file_path;
             const hasContent = !!tab.material?.content;
@@ -472,7 +511,7 @@ const SubjectDetail = () => {
         if (parsedContent?.result) parsedContent = parsedContent.result;
         
         // Handle specialized rendering for structured content
-        if (tab.type === 'quiz') {
+        if (tab.type === 'quiz' || material.type === 'quiz') {
             return (
                 <div className="flex-1 h-full overflow-y-auto bg-[#FAFBFF]">
                     <QuizView quizData={parsedContent} />
@@ -480,7 +519,7 @@ const SubjectDetail = () => {
             );
         }
 
-        if (tab.type === 'flashcards') {
+        if (tab.type === 'flashcards' || material.type === 'flashcards') {
             return (
                 <div className="flex-1 h-full overflow-y-auto bg-[#FAFBFF]">
                     <FlashcardsView flashcardsData={parsedContent} />
@@ -488,7 +527,7 @@ const SubjectDetail = () => {
             );
         }
 
-        if (tab.type === 'exam') {
+        if (tab.type === 'exam' || material.type === 'exam') {
             return (
                 <div className="flex-1 h-full overflow-y-auto bg-[#FAFBFF]">
                     <ExamView examData={parsedContent} />
@@ -518,8 +557,8 @@ const SubjectDetail = () => {
 
     return (
         <div className="subject-page flex-1 min-h-0 flex flex-col bg-[#FFF8F0]/30 animate-in fade-in duration-700 pb-20 md:pb-0">
-            {/* Page Header */}
-            <div className="px-6 md:px-8 py-4 md:py-6 border-b border-purple-100/50 bg-white/80 backdrop-blur-md flex items-center justify-between sticky top-0 z-20">
+            {/* Page Header - Compact Optimization */}
+            <div className="px-6 md:px-8 py-2 md:py-3 border-b border-purple-100/50 bg-white/80 backdrop-blur-md flex items-center justify-between sticky top-0 z-20">
                 <div className="flex items-center gap-4 md:gap-6">
                     <Link 
                         to="/dashboard" 
@@ -532,12 +571,12 @@ const SubjectDetail = () => {
                     </Link>
                     <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-2 md:gap-3">
-                            <h1 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight truncate">{subject?.name}</h1>
-                            <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-purple-100 text-purple-600 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
+                            <h1 className="text-lg md:text-xl font-black text-gray-900 tracking-tight truncate leading-tight">{subject?.name}</h1>
+                            <span className="hidden sm:inline-block px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-500 text-[9px] font-bold uppercase tracking-widest whitespace-nowrap border border-purple-100/50">
                                 {uploads.length} Sources
                             </span>
                         </div>
-                        <p className="text-xs md:text-sm text-gray-400 font-medium truncate max-w-[150px] sm:max-w-md">
+                        <p className="text-[10px] md:text-xs text-gray-400 font-medium truncate max-w-[150px] sm:max-w-md mt-0.5">
                             {subject?.description || 'Refining knowledge with AI clarity.'}
                         </p>
                     </div>

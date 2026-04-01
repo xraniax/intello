@@ -94,29 +94,36 @@ const ExamView = ({ examData }) => {
                                 </div>
 
                                 {/* Inline Answer (if toggled) */}
-                                {showAnswers && answer_sheet && answer_sheet[idx] && (
-                                    <motion.div 
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: 'auto' }}
-                                        className="mt-6 pt-6 border-t border-indigo-50"
-                                    >
-                                        <div className="flex gap-4">
-                                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0 mt-1">
-                                                <Trophy className="w-4 h-4 text-indigo-500" />
-                                            </div>
-                                            <div>
-                                                <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Official Solution</div>
-                                                <div className="text-sm font-bold text-gray-900 mb-2">
-                                                    {answer_sheet[idx].answer}
-                                                </div>
-                                                {answer_sheet[idx].explanation && (
-                                                    <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                                        <span className="font-bold text-gray-700">Context:</span> {answer_sheet[idx].explanation}
+                                {showAnswers && answer_sheet && (
+                                    (() => {
+                                        const solution = answer_sheet.find(a => a.question_id === (idx + 1) || a.id === (idx + 1));
+                                        if (!solution) return null;
+
+                                        return (
+                                            <motion.div 
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                className="mt-6 pt-6 border-t border-indigo-50"
+                                            >
+                                                <div className="flex gap-4">
+                                                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0 mt-1">
+                                                        <Trophy className="w-4 h-4 text-indigo-500" />
                                                     </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </motion.div>
+                                                    <div>
+                                                        <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Official Solution</div>
+                                                        <div className="text-sm font-bold text-gray-900 mb-2">
+                                                            {solution.answer}
+                                                        </div>
+                                                        {solution.explanation && (
+                                                            <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                                                <span className="font-bold text-gray-700">Context:</span> {solution.explanation}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })()
                                 )}
                             </div>
                         </div>
