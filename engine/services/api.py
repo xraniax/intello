@@ -23,6 +23,16 @@ from .schemas import (
 )
 from .google_drive import upload_file_to_drive_from_bytes
 
+from celery.result import AsyncResult
+try:
+    import celery_app
+    from tasks import task_process_document, task_generate_material
+except ImportError:
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import celery_app
+    from tasks import task_process_document, task_generate_material
+
 try:
     import database
     import models
@@ -141,6 +151,31 @@ async def health():
         "ollama": "healthy" if ollama_healthy else "unreachable",
         "engine": "healthy",
     }
+
+@app.get("/job/{job_id}")
+async def get_job_status(job_id: str):
+    """Check the status of a background task."""
+    try:
+        task_result = AsyncResult(job_id, app=celery_app.celery_app)
+    except NameError:
+        # Fallback if celery app failed to import cleanly
+        return {"job_id": job_id, "status": "UNKNOWN", "error": "Celery not configured properly"}
+
+    response = {
+        "job_id": job_id,
+        "status": task_result.status,  # PENDING, STARTED, SUCCESS, FAILURE
+        "result": None,
+        "error": None,
+    }
+
+    if task_result.status == "FAILURE":
+        response["error"] = str(task_result.result)
+    elif task_result.status == "SUCCESS":
+        response["result"] = task_result.result
+    elif task_result.status == "STARTED":
+        response["meta"] = task_result.info
+
+    return response
 
 
 @app.post("/preprocess")
@@ -272,56 +307,7 @@ def get_db():
     finally:
         db.close()
 
-def background_process_document(tmp_path: str, filename: str, original_filename: str, subject_id: Optional[UUID], google_file_id: Optional[str] = None):
-    """Background worker for document extraction, chunking, embedding, and DB persistence."""
-    # We must create a new DB session because the HTTP request's session is already closed!
-    db = SessionLocal()
-    try:
-        logger.info("Background processing started for: %s (subject_id: %s)", filename, subject_id)
-        result = process_document(tmp_path, include_embeddings=True)
-        
-        # Persistence Logic
-        if subject_id:
-            try:
-                # 1. Create Document record
-                new_doc = Document(
-                    subject_id=subject_id,
-                    filename=original_filename,
-                    # Store Google Drive file_id
-                    file_path=f"https://drive.google.com/file/d/{google_file_id}/view" if google_file_id else tmp_path 
-                )
-                db.add(new_doc)
-                db.commit()
-                db.refresh(new_doc)
-                
-                # 2. Persist Chunks
-                chunks = result.get("chunks", [])
-                embeddings = result.get("embeddings", [])
-                
-                for i, content in enumerate(chunks):
-                    emb = embeddings[i] if i < len(embeddings) else None
-                    new_chunk = Chunk(
-                        document_id=new_doc.id,
-                        content=content,
-                        embedding=emb,
-                        chunk_index=i
-                    )
-                    db.add(new_chunk)
-                
-                db.commit()
-                logger.info("Successfully persisted document %d and %d chunks to DB", new_doc.id, len(chunks))
-            except Exception as e:
-                db.rollback()
-                logger.error("Failed to persist document/chunks to DB: %s", e)
-
-        if _all_embeddings_failed(result.get("embeddings") or []):
-            logger.error("[%s] all_embedding_requests_failed; check Ollama via background task", "embedding")
-
-    except Exception as e:
-        logger.exception("Background pipeline crashed for %s", filename)
-    finally:
-        _safe_remove(tmp_path)
-        db.close()
+# background_process_document was moved to engine/tasks.py as task_process_document
 
 
 @app.post("/process-document")
@@ -331,14 +317,14 @@ async def process_document_route(
     subject_id: Optional[UUID] = Form(None)
 ):
     """
-    Upload a single file, save it to disk, and deploy the processing pipeline 
-    to a background task. Returns immediately to prevent HTTP timeouts.
+    Upload a single file directly to Google Drive, and deploy the processing pipeline 
+    to a background Celery task. Returns immediately to prevent HTTP timeouts.
     """
     import uuid
     unique_filename = f"{uuid.uuid4()}_{file.filename}"
     logger.info("Received file for background processing: %s (subject_id: %s)", file.filename, subject_id)
     try:
-        # Read file content once to avoid double reading
+        # Read file content once
         content = await file.read()
         
         # Validate file type
@@ -346,12 +332,7 @@ async def process_document_route(
         if suffix not in ALLOWED_UPLOAD_SUFFIXES:
             raise ValueError("Only PDF and image files are supported (.pdf, .png, .jpg, .jpeg).")
         
-        # Save temp file from content (processor still requires local file path)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="wb") as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-        
-        # Upload to Google Drive from bytes
+        # Upload to Google Drive directly from bytes (no local save)
         google_file_id = await upload_file_to_drive_from_bytes(content, unique_filename)
         
     except ValueError as e:
@@ -363,14 +344,15 @@ async def process_document_route(
             "preprocess", "Failed to upload file to Google Drive", details=str(e), status_code=500
         )
 
-    # Queue the background task!
-    background_tasks.add_task(background_process_document, tmp_path, unique_filename, file.filename, subject_id, google_file_id)
+    # Queue the celery background task, passing drive_file_id instead of temp path
+    job = task_process_document.delay(google_file_id, file.filename, str(subject_id) if subject_id else None)
 
     return {
-        "status": "success",
+        "status": "accepted",
         "stage": "processing",
+        "job_id": job.id,
         "filename": file.filename,
-        "message": "Document uploaded successfully. AI processing and embedding generation has started in the background."
+        "message": "Document uploaded to Google Drive. AI processing and embedding generation has started in the background."
     }
 
 
@@ -450,34 +432,30 @@ async def chat_route(body: ChatRequest, db: Session = Depends(get_db)):
 
 @app.post("/generate")
 async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
-    """Generate study materials using LLM based on retrieved context."""
-    logger.info("Generate request: subject=%s, type=%s, topic=%s", body.subject_id, body.material_type, body.topic)
+    """Generate study materials using LLM based on retrieved context via Celery."""
+    logger.info("Generate request (async): subject=%s, type=%s, topic=%s", body.subject_id, body.material_type, body.topic)
     try:
-        # 1. Retrieve context chunks
-        chunks = retrieve_chunks_by_topic(db, body.subject_id, body.topic, body.top_k)
-        chunk_texts = [c.content for c in chunks if c.content]
+        # Dispatch to celery
+        task = task_generate_material.delay(
+            str(body.subject_id),
+            body.material_type,
+            body.topic,
+            body.language,
+            body.top_k,
+            getattr(body, 'user_id', None)
+        )
         
-        # DEBUGGING CHECKS
-        logger.info(f"DEBUG: Retrieved {len(chunks)} raw rows from DB for subject {body.subject_id}")
-        logger.info(f"DEBUG: Filtered down to {len(chunk_texts)} non-empty chunk texts")
-        total_chars = sum(len(t) for t in chunk_texts)
-        logger.info(f"DEBUG: Total payload character length being sent to Ollama: {total_chars}")
-        
-        # 2. Generate material
-        material = generate_study_material(chunk_texts, body.material_type, body.topic, body.language)
-        
-        # material can be a string (summary) or a dict (structured modes)
         return {
-            "status": "success",
+            "status": "accepted",
             "stage": "generation",
-            "material_type": body.material_type,
-            "content": material
+            "job_id": task.id,
+            "message": f"Study material generation for {body.material_type} started in background"
         }
     except Exception as e:
-        logger.exception("Generation failed")
+        logger.exception("Generation trigger failed")
         return _stage_error_response(
             "generation",
-            "Study material generation failed",
+            "Study material generation failed to queue",
             details=str(e),
             status_code=500,
         )

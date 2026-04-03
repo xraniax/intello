@@ -2,8 +2,9 @@ import os
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import io
+import tempfile
 
 logger = logging.getLogger("engine-google-drive")
 
@@ -118,3 +119,36 @@ async def upload_file_to_drive_from_bytes(content: bytes, filename: str) -> str:
     except Exception as e:
         logger.error(f"Google Drive upload failed: {str(e)}")
         raise RuntimeError(f"Google Drive upload failed: {str(e)}") from e
+
+def download_file_from_drive(file_id: str) -> str:
+    """Download a file from Google Drive into a temporary file."""
+    try:
+        service = get_drive_service()
+        
+        # Get file metadata to determine the suffix
+        file_metadata = service.files().get(
+            fileId=file_id, 
+            fields='name',
+            supportsAllDrives=True
+        ).execute()
+        filename = file_metadata.get('name', 'downloaded_file')
+        suffix = os.path.splitext(filename)[1].lower() or ".pdf"
+        
+        request = service.files().get_media(
+            fileId=file_id,
+            supportsAllDrives=True
+        )
+        
+        fd, temp_path = tempfile.mkstemp(suffix=suffix)
+        with os.fdopen(fd, 'wb') as f:
+            downloader = MediaIoBaseDownload(f, request)
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()
+                
+        logger.info(f"Successfully downloaded Drive file {file_id} to {temp_path}")
+        return temp_path
+        
+    except Exception as e:
+        logger.error(f"Failed to download file from Drive (ID: {file_id}): {str(e)}")
+        raise RuntimeError(f"Failed to download file from Drive: {str(e)}") from e

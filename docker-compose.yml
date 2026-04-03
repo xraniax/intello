@@ -25,6 +25,8 @@ services:
       - ./backend/.env
       - .env
     depends_on:
+      redis:
+        condition: service_started
       db:
         condition: service_healthy
       engine:
@@ -44,6 +46,8 @@ services:
       - ./engine/.env
       - .env
     depends_on:
+      redis:
+        condition: service_started
       db:
         condition: service_healthy
       ollama_gpu:
@@ -54,6 +58,34 @@ services:
     environment:
       COGNIFY_UPLOADS_DIR: /data/uploads
     command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  celery_worker:
+    build:
+      context: ./engine
+      dockerfile: Dockerfile
+    env_file:
+      - ./engine/.env
+      - .env
+    depends_on:
+      - redis
+      - db
+      - ollama_gpu
+    volumes:
+      - ./engine:/app
+      - ./backend/uploads:/data/uploads
+    environment:
+      COGNIFY_UPLOADS_DIR: /data/uploads
+    command: celery -A celery_app worker --concurrency=1 --loglevel=info
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   ollama_gpu:
     image: ollama/ollama
