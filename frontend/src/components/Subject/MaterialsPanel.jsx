@@ -22,7 +22,7 @@ const MaterialsPanel = ({
         difficulty: 'Default',
         cardType: 'mixed',
         topics: '',
-        examTypes: ['single_choice', 'multiple_select', 'short_answer', 'problem', 'fill_blank', 'matching', 'scenario'],
+        examTypes: ['single_choice', 'multiple_select', 'short_answer'],
         timeLimit: 30,
     });
 
@@ -105,18 +105,18 @@ const MaterialsPanel = ({
                             
                             <div>
                                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-2">Difficulty Curve</label>
-                                <div className="flex bg-gray-100/80 rounded-xl p-1">
-                                    {['Default', 'Hard', 'Expert'].map(level => (
+                                <div className="grid grid-cols-3 gap-1 bg-gray-100/80 rounded-xl p-1">
+                                    {['Intro', 'Inter', 'Adv', 'Progression', 'Balanced'].map(curve => (
                                         <button
-                                            key={level}
-                                            onClick={() => setGenOptions(prev => ({ ...prev, difficulty: level }))}
-                                            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                                                genOptions.difficulty === level 
+                                            key={curve}
+                                            onClick={() => setGenOptions(prev => ({ ...prev, difficulty: curve }))}
+                                            className={`py-1.5 text-[8px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                                                genOptions.difficulty === curve 
                                                     ? 'bg-white text-indigo-600 shadow-sm' 
-                                                    : 'text-gray-400 hover:text-gray-600'
+                                                    : 'text-gray-400 hover:text-gray-600 hover:bg-white/40'
                                             }`}
                                         >
-                                            {level}
+                                            {curve}
                                         </button>
                                     ))}
                                 </div>
@@ -157,8 +157,8 @@ const MaterialsPanel = ({
                                     </div>
 
                                     <div>
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-2">Question Types</label>
-                                        <div className="grid grid-cols-2 gap-2">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-2">Select Question Types</label>
+                                        <div className="space-y-1.5">
                                             {[
                                                 { id: 'single_choice', label: 'Single Choice' },
                                                 { id: 'multiple_select', label: 'Multiple Select' },
@@ -178,13 +178,18 @@ const MaterialsPanel = ({
                                                                 : [...prev.examTypes, id];
                                                             return { ...prev, examTypes: next.length > 0 ? next : ['single_choice'] };
                                                         })}
-                                                        className={`py-2 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
+                                                        className={`w-full flex items-center justify-between py-2.5 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
                                                             active
-                                                                ? 'bg-indigo-50 text-indigo-600 border-indigo-300'
-                                                                : 'bg-white text-gray-400 border-gray-200 hover:border-indigo-200'
+                                                                ? 'bg-indigo-50 text-indigo-600 border-indigo-200 shadow-sm'
+                                                                : 'bg-white text-gray-400 border-gray-100 hover:border-indigo-100'
                                                         }`}
                                                     >
-                                                        {label}
+                                                        <span>{label}</span>
+                                                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                                                            active ? 'bg-indigo-500 border-indigo-500' : 'border-gray-200'
+                                                        }`}>
+                                                            {active && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
+                                                        </div>
                                                     </button>
                                                 );
                                             })}

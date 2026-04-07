@@ -165,8 +165,11 @@ def build_prompt(material_type: str, context: str, topic: Optional[str], languag
             exam_count = 5
         exam_count = max(1, min(exam_count, 20))  # Exams are more complex, cap at 20
         
-        difficulty = opts.get("difficulty", "Default")
+        difficulty = opts.get("difficulty", "Intermediate")
         difficulty_map = {
+            "Introductory": "fundamental concepts, core definitions, and basic recognition questions",
+            "Intermediate": "application of concepts, identifying relationships, and multi-step reasoning",
+            "Advanced": "complex problem solving, advanced synthesis of topics, and challenging edge-case scenarios",
             "Default": "comprehensive questions covering all key topics",
             "Hard": "advanced questions testing deep integration of concepts and critical problem solving",
             "Expert": "expert-level challenge featuring extremely technical scenarios and sophisticated reasoning"

@@ -426,7 +426,7 @@ const SubjectDetail = () => {
                 const payload = {
                     subject_id: normalizedId,
                     numberOfQuestions: genOptions?.count || 10,
-                    difficulty: diffMap[genOptions?.difficulty] || 'mixed',
+                    difficulty: genOptions?.difficulty || 'Inter',
                     topics: topics.length > 0 ? topics : [subject?.name || 'General'],
                     types: selectedTypes,
                     title: `${subject?.name || 'General'} Mock Exam`,

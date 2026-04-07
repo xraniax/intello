@@ -20,7 +20,7 @@ export const generateCombinedSchema = z.object({
     subjectId: idSchema.optional(),
     genOptions: z.object({
         count: z.number().int().min(1).max(50).optional(),
-        difficulty: z.enum(['Default', 'Hard', 'Expert']).optional(),
+        difficulty: z.enum(['Intro', 'Inter', 'Adv', 'Progression', 'Balanced', 'Default', 'Hard', 'Expert', 'easy', 'medium', 'hard', 'mixed']).optional(),
         topic: z.string().optional(),
         language: z.string().optional(),
         cardType: z.enum(['mixed', 'definition', 'Q&A', 'conceptual']).optional(),

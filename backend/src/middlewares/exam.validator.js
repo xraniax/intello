@@ -9,7 +9,7 @@ const questionTypeSchema = z.enum([
     'matching',
     'scenario',
 ]);
-const difficultySchema = z.enum(['easy', 'medium', 'hard', 'mixed']);
+const difficultySchema = z.enum(['Intro', 'Inter', 'Adv', 'Progression', 'Balanced', 'Default', 'Hard', 'Expert', 'easy', 'medium', 'hard', 'mixed']);
 
 export const generateExamSchema = z.object({
     subject_id: z.string().uuid().or(z.string().min(1)),

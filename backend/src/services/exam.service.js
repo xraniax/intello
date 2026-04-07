@@ -143,7 +143,7 @@ const validateQuestion = (rawQuestion, allowedTypes, fallbackTopic, fallbackDiff
             correctAnswers: [],
             acceptedAnswers,
             explanation: sanitizeString(rawQuestion.explanation) || 'Refer to context.',
-            difficulty: ['easy', 'medium', 'hard'].includes(rawQuestion.difficulty)
+            difficulty: ['Introductory', 'Intermediate', 'Advanced', 'easy', 'medium', 'hard'].includes(rawQuestion.difficulty)
                 ? rawQuestion.difficulty
                 : fallbackDifficulty,
             topic: sanitizeString(rawQuestion.topic) || fallbackTopic,
@@ -166,7 +166,7 @@ const validateQuestion = (rawQuestion, allowedTypes, fallbackTopic, fallbackDiff
             correctAnswers: [],
             blankAnswers,
             explanation: sanitizeString(rawQuestion.explanation) || 'Refer to context.',
-            difficulty: ['easy', 'medium', 'hard'].includes(rawQuestion.difficulty)
+            difficulty: ['Introductory', 'Intermediate', 'Advanced', 'easy', 'medium', 'hard'].includes(rawQuestion.difficulty)
                 ? rawQuestion.difficulty
                 : fallbackDifficulty,
             topic: sanitizeString(rawQuestion.topic) || fallbackTopic,
@@ -192,7 +192,7 @@ const validateQuestion = (rawQuestion, allowedTypes, fallbackTopic, fallbackDiff
             pairs,
             rightOptions: shuffle([...new Set(pairs.map((p) => p.right))]),
             explanation: sanitizeString(rawQuestion.explanation) || 'Refer to context.',
-            difficulty: ['easy', 'medium', 'hard'].includes(rawQuestion.difficulty)
+            difficulty: ['Introductory', 'Intermediate', 'Advanced', 'easy', 'medium', 'hard'].includes(rawQuestion.difficulty)
                 ? rawQuestion.difficulty
                 : fallbackDifficulty,
             topic: sanitizeString(rawQuestion.topic) || fallbackTopic,
@@ -406,6 +406,21 @@ const askModel = async (systemInstruction, userPrompt) => {
     return response?.data?.message?.content || '';
 };
 
+const getDifficultyForProgress = (currentCount, targetTotal, curve) => {
+    if (curve === 'Progression') {
+        if (currentCount < targetTotal * 0.33) return 'Introductory';
+        if (currentCount < targetTotal * 0.66) return 'Intermediate';
+        return 'Advanced';
+    }
+    if (curve === 'Balanced') {
+        const levels = ['Introductory', 'Intermediate', 'Advanced'];
+        return levels[currentCount % 3];
+    }
+    if (curve === 'Intro') return 'Introductory';
+    if (curve === 'Adv') return 'Advanced';
+    return 'Intermediate'; // Default/Inter
+};
+
 class ExamService {
     static async generateExam(userId, payload) {
         cleanupCache();
@@ -444,13 +459,15 @@ class ExamService {
         while (accepted.length < targetCount && attempts < MAX_GENERATION_ATTEMPTS) {
             attempts += 1;
             const missing = targetCount - accepted.length;
+            const currentDifficulty = getDifficultyForProgress(accepted.length, targetCount, payload.difficulty);
+            
             const batch = await requestQuestionBatch({
                 numberOfQuestions: missing,
-                difficulty: payload.difficulty,
+                difficulty: currentDifficulty,
                 topics: payload.topics,
                 allowedTypes,
                 fallbackTopic,
-                fallbackDifficulty,
+                fallbackDifficulty: currentDifficulty,
                 seen,
                 existingQuestions: accepted.map((q) => q.question),
                 options: { context },
