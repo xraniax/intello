@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { adminService } from '../../services/api';
+import { adminService } from '@/features/admin/services/AdminService';
 import { Activity, Search, Filter, AlertTriangle, ShieldCheck, UserCog, Database, Clock, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import Skeleton from '../../components/Common/Skeleton';
+import Skeleton from '@/components/ui/Skeleton';
 
 const AdminLogs = () => {
     const [logs, setLogs] = useState([]);

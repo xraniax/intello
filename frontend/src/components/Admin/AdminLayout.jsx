@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation, Link } from 'react-router-dom';
-import { useAuth } from '../../hooks/AuthContext';
+import { useAuth } from '@/hooks/AuthContext';
 import { 
     LayoutDashboard, Users, HardDrive, UploadCloud, 
     Activity, Settings, LogOut, ChevronLeft, ChevronRight,

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { adminService } from '../../services/api';
+import { adminService } from '@/features/admin/services/AdminService';
 import { File as FileIcon, HardDrive, ShieldCheck, Database, Server, TrendingUp, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import CustomModal from '../../components/Common/CustomModal';
-import StorageSettings from '../../components/Admin/AdminFiles/StorageSettings';
-import FileList from '../../components/Admin/AdminFiles/FileList';
-import Skeleton from '../../components/Common/Skeleton';
+import CustomModal from '@/components/ui/CustomModal';
+import StorageSettings from '@/components/Admin/AdminFiles/StorageSettings';
+import FileList from '@/components/Admin/AdminFiles/FileList';
+import Skeleton from '@/components/ui/Skeleton';
 
 const formatBytes = (bytes) => {
     if (!bytes || bytes === 0) return '0 B';

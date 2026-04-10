@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../store/useAuthStore';
-import { useUIStore } from '../store/useUIStore';
-import { validateEmail, validatePassword } from '../utils/validators';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useUIStore } from '@/store/useUIStore';
+import { validateEmail, validatePassword } from '@/utils/validators';
 
 const Login = () => {
     const [email, setEmail] = useState('');

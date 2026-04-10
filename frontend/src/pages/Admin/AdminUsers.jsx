@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { adminService } from '../../services/api';
-import { UserStatusBadge, UserRoleBadge } from '../../components/Admin/UserBadges';
+import { adminService } from '@/features/admin/services/AdminService';
+import { UserStatusBadge, UserRoleBadge } from '@/components/Admin/UserBadges';
 import { 
     Search, ShieldAlert, Trash2, UserPlus, MoreVertical, 
     RefreshCw, UserCheck, ShieldOff, HardDrive, Filter, 
     DownloadCloud, UploadCloud, ChevronDown, ChevronUp, Mail, Calendar, Settings
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import CustomModal from '../../components/Common/CustomModal';
-import Skeleton from '../../components/Common/Skeleton';
+import CustomModal from '@/components/ui/CustomModal';
+import Skeleton from '@/components/ui/Skeleton';
 import { formatDistanceToNow, format } from 'date-fns';
-import { useUIStore } from '../../store/useUIStore';
+import { useUIStore } from '@/store/useUIStore';
 
 const formatBytes = (bytes) => {
     if (!bytes || bytes === 0) return '0 B';

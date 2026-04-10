@@ -1,5 +1,5 @@
 import React from 'react';
-import { useUIStore } from '../../store/useUIStore';
+import { useUIStore } from '@/store/useUIStore';
 import { FileText, BookOpen, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../store/useAuthStore';
-import { useUIStore } from '../store/useUIStore';
-import { validateEmail, validatePassword, validateName } from '../utils/validators';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useUIStore } from '@/store/useUIStore';
+import { validateEmail, validatePassword, validateName } from '@/utils/validators';
 
 const Register = () => {
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });

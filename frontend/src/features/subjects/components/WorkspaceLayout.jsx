@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { useUIStore } from '../../store/useUIStore';
+import { useUIStore } from '@/store/useUIStore';
 
 const MIN_PCT = 12; // minimum panel width as a percentage
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { materialService } from '../services/api';
+import { subjectService } from '../features/subjects/services/SubjectService';
 import { COMPLETED, FAILED, PROCESSING, SUCCESS, normalizeStatus } from '../constants/statusConstants';
 import toast from 'react-hot-toast';
 import { useUIStore } from './useUIStore';
@@ -37,7 +37,7 @@ export const useMaterialStore = create((set, get) => ({
             uiActions.setLoading('materials', true, 'Loading your materials...', false);
             set({ error: null });
             try {
-                const res = await materialService.getHistory();
+                const res = await subjectService.getHistory();
                 const materials = res.data.data || [];
                 set((state) => ({
                     ...state,
@@ -65,7 +65,7 @@ export const useMaterialStore = create((set, get) => ({
             set({ error: null });
 
             try {
-                const res = await materialService.upload(formData);
+                const res = await subjectService.uploadMaterial(formData);
                 const material = res.data.data;
                 const status = normalizeStatus(material.status);
 
@@ -118,7 +118,7 @@ export const useMaterialStore = create((set, get) => ({
                 return;
             }
             try {
-                await materialService.cancel(materialId);
+                await subjectService.cancel(materialId);
                 set((state) => ({
                     ...state,
                     data: { ...state.data, jobProgress: null }
@@ -154,7 +154,7 @@ export const useMaterialStore = create((set, get) => ({
                 }
 
                 try {
-                    const response = await materialService.sync(materialId);
+                    const response = await subjectService.sync(materialId);
                     if (!response?.data?.data) return;
 
                     const material = response.data.data;

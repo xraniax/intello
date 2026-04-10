@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, CheckCircle2, AlertCircle, X, Cpu, Layers, HardDrive } from 'lucide-react';
-import { FAILED, SUCCESS, normalizeStatus } from '../../constants/statusConstants';
-import { useMaterialStore } from '../../store/useMaterialStore';
+import { FAILED, SUCCESS, normalizeStatus } from '@/constants/statusConstants';
+import { useMaterialStore } from '@/store/useMaterialStore';
 
 const JobProgress = ({ job }) => {
     const cancelJob = useMaterialStore((state) => state.actions.cancelJob);

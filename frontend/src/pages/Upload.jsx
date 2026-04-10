@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import FileUpload from '../components/Common/FileUpload';
+import FileUpload from '@/components/FileUpload';
 
 const UploadPage = () => {
     const navigate = useNavigate();

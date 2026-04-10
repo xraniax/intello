@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useAuthStore } from '../../store/useAuthStore';
-import { useUIStore } from '../../store/useUIStore';
-import { validateEmail, validatePassword, validateName } from '../../utils/validators';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useUIStore } from '@/store/useUIStore';
+import { validateEmail, validatePassword, validateName } from '@/utils/validators';
 import { X } from 'lucide-react';
 
 const AuthModal = () => {

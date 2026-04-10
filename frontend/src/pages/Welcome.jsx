@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { useAuthStore } from '../store/useAuthStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { Brain, Sparkles, BookOpen, Layers, ArrowRight, BookMarked } from 'lucide-react';
 import { motion } from 'framer-motion';
 

@@ -1,9 +1,9 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2, Lock, Layers, BrainCircuit } from 'lucide-react';
-import { PROCESSING, normalizeStatus } from '../../constants/statusConstants';
-import StatusBadge from '../Common/StatusBadge';
-import { requireAuth } from '../../utils/requireAuth';
-import { useAuthStore } from '../../store/useAuthStore';
+import { PROCESSING, normalizeStatus } from '@/constants/statusConstants';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { requireAuth } from '@/utils/requireAuth';
+import { useAuthStore } from '@/store/useAuthStore';
 
 const FilePanel = ({
     materials,

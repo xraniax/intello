@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { adminService } from '../../services/api';
+import { adminService } from '@/features/admin/services/AdminService';
 import { Settings as SettingsIcon, Save, ShieldCheck, HardDrive, RefreshCw, AlertCircle, FileType } from 'lucide-react';
 import toast from 'react-hot-toast';
 

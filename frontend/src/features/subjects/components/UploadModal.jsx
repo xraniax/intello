@@ -1,6 +1,6 @@
 import React from 'react';
-import Modal from '../Common/Modal';
-import FileUpload from '../Common/FileUpload';
+import CustomModal from '@/components/ui/CustomModal';
+import FileUpload from '@/components/FileUpload';
 
 const UploadModal = ({
     isOpen,
@@ -9,7 +9,7 @@ const UploadModal = ({
     onSuccess
 }) => {
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Garden Expansion">
+        <CustomModal isOpen={isOpen} onClose={onClose} title="Garden Expansion">
             <div className="p-1">
                 <FileUpload 
                     subjectId={subjectId}
@@ -21,7 +21,7 @@ const UploadModal = ({
                     inline={true}
                 />
             </div>
-        </Modal>
+        </CustomModal>
     );
 };
 

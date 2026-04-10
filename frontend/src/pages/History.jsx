@@ -1,16 +1,16 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useMaterialStore } from '../store/useMaterialStore';
-import { useUIStore } from '../store/useUIStore';
-import { useAuthStore } from '../store/useAuthStore';
-import { materialService } from '../services/api';
-import { PROCESSING, normalizeStatus } from '../constants/statusConstants';
+import { useMaterialStore } from '@/store/useMaterialStore';
+import { useUIStore } from '@/store/useUIStore';
+import { useAuthStore } from '@/store/useAuthStore';
+import { subjectService } from '@/features/subjects/services/SubjectService';
+import { PROCESSING, normalizeStatus } from '@/constants/statusConstants';
 import { Search, Calendar, BookOpen, ChevronRight, Clock, FileText, Trash2, LayoutGrid, List, Lock } from 'lucide-react';
 import { format, isToday, isYesterday, subDays, startOfDay } from 'date-fns';
-import Skeleton from '../components/Common/Skeleton';
-import StatusBadge from '../components/Common/StatusBadge';
+import Skeleton from '@/components/ui/Skeleton';
+import StatusBadge from '@/components/ui/StatusBadge';
 import toast from 'react-hot-toast';
-import { requireAuth } from '../utils/requireAuth';
+import { requireAuth } from '@/utils/requireAuth';
 
 const History = () => {
     const navigate = useNavigate();
@@ -34,7 +34,7 @@ const History = () => {
         if (!window.confirm('Are you sure you want to delete this material?')) return;
         
         try {
-            await materialService.delete(id);
+            await subjectService.deleteMaterial(id);
             await fetchMaterials();
             toast.success('Document removed');
         } catch {

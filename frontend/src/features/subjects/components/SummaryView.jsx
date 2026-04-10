@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { BookOpen, Clock, Hash, Lightbulb, ChevronRight, AlignLeft, FileDown } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 // ─── Inline Markdown Parser ───────────────────────────────────────────────────
 // Converts **bold**, *italic*, `code` within a text string into React elements.
@@ -209,8 +211,73 @@ const SummaryView = ({ summaryData, title, isExpanded = false }) => {
         return { wordCount: words, readingMins: mins, sectionCount: sections };
     }, [rawText, blocks]);
 
-    const handleDownload = () => {
-        window.print();
+    const summaryRef = useRef(null);
+    const [isExporting, setIsExporting] = React.useState(false);
+
+    // Move title calculation up to be used in handleDownload
+    const h1Block = useMemo(() => blocks.find(b => b.type === 'h1'), [blocks]);
+    const displayTitle = h1Block ? h1Block.text : (title || 'Summary');
+    const contentBlocks = useMemo(() => h1Block ? blocks.filter(b => b !== h1Block) : blocks, [blocks, h1Block]);
+
+    const handleDownload = async () => {
+        if (!summaryRef.current || isExporting) return;
+        
+        setIsExporting(true);
+        try {
+            const element = summaryRef.current;
+            
+            // Clean filename
+            const fileName = `${displayTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_summary.pdf`;
+
+            const canvas = await html2canvas(element, {
+                scale: 2, // High resolution (Retina-ready)
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                windowWidth: element.scrollWidth,
+                windowHeight: element.scrollHeight,
+                onclone: (clonedDoc) => {
+                    const clonedEl = clonedDoc.querySelector('.printable-summary');
+                    if (clonedEl) {
+                        clonedEl.style.padding = '60px';
+                        clonedEl.style.maxHeight = 'none';
+                        clonedEl.style.overflow = 'visible';
+                        clonedEl.style.background = '#ffffff';
+                        clonedEl.style.borderRadius = '0';
+                        
+                        // Hide the download button in the export
+                        const downloadBtn = clonedEl.querySelector('.btn-download-pdf');
+                        if (downloadBtn) {
+                            downloadBtn.style.display = 'none';
+                        }
+
+                        // Ensure content cards are fully visible
+                        const cards = clonedEl.querySelectorAll('.content-card, .header-card');
+                        cards.forEach(card => {
+                            card.style.boxShadow = 'none';
+                            card.style.border = '1px solid #e5e7eb';
+                        });
+                    }
+                }
+            });
+
+            const imgData = canvas.toDataURL('image/png', 1.0);
+            
+            // Calculate PDF dimensions (using px but maintaining aspect ratio)
+            const pdf = new jsPDF({
+                orientation: canvas.width > canvas.height ? 'l' : 'p',
+                unit: 'px',
+                format: [canvas.width, canvas.height]
+            });
+
+            pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height, undefined, 'FAST');
+            pdf.save(fileName);
+            
+        } catch (error) {
+            console.error('[SummaryView] PDF Export failed:', error);
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     if (!rawText.trim()) {
@@ -221,14 +288,14 @@ const SummaryView = ({ summaryData, title, isExpanded = false }) => {
         );
     }
 
-    // Extract H1 title from blocks (if any), else use prop
-    const h1Block = blocks.find(b => b.type === 'h1');
-    const displayTitle = h1Block ? h1Block.text : (title || 'Summary');
-    const contentBlocks = h1Block ? blocks.filter(b => b !== h1Block) : blocks;
+    // Using pre-calculated displayTitle and contentBlocks
 
     return (
         <div className="flex-1 h-full overflow-y-auto bg-transparent transition-all duration-500">
-            <div className={`${isExpanded ? 'max-w-5xl px-12 py-16' : 'max-w-4xl px-8 py-10'} mx-auto space-y-0 animate-in fade-in duration-500 transition-all printable-summary`}>
+            <div 
+                ref={summaryRef}
+                className={`${isExpanded ? 'max-w-5xl px-12 py-16' : 'max-w-4xl px-8 py-10'} mx-auto space-y-0 animate-in fade-in duration-500 transition-all printable-summary`}
+            >
 
                 {/* ── Header Card ── */}
                 <div className={`relative rounded-[2.5rem] overflow-hidden bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-600 ${isExpanded ? 'p-12 mb-10' : 'p-8 mb-6'} shadow-2xl shadow-indigo-200/40 transition-all duration-500 header-card`}>
@@ -267,10 +334,11 @@ const SummaryView = ({ summaryData, title, isExpanded = false }) => {
 
                             <button
                                 onClick={handleDownload}
-                                className="group btn-download-pdf flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white text-white hover:text-indigo-600 rounded-xl border border-white/20 hover:border-white transition-all duration-300 text-xs font-bold backdrop-blur-md active:scale-95"
+                                disabled={isExporting}
+                                className={`group btn-download-pdf flex items-center gap-2 px-4 py-2 ${isExporting ? 'bg-indigo-100 text-indigo-400' : 'bg-white/10 hover:bg-white text-white hover:text-indigo-600'} rounded-xl border border-white/20 hover:border-white transition-all duration-300 text-xs font-bold backdrop-blur-md active:scale-95 disabled:opacity-50`}
                             >
-                                <FileDown className="w-3.5 h-3.5 group-hover:bounce transition-transform duration-300" />
-                                Download PDF
+                                <FileDown className={`w-3.5 h-3.5 ${isExporting ? 'animate-bounce' : 'group-hover:bounce transition-transform duration-300'}`} />
+                                {isExporting ? 'Exporting...' : 'Download PDF'}
                             </button>
                         </div>
                     </div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, Layout, BookOpen, FileText, CheckCircle2, History, RotateCcw, BrainCircuit } from 'lucide-react';
-import Skeleton from '../Common/Skeleton';
+import Skeleton from '@/components/ui/Skeleton';
 import SummaryView from './SummaryView';
 
 const MATERIAL_TYPES = ['flashcards', 'summary', 'quiz', 'mock_exam'];

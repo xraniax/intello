@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-// eslint-disable-next-line no-unused-vars
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Clock3, FileText, Flag, RefreshCw, Save, Trophy, FileDown } from 'lucide-react';
-import { examService } from '../../services/api';
+import { subjectService } from '@/features/subjects/services/SubjectService';
 
 const formatTime = (seconds) => {
     const safe = Math.max(0, Number(seconds) || 0);
@@ -249,7 +248,7 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
             setRemainingSeconds(Math.max(0, Math.floor(Number(examData.timeLimit) * 60)));
         }
 
-        examService.getAttempt(examData.id).then((res) => {
+        subjectService.getAttempt(examData.id).then((res) => {
             const attempt = res?.data?.data;
             if (!attempt) return;
             const mappedAnswers = {};
@@ -284,7 +283,7 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
         if (!exam?.id || result) return;
         try {
             setIsSavingAttempt(true);
-            const res = await examService.saveAttempt({
+            const res = await subjectService.saveAttempt({
                 examId: exam.id,
                 currentIndex,
                 answers: serializeAnswers(),
@@ -316,7 +315,7 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
                 startedAt: startedAt?.toISOString(),
                 submittedAt: new Date().toISOString(),
             };
-            const res = await examService.submit(payload);
+            const res = await subjectService.submitExam(payload);
             setResult(res?.data?.data || null);
         } catch (err) {
             setError(err.message || 'Failed to submit exam. Please retry.');

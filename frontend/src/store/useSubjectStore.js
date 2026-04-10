@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { subjectService } from '../services/api';
+import { subjectService } from '../features/subjects/services/SubjectService';
 import { useUIStore } from './useUIStore';
 import toast from 'react-hot-toast';
 import { requireAuth } from '../utils/requireAuth';

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { adminService } from '../../services/api';
+import { adminService } from '@/features/admin/services/AdminService';
 import { Users, HardDrive, Activity, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import Skeleton from '../../components/Common/Skeleton';
+import Skeleton from '@/components/ui/Skeleton';
 import { formatDistanceToNow } from 'date-fns';
 
 const AdminDashboard = () => {

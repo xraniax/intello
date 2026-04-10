@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { subjectService } from '../services/api';
+import { subjectService } from '@/features/subjects/services/SubjectService';
 import { Search, Filter, SortAsc, Plus, X, Edit2, Trash2, BookOpen, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
-import CustomModal from '../components/Common/CustomModal';
-import Skeleton from '../components/Common/Skeleton';
-import { validateName } from '../utils/validators';
-import FloatingActionButton from '../components/Common/FloatingActionButton';
+import CustomModal from '@/components/ui/CustomModal';
+import Skeleton from '@/components/ui/Skeleton';
+import { validateName } from '@/utils/validators';
+import FloatingActionButton from '@/components/ui/FloatingActionButton';
 
-import { useAuthStore } from '../store/useAuthStore';
-import { useSubjectStore } from '../store/useSubjectStore';
-import { useUIStore } from '../store/useUIStore';
-import { requireAuth } from '../utils/requireAuth';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useSubjectStore } from '@/store/useSubjectStore';
+import { useUIStore } from '@/store/useUIStore';
+import { requireAuth } from '@/utils/requireAuth';
 
 const Dashboard = () => {
     const user = useAuthStore((state) => state.data.user);

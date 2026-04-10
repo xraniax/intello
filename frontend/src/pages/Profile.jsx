@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { profileService } from '../services/api';
-import { useAuth } from '../hooks/AuthContext';
-import { useUIStore } from '../store/useUIStore';
-import StatusBadge from '../components/Common/StatusBadge';
+import { profileService } from '@/features/user/services/ProfileService';
+import { useAuth } from '@/hooks/AuthContext';
+import { useUIStore } from '@/store/useUIStore';
+import StatusBadge from '@/components/ui/StatusBadge';
 import toast from 'react-hot-toast';
 
 // Simple SVG Icons

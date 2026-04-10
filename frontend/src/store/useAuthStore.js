@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { authService } from '../services/api';
+import { authService } from '@/features/auth/services/AuthService';
 import { useUIStore } from './useUIStore';
 import toast from 'react-hot-toast';
 

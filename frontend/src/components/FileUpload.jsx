@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useMaterialStore } from '../../store/useMaterialStore';
-import { useUIStore } from '../../store/useUIStore';
-import { useSubjectStore } from '../../store/useSubjectStore';
-import { materialService } from '../../services/api';
+import { useMaterialStore } from '@/store/useMaterialStore';
+import { useUIStore } from '@/store/useUIStore';
+import { useSubjectStore } from '@/store/useSubjectStore';
+import { subjectService } from '@/features/subjects/services/SubjectService';
 import { Cloud, X, AlertCircle, FileText, CheckCircle2, Loader2 } from 'lucide-react';
-import { validateRequired } from '../../utils/validators';
+import { validateRequired } from '@/utils/validators';
 
 const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline = false }) => {
     const [title, setTitle] = useState('');
@@ -29,7 +29,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
     useEffect(() => {
         const loadSettings = async () => {
             try {
-                const settingsRes = await materialService.getSettings();
+                const settingsRes = await subjectService.getSettings();
                 if (settingsRes.data?.data) {
                     setSystemLimits(settingsRes.data.data);
                 }

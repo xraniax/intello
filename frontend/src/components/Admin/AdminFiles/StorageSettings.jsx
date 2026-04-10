@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Save, AlertTriangle, FileText, DownloadCloud, HardDrive, RefreshCw, Trash2, ShieldAlert } from 'lucide-react';
-import { adminService } from '../../../services/api';
+import { adminService } from '@/features/admin/services/AdminService';
 import toast from 'react-hot-toast';
 
 const StorageSettings = ({ settings, stats, onUpdate }) => {

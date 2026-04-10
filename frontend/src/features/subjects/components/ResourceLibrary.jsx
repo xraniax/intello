@@ -1,5 +1,5 @@
 import React from 'react';
-import StatusBadge from '../Common/StatusBadge';
+import StatusBadge from '@/components/ui/StatusBadge';
 
 const ResourceLibrary = ({
     materials,
