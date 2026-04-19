@@ -36,3 +36,6 @@ postgres_data
 
 ollama-data/id_ed25519
 ollama-data/id_ed25519.pub
+
+# Google credentials (NEVER COMMIT)
+**/service-account.json
