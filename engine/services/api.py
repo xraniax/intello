@@ -734,8 +734,23 @@ async def process_document_route(
 
     try:
         normalized_subject_id = _parse_optional_uuid(subject_id, "subject_id")
+        normalized_user_id = _parse_optional_uuid(user_id, "user_id")
     except ValueError as e:
         return _stage_error_response("processing", "Invalid request payload", details=str(e), status_code=400)
+
+    if normalized_user_id is None:
+        return _stage_error_response(
+            "processing",
+            "Missing user context: user_id is required for ingestion",
+            status_code=400,
+        )
+
+    if normalized_subject_id is None:
+        return _stage_error_response(
+            "processing",
+            "Missing subject context: subject_id is required for ingestion",
+            status_code=400,
+        )
 
     if file is None and not normalized_text:
         return _stage_error_response(
@@ -759,7 +774,7 @@ async def process_document_route(
                 "stage": "processing",
                 "subject_id": normalized_subject_id,
                 "document_id": document_id,
-                "user_id": user_id,
+                "user_id": normalized_user_id,
                 "request_id": request_id,
                 "file_path": file_path,
                 "mode": "text",
@@ -771,7 +786,7 @@ async def process_document_route(
             normalized_text,
             subject_id=normalized_subject_id,
             document_id=document_id,
-            user_id=user_id,
+            user_id=normalized_user_id,
         )
         return {
             "status": "accepted",
@@ -789,7 +804,7 @@ async def process_document_route(
         getattr(file, "content_type", None),
         normalized_subject_id,
         document_id,
-        user_id,
+        normalized_user_id,
     )
     try:
         # Read file content once
@@ -806,13 +821,6 @@ async def process_document_route(
         if suffix not in ALLOWED_UPLOAD_SUFFIXES:
             raise ValueError("Only PDF and image files are supported (.pdf, .png, .jpg, .jpeg).")
 
-        if normalized_subject_id is None:
-            logger.warning(
-                "[PIPELINE] no_subject_id request_id=%s filename=%s (will NOT persist to DB)",
-                request_id,
-                file.filename,
-            )
-        
         # Upload to Google Drive directly from bytes (no local save)
         logger.info(
             "[PIPELINE] drive_upload_start request_id=%s unique_filename=%s",
@@ -851,10 +859,11 @@ async def process_document_route(
 
     # Queue the celery background task, passing drive_file_id instead of temp path
     job = task_process_document.delay(
-        google_file_id,
-        file.filename,
-        normalized_subject_id,
-        request_id,
+        drive_file_id=google_file_id,
+        original_filename=file.filename,
+        subject_id=normalized_subject_id,
+        user_id=normalized_user_id,
+        request_id=request_id,
     )
 
     logger.info(

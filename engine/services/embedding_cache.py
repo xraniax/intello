@@ -31,7 +31,7 @@ class EmbeddingCache:
         if use_redis:
             try:
                 import redis
-                redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
+                redis_url = os.getenv("REDIS_URL", "redis://redis:6379/1")
                 self.redis_client = redis.from_url(redis_url, decode_responses=True)
                 # Test connection
                 self.redis_client.ping()

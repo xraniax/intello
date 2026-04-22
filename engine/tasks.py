@@ -102,7 +102,8 @@ def task_process_document(
     self,
     drive_file_id: str,
     original_filename: str,
-    subject_id: Optional[str] = None,
+    subject_id: str,
+    user_id: str,
     request_id: Optional[str] = None,
 ):
     """Background celery task for document extraction, chunking, embedding, and DB persistence."""
@@ -116,6 +117,11 @@ def task_process_document(
         original_filename,
         subject_id,
     )
+
+    if not user_id:
+        raise ValueError("Missing user context: user_id is required for ingestion")
+    if not subject_id:
+        raise ValueError("Missing subject context: subject_id is required for ingestion")
     
     tmp_path = None
     db = SessionLocal()
@@ -154,7 +160,7 @@ def task_process_document(
             ingest_result = ingest_file(
                 db,
                 file_path=tmp_path,
-                user_id=None,
+                user_id=user_id,
                 subject_id=subject_id,
                 original_filename=original_filename,
                 source_uri=f"https://drive.google.com/file/d/{drive_file_id}/view",

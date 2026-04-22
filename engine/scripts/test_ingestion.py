@@ -2,8 +2,8 @@
 """End-to-end ingestion smoke test for Cognify engine.
 
 Usage:
-  python scripts/test_ingestion.py --file path/to/sample.pdf --subject-id <uuid>
-  python scripts/test_ingestion.py --file path/to/sample.pdf --user-id <uuid> --topic algebra
+    python scripts/test_ingestion.py --file path/to/sample.pdf --user-id <uuid> --subject-id <uuid>
+    python scripts/test_ingestion.py --file path/to/sample.pdf --user-id <uuid> --subject-id <uuid> --topic algebra
 """
 
 import argparse
@@ -24,8 +24,8 @@ from services.retrieval import retrieve_chunks_by_topic  # noqa: E402
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cognify ingestion pipeline test")
     parser.add_argument("--file", required=True, help="Path to a PDF/image file")
-    parser.add_argument("--user-id", default=None, help="Optional user UUID")
-    parser.add_argument("--subject-id", default=None, help="Optional subject UUID")
+    parser.add_argument("--user-id", required=True, help="User UUID")
+    parser.add_argument("--subject-id", required=True, help="Subject UUID")
     parser.add_argument("--topic", default=None, help="Optional topic for retrieval")
     parser.add_argument("--top-k", type=int, default=5, help="Top-k retrieval")
     return parser.parse_args()

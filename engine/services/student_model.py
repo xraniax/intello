@@ -6,7 +6,7 @@ import redis
 
 logger = logging.getLogger("engine-student-model")
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/1")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/1")
 
 # Simple tuning knobs for topic classification.
 STRONG_TOPIC_MIN_CORRECT = int(os.getenv("STUDENT_STRONG_TOPIC_MIN_CORRECT", "2"))

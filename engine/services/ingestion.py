@@ -66,8 +66,11 @@ def ensure_engine_schema(session: Session) -> None:
     session.commit()
 
 
-def create_subject(session: Session, user_id: Optional[str], name: str, description: Optional[str] = None) -> str:
+def create_subject(session: Session, user_id: str, name: str, description: Optional[str] = None) -> str:
     """Create a subject row and return its UUID string."""
+    if not user_id:
+        raise ValueError("Missing user context: user_id is required for ingestion")
+
     new_id = str(uuid.uuid4())
     session.execute(
         text(
@@ -90,38 +93,32 @@ def create_subject(session: Session, user_id: Optional[str], name: str, descript
 def ensure_subject_exists(
     session: Session,
     *,
-    subject_id: Optional[str],
-    user_id: Optional[str],
-    default_name: str = "Auto-created Subject",
+    subject_id: str,
+    user_id: str,
 ) -> str:
-    """Return an existing subject_id or create a safe default subject."""
-    if subject_id:
-        row = session.execute(
-            text("SELECT id::text FROM subjects WHERE id = CAST(:subject_id AS UUID) LIMIT 1"),
-            {"subject_id": subject_id},
-        ).fetchone()
-        if row:
-            return row[0]
+    """Validate subject ownership and return subject_id; never create subjects in ingestion workers."""
+    if not user_id:
+        raise ValueError("Missing user context: user_id is required for ingestion")
 
-    # If a user is provided, prefer one of their existing subjects first.
-    if user_id:
-        row = session.execute(
-            text(
-                """
-                SELECT id::text
-                FROM subjects
-                WHERE user_id = CAST(:user_id AS UUID)
-                ORDER BY created_at ASC
-                LIMIT 1
-                """
-            ),
-            {"user_id": user_id},
-        ).fetchone()
-        if row:
-            return row[0]
+    if not subject_id:
+        raise ValueError("Missing subject context: subject_id is required for ingestion")
 
-    # If no subject found, create one (works even when subjects table is effectively empty).
-    return create_subject(session, user_id, default_name, "Auto-created by ingestion pipeline")
+    row = session.execute(
+        text(
+            """
+            SELECT id::text
+            FROM subjects
+            WHERE id = CAST(:subject_id AS UUID)
+              AND user_id = CAST(:user_id AS UUID)
+            LIMIT 1
+            """
+        ),
+        {"subject_id": subject_id, "user_id": user_id},
+    ).fetchone()
+    if row:
+        return row[0]
+
+    raise ValueError("Invalid subject context: subject_id does not belong to user")
 
 
 def _upload_type_from_doc_type(doc_type: Optional[str]) -> str:
@@ -133,7 +130,7 @@ def _upload_type_from_doc_type(doc_type: Optional[str]) -> str:
 def _insert_upload_metadata(
     session: Session,
     *,
-    user_id: Optional[str],
+    user_id: str,
     subject_id: str,
     file_path: str,
     doc_type: Optional[str],
@@ -175,8 +172,8 @@ def ingest_file(
     session: Session,
     *,
     file_path: str,
-    user_id: Optional[str],
-    subject_id: Optional[str],
+    user_id: str,
+    subject_id: str,
     original_filename: Optional[str] = None,
     source_uri: Optional[str] = None,
     request_id: Optional[str] = None,
@@ -184,11 +181,15 @@ def ingest_file(
     """End-to-end ingestion: subject safety -> extract/chunk/embed -> documents/chunks persistence."""
     ensure_engine_schema(session)
 
+    if not user_id:
+        raise ValueError("Missing user context: user_id is required for ingestion")
+    if not subject_id:
+        raise ValueError("Missing subject context: subject_id is required for ingestion")
+
     resolved_subject_id = ensure_subject_exists(
         session,
         subject_id=subject_id,
         user_id=user_id,
-        default_name="Ingestion Subject",
     )
 
     pipeline = process_document(file_path, include_embeddings=True, request_id=request_id)

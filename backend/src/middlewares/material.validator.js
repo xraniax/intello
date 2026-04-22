@@ -6,7 +6,7 @@ export const uploadMaterialSchema = z.object({
     title: z.string().trim().optional(),
     content: z.string().optional(),
     type: z.enum(['upload'], { required_error: 'Valid task type is required' }),
-    subjectId: idSchema.optional(),
+    subjectId: idSchema,
 });
 
 export const chatCombinedSchema = z.object({
