@@ -42,6 +42,8 @@ app.use('/api/', apiLimiter);
 
 // Static files (for uploads)
 app.use('/uploads', express.static(normalizedUploadPath));
+// Backward-compatibility: older records may store absolute container paths.
+app.use('/app/data/uploads', express.static(normalizedUploadPath));
 
 // Routes
 import authRoutes from './routes/auth.routes.js';

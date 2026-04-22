@@ -1,5 +1,13 @@
 import api from '@/services/api';
 
+const getAuthTokenOrThrow = () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Not authenticated. Please log in and try again.');
+    }
+    return token;
+};
+
 /**
  * MaterialService
  * Orchestrates all material-related API interactions including uploads, 
@@ -28,12 +36,13 @@ export const MaterialService = {
         api.post('/materials/generate-combined', { materialIds, taskType, subjectId, genOptions }),
 
     generateStream: async (materialIds, taskType, subjectId, genOptions, signal) => {
-        const token = localStorage.getItem('token');
+        const token = getAuthTokenOrThrow();
         const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
         const response = await fetch(`${API_URL}/materials/generate-combined/stream`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                Accept: 'text/event-stream',
                 Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ materialIds, taskType, subjectId, genOptions }),
@@ -56,13 +65,16 @@ export const MaterialService = {
      * streamMaterial — Standardized cancellable async primitive for AI streams.
      */
     stream: async (id, signal, onChunk, onComplete, onError) => {
-        const token = localStorage.getItem('token');
+        const token = getAuthTokenOrThrow();
         const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
         const url = `${API_URL}/materials/${id}/stream`;
 
         try {
             const response = await fetch(url, {
-                headers: { Authorization: `Bearer ${token}` },
+                headers: {
+                    Accept: 'text/event-stream',
+                    Authorization: `Bearer ${token}`,
+                },
                 signal,
             });
 
@@ -71,26 +83,41 @@ export const MaterialService = {
                 return;
             }
 
+            const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            for await (const rawChunk of response.body) {
+            // Buffer accumulates raw bytes across chunk boundaries before splitting on \n\n
+            let sseBuffer = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
                 if (signal.aborted) return;
+                if (done) break;
 
-                const text = decoder.decode(rawChunk, { stream: true });
-                for (const line of text.split('\n')) {
-                    if (signal.aborted) return;
-                    if (!line.startsWith('data: ')) continue;
+                sseBuffer += decoder.decode(value, { stream: true });
 
-                    const jsonStr = line.slice(6).trim();
-                    if (!jsonStr) continue;
+                // Split on double-newline to extract complete SSE events
+                const events = sseBuffer.split('\n\n');
+                sseBuffer = events.pop() ?? '';
 
-                    try {
-                        const parsed = JSON.parse(jsonStr);
-                        if (parsed.chunk) onChunk(parsed.chunk);
-                        if (parsed.is_final) {
-                            onComplete();
-                            return;
-                        }
-                    } catch { /* parse error, skip chunk */ }
+                for (const eventBlock of events) {
+                    for (const line of eventBlock.split('\n')) {
+                        if (signal.aborted) return;
+                        const trimmed = line.trim();
+                        // Skip SSE comments (keep-alive) and non-data lines
+                        if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;
+
+                        const jsonStr = trimmed.slice(5).trim();
+                        if (!jsonStr) continue;
+
+                        try {
+                            const parsed = JSON.parse(jsonStr);
+                            if (parsed.chunk) onChunk(parsed.chunk);
+                            if (parsed.is_final) {
+                                onComplete();
+                                return;
+                            }
+                        } catch { /* malformed JSON in this line — skip */ }
+                    }
                 }
             }
             onComplete();

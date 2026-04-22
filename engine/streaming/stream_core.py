@@ -8,7 +8,8 @@ logger = logging.getLogger("engine-stream-core")
 
 
 def _sse(payload: dict) -> str:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\\n\\n"
+    # SSE spec requires actual newline characters (0x0A), not the escape sequence \n
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 async def stream_llm_response(generator: AsyncIterator[str], *, source: str) -> AsyncGenerator[str, None]:
@@ -31,7 +32,7 @@ async def stream_llm_response(generator: AsyncIterator[str], *, source: str) -> 
                 raw = await asyncio.wait_for(iterator.__anext__(), timeout=15)
             except asyncio.TimeoutError:
                 keepalive_count += 1
-                yield ": keep-alive\\n\\n"
+                yield ": keep-alive\n\n"
                 continue
             except StopAsyncIteration:
                 break

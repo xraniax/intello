@@ -32,6 +32,7 @@ from .schemas import (
     ChatRequest, QuizEvaluateRequest, QuizEvaluateResponse
 )
 from .google_drive import upload_file_to_drive_from_bytes
+from .redis_client import get_quiz_session, update_quiz_session
 from streaming.stream_core import stream_llm_response
 from gpu_detector import detect_gpu_and_ollama
 
@@ -504,7 +505,7 @@ async def stream_job_status(job_id: str):
                                 "status": "FAILURE",
                                 "is_final": True,
                             }
-                            yield f"data: {json.dumps(payload)}\\n\\n"
+                            yield f"data: {json.dumps(payload)}\n\n"
                             break
                         chunk_text = generation_stream or result.get("extracted_text") or result.get("status") or "SUCCESS"
                     elif status == "FAILURE":
@@ -535,7 +536,7 @@ async def stream_job_status(job_id: str):
                     "status": status,
                     "is_final": is_final,
                 }
-                yield f"data: {json.dumps(payload)}\\n\\n"
+                yield f"data: {json.dumps(payload)}\n\n"
 
                 if payload["is_final"]:
                     break
@@ -547,13 +548,13 @@ async def stream_job_status(job_id: str):
                     "status": "UNKNOWN",
                     "is_final": False,
                 }
-                yield f"data: {json.dumps(payload)}\\n\\n"
+                yield f"data: {json.dumps(payload)}\n\n"
 
             # Emit periodic heartbeat comment so proxies keep the stream alive.
-            yield ": keep-alive\\n\\n"
+            yield ": keep-alive\n\n"
             await asyncio.sleep(1)
 
-        yield "event: done\\ndata: [DONE]\\n\\n"
+        yield "event: done\ndata: [DONE]\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -1137,6 +1138,12 @@ async def quiz_next_route(body: dict, db: Session = Depends(get_db)):
                 status_code=400,
             )
 
+        session = get_quiz_session(user_id, str(subject_id)) or {
+            "correct_streak": 0,
+            "current_difficulty": 1,
+            "total": 0,
+        }
+
         previous_answer = (body or {}).get("previous_answer")
         if previous_answer is not None and str(previous_answer).strip() != "":
             is_correct = bool((body or {}).get("is_correct", False))
@@ -1151,6 +1158,21 @@ async def quiz_next_route(body: dict, db: Session = Depends(get_db)):
                 response_time=response_time,
                 topic=str(topic or "general"),
             )
+
+            session["total"] = int(session.get("total", 0)) + 1
+            if is_correct:
+                session["correct_streak"] = int(session.get("correct_streak", 0)) + 1
+            else:
+                session["correct_streak"] = 0
+
+            difficulty = int(session.get("current_difficulty", 1))
+            if session["correct_streak"] >= 3:
+                difficulty = min(3, difficulty + 1)
+            if not is_correct:
+                difficulty = max(1, difficulty - 1)
+            session["current_difficulty"] = difficulty
+
+            update_quiz_session(user_id, str(subject_id), session)
 
         student = get_student(user_id)
 
@@ -1172,13 +1194,14 @@ async def quiz_next_route(body: dict, db: Session = Depends(get_db)):
             language=language,
         )
 
+        difficulty_map = {1: "easy", 2: "medium", 3: "hard"}
+        current_difficulty = int(session.get("current_difficulty", 1))
+        if current_difficulty < 1:
+            current_difficulty = 1
+        if current_difficulty > 3:
+            current_difficulty = 3
+        difficulty = difficulty_map[current_difficulty]
         accuracy = float(student.get("accuracy", 0.5))
-        if accuracy < 0.5:
-            difficulty = "easy"
-        elif accuracy <= 0.8:
-            difficulty = "medium"
-        else:
-            difficulty = "hard"
 
         return {
             "question": question,
@@ -1187,6 +1210,7 @@ async def quiz_next_route(body: dict, db: Session = Depends(get_db)):
                 "weak_topics": student.get("weak_topics") or [],
                 "difficulty": difficulty,
             },
+            "session": session,
         }
     except Exception as e:
         logger.exception("Adaptive quiz next failed")
