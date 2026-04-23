@@ -1,12 +1,4 @@
-import api from '@/services/api';
-
-const getAuthTokenOrThrow = () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-        throw new Error('Not authenticated. Please log in and try again.');
-    }
-    return token;
-};
+import api, { API_URL, authFetch } from '@/services/api';
 
 /**
  * MaterialService
@@ -36,14 +28,11 @@ export const MaterialService = {
         api.post('/materials/generate-combined', { materialIds, taskType, subjectId, genOptions }),
 
     generateStream: async (materialIds, taskType, subjectId, genOptions, signal) => {
-        const token = getAuthTokenOrThrow();
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-        const response = await fetch(`${API_URL}/materials/generate-combined/stream`, {
+        const response = await authFetch(`${API_URL}/materials/generate-combined/stream`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 Accept: 'text/event-stream',
-                Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ materialIds, taskType, subjectId, genOptions }),
             signal,
@@ -65,16 +54,11 @@ export const MaterialService = {
      * streamMaterial — Standardized cancellable async primitive for AI streams.
      */
     stream: async (id, signal, onChunk, onComplete, onError) => {
-        const token = getAuthTokenOrThrow();
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
         const url = `${API_URL}/materials/${id}/stream`;
 
         try {
-            const response = await fetch(url, {
-                headers: {
-                    Accept: 'text/event-stream',
-                    Authorization: `Bearer ${token}`,
-                },
+            const response = await authFetch(url, {
+                headers: { Accept: 'text/event-stream' },
                 signal,
             });
 

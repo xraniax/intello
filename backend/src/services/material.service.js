@@ -5,6 +5,7 @@ import Material from '../models/material.model.js';
 import Subject from '../models/subject.model.js';
 import File from '../models/file.model.js';
 import User from '../models/user.model.js';
+import SubjectService from './subject.service.js';
 import SettingsService from './settings.service.js';
 import QuotaService from './quota.service.js';
 import { query } from '../utils/config/db.js';
@@ -28,20 +29,6 @@ class MaterialService {
      * removing the load from the Node.js backend.
      */
     static async processDocument(userId, file, title, content, type, subjectId = null) {
-        if (!userId) {
-            const error = new Error('Missing user context: user_id is required for ingestion');
-            error.statusCode = 400;
-            error.code = 'MISSING_USER_CONTEXT';
-            throw error;
-        }
-
-        if (!subjectId) {
-            const error = new Error('subjectId is required');
-            error.statusCode = 400;
-            error.code = 'MISSING_SUBJECT_CONTEXT';
-            throw error;
-        }
-
         // 1. Quota & Status Pre-check
         // Consolidated logic in QuotaService (Checks: suspension, global limits, user limits, remaining space)
         const incomingSizeBytes = file ? file.size : Buffer.byteLength(content || '', 'utf8');
@@ -52,16 +39,13 @@ class MaterialService {
         const normalizedTitle = baseTitle.trim();
         const opContext = { userId, subjectId, title: normalizedTitle, operation: 'processDocument' };
 
-        // 2. Validate subject ownership
-        const finalSubjectId = subjectId;
-        const subject = await Subject.findById(finalSubjectId, userId);
-        if (!subject) {
-            const error = new Error('Invalid subject context: subject_id does not belong to user');
-            error.statusCode = 403;
-            error.code = 'SUBJECT_FORBIDDEN';
-            throw error;
+        // 2. Resolve subject
+        let finalSubjectId = subjectId;
+        if (!finalSubjectId) {
+            const importedSubject = await SubjectService.getOrCreateImportedSubject(userId);
+            finalSubjectId = importedSubject.id;
+            opContext.subjectId = finalSubjectId;
         }
-        opContext.subjectId = finalSubjectId;
 
         // 3. Strict Duplicate Check
         const existing = await Material.findByTitle(userId, finalSubjectId, normalizedTitle);

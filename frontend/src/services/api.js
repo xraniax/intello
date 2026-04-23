@@ -4,6 +4,25 @@ import { handleAuthFailure } from '@/utils/authFailureHandler';
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 export const BASE_URL = API_URL.replace(/\/api$/, '');
 
+export const getAccessToken = () => localStorage.getItem('token');
+
+export const buildAuthHeaders = (headers = {}) => {
+    const token = getAccessToken();
+    if (!token) return { ...headers };
+    return {
+        ...headers,
+        Authorization: `Bearer ${token}`,
+    };
+};
+
+export const authFetch = (url, options = {}) => {
+    const mergedHeaders = buildAuthHeaders(options.headers || {});
+    return fetch(url, {
+        ...options,
+        headers: mergedHeaders,
+    });
+};
+
 const api = axios.create({
     baseURL: API_URL,
     headers: {
@@ -14,10 +33,7 @@ const api = axios.create({
 // Add a request interceptor to add the JWT token to headers
 api.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
+        config.headers = buildAuthHeaders(config.headers || {});
         return config;
     },
     (error) => Promise.reject(error)
