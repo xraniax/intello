@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Clock3, FileText, Flag, RefreshCw, Save, T
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { MaterialService } from '@/services/MaterialService';
+import AnalyticsService from '@/services/AnalyticsService';
 
 function cn(...inputs) {
     return twMerge(clsx(inputs));
@@ -231,7 +232,7 @@ const extractExamData = (data) => {
     return null;
 };
 
-const ExamView = ({ examData: rawExamData, examId: propExamId, isExpanded = false }) => {
+const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpanded = false }) => {
     const examData = extractExamData(rawExamData);
     // Always prefer the explicitly passed DB UUID prop (propExamId) over the internal JSON id
     const examId = propExamId || examData?.id;
@@ -337,13 +338,25 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, isExpanded = fals
                 submittedAt: new Date().toISOString(),
             };
             const res = await MaterialService.submitExam(payload);
-            setResult(res?.data?.data || null);
+            const examResult = res?.data?.data || null;
+            setResult(examResult);
+
+            if (subjectId && examResult) {
+                AnalyticsService.recordExamAttempt({
+                    subjectId,
+                    materialId: examId,
+                    score:           examResult.score   ?? 0,
+                    maxScore:        examResult.total   ?? exam.questions.length,
+                    durationSeconds: startedAt ? Math.round((Date.now() - startedAt.getTime()) / 1000) : null,
+                    startedAt:       startedAt?.toISOString(),
+                }).catch(() => {});
+            }
         } catch (err) {
             setError(err.message || 'Failed to submit exam. Please retry.');
         } finally {
             setIsSubmitting(false);
         }
-    }, [answers, exam, examId, isSubmitting, result, startedAt]);
+    }, [answers, exam, examId, isSubmitting, result, startedAt, subjectId]);
 
     useEffect(() => {
         if (remainingSeconds == null || result) return undefined;

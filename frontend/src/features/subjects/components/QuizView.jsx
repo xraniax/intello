@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import AnalyticsService from '@/services/AnalyticsService';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -151,7 +152,7 @@ const extractQuizQuestions = (data) => {
     return [];
 };
 
-const QuizView = ({ quizData, isExpanded = false }) => {
+const QuizView = ({ quizData, subjectId, materialId, isExpanded = false }) => {
     const questions = extractQuizQuestions(quizData);
 
     const storageKey = `cognify_quiz_state_${quizData?.id || (questions.length > 0 ? questions[0]?.question?.replace(/\s+/g, '').substring(0, 30) : 'default')}`;
@@ -181,7 +182,8 @@ const QuizView = ({ quizData, isExpanded = false }) => {
     const [streak, setStreak] = useState(initialSaved.streak ?? 0);
     const [muted, setMuted] = useState(initialSaved.muted ?? false);
 
-
+    const responsesRef = useRef([]);
+    const startedAtRef = useRef(new Date().toISOString());
 
     // Persist state
     useEffect(() => {
@@ -211,6 +213,12 @@ const QuizView = ({ quizData, isExpanded = false }) => {
             if (!muted) playTone('wrong');
         }
 
+        responsesRef.current.push({
+            questionId: currentQuestion.id,
+            isCorrect,
+            difficulty: currentQuestion.difficulty ?? 'medium',
+        });
+
         setIsSubmitted(true);
     }, [selectedOption, isSubmitted, currentQuestion, muted]);
 
@@ -221,8 +229,17 @@ const QuizView = ({ quizData, isExpanded = false }) => {
             setIsSubmitted(false);
         } else {
             setShowResults(true);
+            if (subjectId && responsesRef.current.length > 0) {
+                AnalyticsService.recordQuizAttempt({
+                    subjectId,
+                    materialId: materialId ?? quizData?.id,
+                    responses: responsesRef.current,
+                    startedAt: startedAtRef.current,
+                    completedAt: new Date().toISOString(),
+                }).catch(() => {});
+            }
         }
-    }, [currentQuestionIndex, questions.length]);
+    }, [currentQuestionIndex, questions.length, subjectId, materialId, quizData?.id]);
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -269,6 +286,8 @@ const QuizView = ({ quizData, isExpanded = false }) => {
         setScore(0);
         setStreak(0);
         setShowResults(false);
+        responsesRef.current = [];
+        startedAtRef.current = new Date().toISOString();
     };
 
     if (!questions || questions.length === 0) {

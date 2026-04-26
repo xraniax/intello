@@ -526,6 +526,7 @@ class ExamService {
 
         examCache.set(examId, {
             userId,
+            subjectId: payload.subject_id,
             createdAtMs: Date.now(),
             startedAt: createdAt.toISOString(),
             exam: {
@@ -671,6 +672,26 @@ class ExamService {
 
         const details = await Promise.all(detailsPromises);
         const score = details.filter((d) => d.isCorrect).length;
+
+        // Persist attempt to analytics — non-blocking so grading is never delayed
+        if (record.subjectId) {
+            const durationSeconds = Math.floor(
+                (Date.now() - new Date(record.startedAt).getTime()) / 1000
+            );
+            import('./analytics.service.js').then(({ default: AnalyticsService }) =>
+                AnalyticsService.recordExamAttempt(userId, {
+                    materialId: payload.examId,
+                    subjectId: record.subjectId,
+                    score,
+                    maxScore: record.exam.questions.length,
+                    durationSeconds,
+                    startedAt: record.startedAt,
+                    details,
+                    examQuestions: record.exam.questions,
+                })
+            ).catch((err) => console.error('[ExamService] Analytics recording failed:', err.message));
+        }
+
         return {
             score,
             total: record.exam.questions.length,
@@ -728,7 +749,7 @@ class ExamService {
         if (record && record.userId === userId) return record;
 
         try {
-            const dbRes = await query('SELECT id, title, type, ai_generated_content, created_at FROM materials WHERE id = $1 AND user_id = $2', [examId, userId]);
+            const dbRes = await query('SELECT id, subject_id, title, type, ai_generated_content, created_at FROM materials WHERE id = $1 AND user_id = $2', [examId, userId]);
             if (dbRes.rows.length === 0) return null;
             
             const mat = dbRes.rows[0];
@@ -747,6 +768,7 @@ class ExamService {
 
             record = {
                 userId,
+                subjectId: mat.subject_id,
                 createdAtMs: new Date(mat.created_at).getTime(),
                 startedAt: new Date(mat.created_at).toISOString(),
                 exam: {

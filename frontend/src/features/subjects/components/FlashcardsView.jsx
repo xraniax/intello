@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import AnalyticsService from '@/services/AnalyticsService';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -308,7 +309,7 @@ const CardDot = ({ rating, isCurrent, onClick }) => {
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
-const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
+const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
     const materialId = flashcardsData?.id || flashcardsData?.material_id;
     const metadata = useMaterialStore(s => s.data.materialMetadata[materialId]);
     const expectedCount = metadata?.generation?.expectedCount || 0;
@@ -335,6 +336,7 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
     const [celebrating, setCelebrating] = useState(false);
     const [studyHardOnly, setStudyHardOnly] = useState(false);
     const animating = useRef(false);
+    const lastReviewedAt = useRef({});
 
     // Hard reset all session state when the data source changes
     const prevDataRef = useRef(null);
@@ -442,11 +444,28 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
     const rateCard = useCallback((rating) => {
         setRatings(prev => ({ ...prev, [originalIndex]: rating }));
         if (!muted) playAudio(rating);
-        
+
         if (rating === 'easy') {
             setStreak(prev => prev + 1);
         } else {
             setStreak(0);
+        }
+
+        if (subjectId) {
+            const cardKey = String(originalIndex);
+            const prevTs  = lastReviewedAt.current[cardKey];
+            const now     = Date.now();
+            const daysSinceLast = prevTs ? Math.round((now - prevTs) / 86400000) : null;
+            lastReviewedAt.current[cardKey] = now;
+
+            AnalyticsService.recordFlashcardReview({
+                subjectId,
+                materialId,
+                cardId:       card?.id ?? cardKey,
+                topicName:    card?.topic ?? card?.category ?? null,
+                outcome:      rating === 'easy' ? 'easy' : rating === 'hard' ? 'again' : 'good',
+                daysSinceLast,
+            }).catch(() => {});
         }
 
         // Auto-advance after a brief delay
@@ -461,7 +480,7 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
                 setShowSummary(true);
             }
         }, 400);
-    }, [originalIndex, currentIndex, activeOrder.length, muted]);
+    }, [originalIndex, currentIndex, activeOrder.length, muted, subjectId, materialId, card]);
 
     const goNext = useCallback(() => {
         if (currentIndex >= activeOrder.length - 1 || animating.current) return;

@@ -36,7 +36,7 @@ services:
     volumes:
       - ./backend:/app
       - ./db:/db:ro
-      - ./data/uploads:/app/data/uploads
+      - ./backend/uploads:/app/data/uploads
       - backend_node_modules:/app/node_modules
     environment:
       - DB_MIGRATIONS_DIR=/db/migrations
@@ -91,7 +91,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./engine:/app
-      - ./data/uploads:/app/data/uploads
+      - ./backend/uploads:/app/data/uploads
       - ./engine/services/credentials:/app/credentials:ro
     environment:
       - COGNIFY_UPLOADS_DIR=/app/data/uploads
