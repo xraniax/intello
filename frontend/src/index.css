@@ -3,16 +3,16 @@
 
 /* ─── Design Tokens ──────────────────────────────────────── */
 :root {
-  /* Surfaces — warm, slightly branded */
-  --c-canvas:         #F7F5FF;
+  /* Surfaces — warm, slightly branded (Notion-like) */
+  --c-canvas:         #FAFAFA;
   --c-surface:        #FFFFFF;
-  --c-surface-alt:    #F3F0FF;
+  --c-surface-alt:    #F4F4F5;
   --c-surface-raised: #FFFFFF;
 
   /* Borders */
-  --c-border:         rgba(109, 81, 232, 0.10);
-  --c-border-soft:    rgba(109, 81, 232, 0.06);
-  --c-border-strong:  rgba(0, 0, 0, 0.14);
+  --c-border:         rgba(0, 0, 0, 0.06);
+  --c-border-soft:    rgba(0, 0, 0, 0.03);
+  --c-border-strong:  rgba(0, 0, 0, 0.12);
 
   /* Text — strict hierarchy */
   --c-text:             #0D0B1E;
@@ -20,29 +20,29 @@
   --c-text-muted:       #706C8A;
   --c-text-placeholder: #A8A4BC;
 
-  /* Brand — vibrant purple */
-  --c-primary:          #7C5CFC;
-  --c-primary-hover:    #6A4AE8;
-  --c-primary-active:   #5538D4;
-  --c-primary-light:    #EDE9FF;
-  --c-primary-ultra:    #F5F3FF;
-  --c-primary-muted:    #D5CAFF;
+  /* Brand — vibrant purple (Crisper, a bit darker indigo) */
+  --c-primary:          #635BFF;
+  --c-primary-hover:    #554EE6;
+  --c-primary-active:   #4640CC;
+  --c-primary-light:    #EAE9FF;
+  --c-primary-ultra:    #F5F5FF;
+  --c-primary-muted:    #D1CFFF;
 
   /* Accent palette — vibrant, purposeful */
   --c-coral:            #FF6B6B;
-  --c-coral-light:      #FFF0F0;
+  --c-coral-light:      #FFF4F4;
   --c-teal:             #0EB8D5;
-  --c-teal-light:       #E0F9FF;
-  --c-amber:            #FFB020;
-  --c-amber-light:      #FFF8E7;
-  --c-mint:             #00C896;
-  --c-mint-light:       #E0FAF2;
+  --c-teal-light:       #ECFBFF;
+  --c-amber:            #F5A623;
+  --c-amber-light:      #FFF9ED;
+  --c-mint:             #10C293;
+  --c-mint-light:       #E8FDF6;
   --c-sky:              #3BAAFF;
-  --c-sky-light:        #E5F3FF;
+  --c-sky-light:        #F0F8FF;
   --c-rose:             #F43F5E;
-  --c-rose-light:       #FFF0F3;
+  --c-rose-light:       #FFF0F2;
   --c-fuchsia:          #D946EF;
-  --c-fuchsia-light:    #FDF4FF;
+  --c-fuchsia-light:    #FCF4FF;
 
   /* Semantic */
   --c-success:          #10B981;
@@ -95,13 +95,13 @@
   --radius-4xl:  56px;
   --radius-full: 9999px;
 
-  /* ── Shadows — layered, neutral ── */
-  --shadow-xs:   0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03);
-  --shadow-sm:   0 1px 3px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.05);
-  --shadow-md:   0 2px 8px rgba(0,0,0,0.06), 0 4px 20px rgba(0,0,0,0.07);
-  --shadow-lg:   0 4px 20px rgba(0,0,0,0.07), 0 10px 40px rgba(0,0,0,0.09);
-  --shadow-xl:   0 8px 24px rgba(0,0,0,0.09), 0 20px 60px rgba(0,0,0,0.11);
-  --shadow-2xl:  0 16px 48px rgba(0,0,0,0.12), 0 32px 80px rgba(0,0,0,0.14);
+  /* ── Shadows — softer, diffused ── */
+  --shadow-xs:   0 1px 2px rgba(0,0,0,0.03), 0 1px 3px rgba(0,0,0,0.02);
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.02);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.03);
+  --shadow-lg:   0 8px 24px rgba(0,0,0,0.05), 0 16px 48px rgba(0,0,0,0.04);
+  --shadow-xl:   0 12px 32px rgba(0,0,0,0.06), 0 24px 80px rgba(0,0,0,0.05);
+  --shadow-2xl:  0 16px 48px rgba(0,0,0,0.08), 0 32px 80px rgba(0,0,0,0.06);
 
   /* ── Colored shadows — tactile, per-element ── */
   --shadow-primary:  0 4px 24px rgba(124, 92, 252, 0.38), 0 2px 6px rgba(124, 92, 252, 0.18);
@@ -135,9 +135,9 @@
   body {
     background-color: var(--c-canvas);
     color: var(--c-text);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 15px;
-    line-height: 1.5;
+    line-height: 1.6;
     @apply antialiased;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -190,44 +190,46 @@
 
   /* ── Buttons ── */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 font-semibold whitespace-nowrap cursor-pointer border-none outline-none select-none;
-    border-radius: var(--radius-md);
-    transition: all 0.18s var(--ease-bounce);
-    letter-spacing: -0.012em;
+    @apply inline-flex items-center justify-center gap-1.5 font-semibold whitespace-nowrap cursor-pointer select-none relative;
+    border-radius: var(--radius-xl);
+    transition: all 0.15s var(--ease-out);
+    letter-spacing: -0.01em;
   }
-  .btn:active  { transform: scale(0.95); }
+  .btn:active  { transform: scale(0.96) translateY(1px); }
   .btn:disabled { opacity: 0.42; pointer-events: none; }
 
-  .btn-sm { font-size: 13px; height: 32px;  padding: 0 12px; border-radius: var(--radius-sm); }
-  .btn-md { font-size: 14px; height: 40px;  padding: 0 18px; }
-  .btn-lg { font-size: 15px; height: 48px;  padding: 0 24px; border-radius: var(--radius-lg); }
+  .btn-sm { font-size: 13px; height: 32px;  padding: 0 14px; border-radius: var(--radius-lg); }
+  .btn-md { font-size: 14px; height: 42px;  padding: 0 20px; }
+  .btn-lg { font-size: 15px; height: 48px;  padding: 0 24px; border-radius: 99px; }
 
-  /* Solid */
+  /* Solid - tactile, elegant */
   .btn-solid {
-    background: var(--grad-primary);
+    background: linear-gradient(180deg, var(--c-primary) 0%, var(--c-primary-hover) 100%);
     color: white;
-    box-shadow: var(--shadow-primary);
+    border: 1px solid var(--c-primary-active);
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.05), var(--shadow-primary);
   }
   .btn-solid:hover {
-    filter: brightness(1.08) saturate(1.1);
-    box-shadow: var(--shadow-brand-lg);
     transform: translateY(-1px);
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.25), 0 4px 12px rgba(0,0,0,0.08), var(--shadow-brand-lg);
   }
-  .btn-solid:active { transform: scale(0.95) translateY(0); }
+  .btn-solid:active { 
+    transform: scale(0.97) translateY(1px); 
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.05);
+  }
 
-  /* Outline */
+  /* Outline - crisp, notion-like */
   .btn-outline {
     background: var(--c-surface);
     color: var(--c-text);
-    border: 1.5px solid var(--c-border-strong) !important;
-    box-shadow: var(--shadow-xs);
+    border: 1px solid var(--c-border-strong) !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
   }
   .btn-outline:hover {
-    background: var(--c-surface-alt);
+    background: var(--c-canvas);
     border-color: var(--c-primary-muted) !important;
-    color: var(--c-primary);
     transform: translateY(-1px);
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.04);
   }
 
   /* Ghost */
@@ -322,62 +324,64 @@
   /* ── Inputs ── */
   .input-field {
     @apply bg-white w-full transition-all duration-150 outline-none text-sm font-medium;
-    min-height: 40px;
-    padding: 0 14px;
-    border-radius: var(--radius-md);
-    border: 1.5px solid var(--c-border-strong);
+    min-height: 42px;
+    padding: 0 16px;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--c-border-strong);
     color: var(--c-text);
-    box-shadow: var(--shadow-xs);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
   }
   .input-field::placeholder { color: var(--c-text-placeholder); font-weight: 400; }
   .input-field:focus {
-    border-color: var(--c-primary);
-    box-shadow: var(--shadow-brand), var(--shadow-xs);
+    border-color: var(--c-primary-hover);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.02), var(--shadow-brand);
     background: white;
   }
 
   /* ── Cards ── */
   .card-minimal {
     background: var(--c-surface);
-    border: 1.5px solid var(--c-border);
+    border: 1px solid var(--c-border-strong);
     @apply transition-all duration-200;
-    border-radius: var(--radius-xl);
+    border-radius: var(--radius-2xl);
     box-shadow: var(--shadow-xs);
   }
   .card-minimal:hover {
-    box-shadow: var(--shadow-lg);
-    border-color: rgba(124, 92, 252, 0.18);
-    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+    border-color: rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
   }
 
   .card-vibrant {
     background: var(--c-surface);
-    border: 1.5px solid var(--c-border);
+    border: 1px solid var(--c-border-soft);
+    border-top: 1px solid rgba(255,255,255,0.5);
+    border-bottom: 1px solid var(--c-border-strong);
     border-radius: var(--radius-2xl);
     box-shadow: var(--shadow-sm);
-    transition: all 0.22s var(--ease-spring);
+    transition: all 0.22s var(--ease-out);
     overflow: hidden;
   }
   .card-vibrant:hover {
-    box-shadow: var(--shadow-xl);
-    border-color: rgba(124, 92, 252, 0.20);
-    transform: translateY(-4px) scale(1.005);
+    box-shadow: var(--shadow-lg), 0 12px 30px rgba(99, 91, 255, 0.12);
+    border-color: rgba(99, 91, 255, 0.15);
+    transform: translateY(-3px) scale(1.005);
   }
 
   /* ── Nav ── */
   .nav-link {
-    @apply text-sm font-medium transition-all duration-150 flex items-center gap-2;
-    padding: 7px 12px;
-    border-radius: var(--radius-md);
+    @apply text-sm font-medium transition-all duration-150 flex items-center gap-2.5;
+    padding: 8px 14px;
+    border-radius: var(--radius-xl);
     color: var(--c-text-muted);
   }
   .nav-link:hover {
     color: var(--c-text);
-    background: var(--c-surface-alt);
+    background: var(--c-border-soft);
   }
   .nav-link--active {
-    color: var(--c-primary);
-    background: var(--c-primary-ultra);
+    color: var(--c-text);
+    background: var(--c-surface-alt);
     font-weight: 600;
   }
 

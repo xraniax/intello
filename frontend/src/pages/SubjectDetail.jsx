@@ -248,7 +248,7 @@ const SubjectDetail = () => {
                     return (
                         <div className="flex-1 h-full w-full flex flex-col" style={{ background: 'var(--c-canvas)' }}>
                             <iframe
-                                src={`${fileUrl}#view=FitH&toolbar=0&navpanes=0&scrollbar=1`}
+                                src={`${fileUrl}#view=Fit&toolbar=0&navpanes=0&scrollbar=1`}
                                 className="w-full flex-1 border-none"
                                 title={tab.title}
                                 sandbox="allow-scripts allow-same-origin"
@@ -425,10 +425,10 @@ const SubjectDetail = () => {
 
                     <button
                         onClick={() => requireAuth(() => setShowUploadModal(true))}
-                        className="btn-primary py-3 px-6 text-xs font-black uppercase tracking-widest shadow-lg shadow-purple-200 hover:scale-105 active:scale-95 hidden md:block"
+                        className="btn-primary py-3 px-6 text-xs font-black uppercase tracking-widest shadow-lg shadow-purple-200 hover:scale-105 active:scale-95 hidden md:flex items-center gap-2"
                     >
-                        {(isPublic && !user) && <Lock className="w-3.5 h-3.5 inline-block mr-1.5" />}
-                        Grow Space
+                        {(isPublic && !user) ? <Lock className="w-3.5 h-3.5" /> : <Upload className="w-4 h-4" />}
+                        <span>Add Content</span>
                     </button>
                 </div>
             </div>
@@ -482,7 +482,7 @@ const SubjectDetail = () => {
             <FloatingActionButton
                 onClick={() => requireAuth(() => setShowUploadModal(true))}
                 icon={(isPublic && !user) ? Lock : Upload}
-                label="Grow Space"
+                label="Add Content"
             />
 
             <UploadModal

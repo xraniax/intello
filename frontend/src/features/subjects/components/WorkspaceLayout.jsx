@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useUIStore } from '@/store/useUIStore';
 
 const MIN_PCT = 12; // minimum panel width as a percentage
@@ -12,6 +13,7 @@ const WorkspaceLayout = ({
 }) => {
     // Panel widths as percentages [left, middle, right] — must sum to 100
     const [widths, setWidths] = useState([22, 50, 28]);
+    const [isDragging, setIsDragging] = useState(false);
     const containerRef = useRef(null);
     const dragging = useRef(null); // { separatorIndex, startX, startWidths }
 
@@ -26,8 +28,19 @@ const WorkspaceLayout = ({
     // Mobile View State
     const activePanel = useUIStore((state) => state.data.activeWorkspacePanel);
 
+    // spring config for smooth transitions - softer and more organic
+    const springConfig = { type: 'spring', stiffness: 280, damping: 32, mass: 1 };
+    const [transitionConfig, setTransitionConfig] = useState(springConfig);
+
+    // Reset transition to spring only when collapse state changes from props
+    useEffect(() => {
+        setTransitionConfig(springConfig);
+    }, [leftPanelCollapsed, rightPanelCollapsed]);
+
     const onMouseDown = useCallback((separatorIndex) => (e) => {
         e.preventDefault();
+        setIsDragging(true);
+        setTransitionConfig({ duration: 0 }); // Disable transition during and immediately after drag
         dragging.current = {
             separatorIndex,
             startX: e.clientX,
@@ -52,73 +65,102 @@ const WorkspaceLayout = ({
 
         const onMouseUp = () => {
             dragging.current = null;
+            setIsDragging(false);
+            // We DON'T reset transition to spring here so it stops exactly where dropped
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
         };
 
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
-    }, [widths]);
+    }, [widths, springConfig]);
 
     const leftWidth = leftPanelCollapsed ? 0 : widths[0];
     const rightWidth = rightPanelCollapsed ? 0 : widths[2];
     const middleWidth = 100 - leftWidth - rightWidth;
-    
 
     return (
-        <div ref={containerRef} className="flex-1 flex overflow-hidden bg-[#FFF8F0]/20 select-none pb-20 md:pb-0 relative">
+        <div ref={containerRef} className={`flex-1 flex overflow-hidden select-none pb-20 md:pb-0 relative ${isDragging ? 'cursor-col-resize shadow-inner transition-none' : ''}`} style={{ background: 'var(--c-canvas)' }}>
             {/* Left Panel */}
-            <div 
-                className={`h-full border-r border-purple-100/30 transition-all duration-300 ease-in-out glass-panel overflow-hidden
-                    ${isMobile ? (activePanel === 'files' ? 'flex w-full' : 'hidden') : 'md:flex'}`}
-                style={{ flex: isMobile ? '1 1 100%' : `0 0 ${leftWidth}%` }}
+            <motion.div 
+                initial={false}
+                animate={{ 
+                    width: isMobile ? '100%' : `${leftWidth}%`,
+                    opacity: leftPanelCollapsed && !isMobile ? 0 : 1
+                }}
+                transition={isDragging ? { duration: 0 } : transitionConfig}
+                className={`h-full overflow-hidden flex-shrink-0
+                    ${isMobile ? (activePanel === 'files' ? 'flex' : 'hidden') : 'flex'}`}
+                style={{ 
+                    borderRight: leftPanelCollapsed ? 'none' : '1px solid var(--c-border-soft)'
+                }}
             >
-                <div className="w-full h-full">
+                <div className="w-full h-full min-w-[250px]">
                     {leftPanel}
                 </div>
-            </div>
+            </motion.div>
 
             {/* Separator 0 */}
             {!leftPanelCollapsed && !isMobile && (
                 <div
-                    className="hidden md:block w-1.5 h-full cursor-col-resize hover:bg-purple-200/50 transition-colors z-10 -mx-0.75 relative group"
+                    className="hidden md:block w-2.5 h-full cursor-col-resize z-10 -mx-1.25 relative group"
                     onMouseDown={onMouseDown(0)}
                 >
-                    <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-purple-100/50 group-hover:bg-purple-300 transition-colors"></div>
+                    <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] transition-all ${isDragging ? 'opacity-100 scale-x-150' : 'opacity-0 group-hover:opacity-100'}`} style={{ background: 'var(--c-primary)' }}></div>
                 </div>
             )}
 
             {/* Middle Panel */}
-            <div 
-                className={`h-full border-r border-purple-100/30 transition-all duration-300 ease-in-out glass-panel-dark overflow-hidden
-                    ${isMobile ? (activePanel === 'content' ? 'flex w-full' : 'hidden') : 'md:flex'}`}
-                style={{ flex: isMobile ? '1 1 100%' : `0 0 ${middleWidth}%` }}
+            <motion.div 
+                initial={false}
+                animate={{ 
+                    width: isMobile ? '100%' : `${middleWidth}%`
+                }}
+                transition={isDragging ? { duration: 0 } : transitionConfig}
+                className={`h-full overflow-hidden flex-shrink-0
+                    ${isMobile ? (activePanel === 'content' ? 'flex' : 'hidden') : 'flex'}`}
+                style={{ 
+                    background: 'var(--c-surface)', 
+                    borderTopLeftRadius: '32px', 
+                    boxShadow: '-4px 0 32px rgba(0,0,0,0.03)',
+                    zoom: 1.1,
+                    fontSize: '20px'
+                }}
             >
-                <div className="w-full h-full">
+                <div className="w-full h-full min-w-[400px]">
                     {middlePanel}
                 </div>
-            </div>
+            </motion.div>
 
             {/* Separator 1 */}
             {!rightPanelCollapsed && !isMobile && (
                 <div
-                    className="hidden md:block w-1.5 h-full cursor-col-resize hover:bg-purple-200/50 transition-colors z-10 -mx-0.75 relative group"
+                    className="hidden md:block w-2.5 h-full cursor-col-resize z-10 -mx-1.25 relative group"
                     onMouseDown={onMouseDown(1)}
                 >
-                    <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-purple-100/50 group-hover:bg-purple-300 transition-colors"></div>
+                    <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] transition-all ${isDragging ? 'opacity-100 scale-x-150' : 'opacity-0 group-hover:opacity-100'}`} style={{ background: 'var(--c-primary)' }}></div>
                 </div>
             )}
 
             {/* Right Panel */}
-            <div 
-                className={`h-full transition-all duration-300 ease-in-out glass-panel overflow-hidden
-                    ${isMobile ? (activePanel === 'tutor' ? 'flex w-full' : 'hidden') : 'md:flex'}`}
-                style={{ flex: isMobile ? '1 1 100%' : `0 0 ${rightWidth}%` }}
+            <motion.div 
+                initial={false}
+                animate={{ 
+                    width: isMobile ? '100%' : `${rightWidth}%`,
+                    opacity: rightPanelCollapsed && !isMobile ? 0 : 1
+                }}
+                transition={isDragging ? { duration: 0 } : transitionConfig}
+                className={`h-full overflow-hidden flex-shrink-0
+                    ${isMobile ? (activePanel === 'tutor' ? 'flex' : 'hidden') : 'flex'}`}
+                style={{ 
+                    borderLeft: rightPanelCollapsed ? 'none' : '1px solid var(--c-border-soft)', 
+                    background: 'var(--c-surface)'
+                }}
             >
-                <div className="w-full h-full">
+                <div className="w-full h-full min-w-[300px]">
                     {rightPanel}
                 </div>
-            </div>
+            </motion.div>
         </div>
     );
 };

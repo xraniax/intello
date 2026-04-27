@@ -586,7 +586,9 @@ class AnalyticsService {
         const fromDate = windowFrom(from);
         const toDate   = windowTo(to);
         const wantAll  = sources === 'all';
-        const srcList  = wantAll ? ['quiz', 'exam', 'flashcard'] : sources.split(',').map((s) => s.trim());
+        const srcList  = wantAll 
+            ? ['quiz', 'exam', 'flashcard'] 
+            : (Array.isArray(sources) ? sources : sources.split(',').map((s) => s.trim()));
 
         const queries = await Promise.all([
             srcList.includes('quiz') ? query(
@@ -979,6 +981,545 @@ class AnalyticsService {
         };
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // GLOBAL ANALYTICS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** Full cross-subject analytics dashboard with heatmap and insights. */
+    static async getGlobalDashboard(userId) {
+        await this.#ensureGlobalSnapshot(userId);
+
+        const [globalRes, subjectsRes, heatmapRes, insightsRes] = await Promise.all([
+            query('SELECT * FROM user_global_analytics WHERE user_id = $1', [userId]),
+            query(
+                `SELECT s.id, s.name, s.last_activity_at,
+                        COALESCE(usa.crs_score, 0)     AS crs,
+                        COALESCE(usa.understanding, 0)  AS understanding,
+                        COALESCE(usa.retention, 0)      AS retention,
+                        COALESCE(usa.mastery, 0)        AS mastery,
+                        COALESCE(usa.concept_count, 0)  AS concept_count,
+                        COALESCE(usa.mastered_count, 0) AS mastered_count,
+                        COALESCE(usa.at_risk_count, 0)  AS at_risk_count,
+                        COALESCE(usa.trend_7d, 0)       AS trend_7d,
+                        usa.updated_at
+                 FROM subjects s
+                 LEFT JOIN user_subject_analytics usa
+                        ON usa.subject_id = s.id AND usa.user_id = s.user_id
+                 WHERE s.user_id = $1
+                 ORDER BY crs DESC NULLS LAST`,
+                [userId]
+            ),
+            this.#getHeatmapData(userId, 90),
+            query(
+                `SELECT * FROM user_insights
+                 WHERE user_id = $1 AND dismissed = false
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                 ORDER BY priority ASC, generated_at DESC
+                 LIMIT 5`,
+                [userId]
+            ),
+        ]);
+
+        const g = globalRes.rows[0];
+        const classifyStatus = (crs) => {
+            if (crs >= 75) return 'strong';
+            if (crs >= 50) return 'developing';
+            if (crs >= 25) return 'weak';
+            return 'critical';
+        };
+
+        const subjects = subjectsRes.rows.map((r) => ({
+            id:              r.id,
+            name:            r.name,
+            crs:             f(r.crs) ?? 0,
+            status:          classifyStatus(f(r.crs) ?? 0),
+            understanding:   f(r.understanding),
+            retention:       f(r.retention),
+            mastery:         f(r.mastery),
+            concept_count:   i(r.concept_count),
+            mastered_count:  i(r.mastered_count),
+            at_risk_count:   i(r.at_risk_count),
+            trend_7d:        f(r.trend_7d) ?? 0,
+            last_activity_at: r.last_activity_at,
+        }));
+
+        const strongest = subjects.reduce((best, s) => (!best || s.crs > best.crs ? s : best), null);
+        const weakest   = subjects
+            .filter((s) => s.concept_count >= 3)
+            .reduce((worst, s) => (!worst || s.crs < worst.crs ? s : worst), null);
+
+        return {
+            summary: {
+                overall_readiness:  f(g?.overall_readiness)  ?? 0,
+                momentum_score:     f(g?.momentum_score)     ?? 1,
+                consistency_score:  f(g?.consistency_score)  ?? 0,
+                study_streak:       i(g?.study_streak),
+                active_days_30d:    i(g?.active_days_30d),
+                total_mastered:     i(g?.total_mastered),
+                total_at_risk:      i(g?.total_at_risk),
+            },
+            dimensions: {
+                understanding: f(g?.global_understanding) ?? 0,
+                retention:     f(g?.global_retention)     ?? 0,
+                mastery:       f(g?.global_mastery)       ?? 0,
+            },
+            strongest_subject: strongest ? { id: strongest.id, name: strongest.name, crs: strongest.crs } : null,
+            weakest_subject:   weakest   ? { id: weakest.id,   name: weakest.name,   crs: weakest.crs   } : null,
+            subjects,
+            insights: insightsRes.rows,
+            heatmap:  heatmapRes,
+        };
+    }
+
+    /** All subjects with their analytics summary — for the subjects list sidebar. */
+    static async getSubjectsList(userId) {
+        await this.#ensureGlobalSnapshot(userId);
+        const { rows } = await query(
+            `SELECT s.id, s.name, s.last_activity_at,
+                    COALESCE(usa.crs_score, 0)     AS crs,
+                    COALESCE(usa.trend_7d, 0)       AS trend_7d,
+                    COALESCE(usa.concept_count, 0)  AS concept_count,
+                    COALESCE(usa.mastered_count, 0) AS mastered_count,
+                    COALESCE(usa.at_risk_count, 0)  AS at_risk_count
+             FROM subjects s
+             LEFT JOIN user_subject_analytics usa
+                    ON usa.subject_id = s.id AND usa.user_id = s.user_id
+             WHERE s.user_id = $1
+             ORDER BY crs DESC NULLS LAST`,
+            [userId]
+        );
+        return rows.map((r) => ({
+            id:             r.id,
+            name:           r.name,
+            crs:            f(r.crs) ?? 0,
+            trend_7d:       f(r.trend_7d) ?? 0,
+            concept_count:  i(r.concept_count),
+            mastered_count: i(r.mastered_count),
+            at_risk_count:  i(r.at_risk_count),
+            last_activity_at: r.last_activity_at,
+        }));
+    }
+
+    /** Activity heatmap data — last N days, one entry per active day. */
+    static async getActivityHeatmap(userId, days = 365) {
+        return this.#getHeatmapData(userId, days);
+    }
+
+    /** Ranked insight feed (non-dismissed, not expired). */
+    static async getInsights(userId, { limit = 5, type = null } = {}) {
+        const params = [userId, Math.min(limit, 20)];
+        const typeFilter = type ? `AND type = ANY($3::text[])` : '';
+        if (type) params.push(type.split(','));
+
+        const { rows } = await query(
+            `SELECT * FROM user_insights
+             WHERE user_id = $1 AND dismissed = false
+               AND (expires_at IS NULL OR expires_at > NOW())
+               ${typeFilter}
+             ORDER BY priority ASC, generated_at DESC
+             LIMIT $2`,
+            params
+        );
+        return rows;
+    }
+
+    /** Mark an insight as dismissed. */
+    static async dismissInsight(userId, insightId) {
+        const { rowCount } = await query(
+            'UPDATE user_insights SET dismissed = true WHERE id = $1 AND user_id = $2',
+            [insightId, userId]
+        );
+        return rowCount > 0;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PRIVATE — Aggregation chain
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** Re-aggregate subject snapshot from concept mastery, then bubble up to global. */
+    static async #refreshSubjectAnalytics(userId, subjectId) {
+        const [conceptRes, trend7dRes, trend14dRes] = await Promise.all([
+            query(
+                `SELECT
+                    ROUND(AVG(mastery_score), 2)        AS crs_score,
+                    ROUND(AVG(quiz_accuracy), 2)         AS understanding,
+                    ROUND(AVG(flashcard_retention), 2)   AS retention,
+                    ROUND(AVG(exam_accuracy), 2)         AS mastery,
+                    COUNT(*)                             AS concept_count,
+                    COUNT(*) FILTER (WHERE mastery_score >= 70) AS mastered_count,
+                    COUNT(*) FILTER (WHERE mastery_score < 50)  AS at_risk_count,
+                    MAX(last_activity_at)                AS last_activity_at
+                 FROM user_concept_mastery
+                 WHERE user_id = $1 AND subject_id = $2`,
+                [userId, subjectId]
+            ),
+            // recent 7-day accuracy
+            query(
+                `SELECT ROUND(AVG(score::numeric / NULLIF(max_score, 0) * 100), 2) AS acc
+                 FROM quiz_attempts
+                 WHERE user_id = $1 AND subject_id = $2
+                   AND completed_at >= NOW() - INTERVAL '7 days'`,
+                [userId, subjectId]
+            ),
+            // prior 7-14-day accuracy for delta
+            query(
+                `SELECT ROUND(AVG(score::numeric / NULLIF(max_score, 0) * 100), 2) AS acc
+                 FROM quiz_attempts
+                 WHERE user_id = $1 AND subject_id = $2
+                   AND completed_at >= NOW() - INTERVAL '14 days'
+                   AND completed_at < NOW() - INTERVAL '7 days'`,
+                [userId, subjectId]
+            ),
+        ]);
+
+        const snap = conceptRes.rows[0];
+        if (!snap || snap.crs_score === null) return;
+
+        const recent  = f(trend7dRes.rows[0]?.acc);
+        const prior   = f(trend14dRes.rows[0]?.acc);
+        const trend7d = (recent !== null && prior !== null) ? Math.round((recent - prior) * 10) / 10 : 0;
+
+        const crsScore = f(snap.crs_score) ?? 0;
+        const confidence = Math.min(i(snap.concept_count) / 5, 1);
+
+        await query(
+            `INSERT INTO user_subject_analytics
+                (user_id, subject_id, crs_score, understanding, retention, mastery,
+                 confidence, concept_count, mastered_count, at_risk_count, trend_7d, last_activity_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+             ON CONFLICT (user_id, subject_id) DO UPDATE SET
+                crs_score        = EXCLUDED.crs_score,
+                understanding    = EXCLUDED.understanding,
+                retention        = EXCLUDED.retention,
+                mastery          = EXCLUDED.mastery,
+                confidence       = EXCLUDED.confidence,
+                concept_count    = EXCLUDED.concept_count,
+                mastered_count   = EXCLUDED.mastered_count,
+                at_risk_count    = EXCLUDED.at_risk_count,
+                trend_7d         = EXCLUDED.trend_7d,
+                last_activity_at = EXCLUDED.last_activity_at,
+                updated_at       = NOW()`,
+            [userId, subjectId, crsScore, f(snap.understanding), f(snap.retention), f(snap.mastery),
+             Math.round(confidence * 100) / 100,
+             i(snap.concept_count), i(snap.mastered_count), i(snap.at_risk_count),
+             trend7d, snap.last_activity_at]
+        );
+    }
+
+    /** Re-aggregate global snapshot from all subject snapshots. */
+    static async #refreshGlobalAnalytics(userId) {
+        const [subjectRes, activityRes] = await Promise.all([
+            query(
+                `SELECT crs_score, understanding, retention, mastery,
+                        mastered_count, at_risk_count, subject_id
+                 FROM user_subject_analytics
+                 WHERE user_id = $1`,
+                [userId]
+            ),
+            query(
+                `SELECT DATE(activity_at) AS day, COUNT(*) AS cnt
+                 FROM (
+                     SELECT completed_at AS activity_at FROM quiz_attempts
+                     WHERE user_id = $1 AND completed_at >= NOW() - INTERVAL '60 days'
+                     UNION ALL
+                     SELECT reviewed_at FROM flashcard_reviews
+                     WHERE user_id = $1 AND reviewed_at >= NOW() - INTERVAL '60 days'
+                     UNION ALL
+                     SELECT completed_at FROM mock_exam_attempts
+                     WHERE user_id = $1 AND completed_at >= NOW() - INTERVAL '60 days'
+                 ) all_act
+                 GROUP BY DATE(activity_at)
+                 ORDER BY day DESC`,
+                [userId]
+            ),
+        ]);
+
+        if (!subjectRes.rows.length) return;
+
+        const subjects = subjectRes.rows;
+        const avgCRS   = subjects.reduce((s, r) => s + f(r.crs_score), 0) / subjects.length;
+        const avgU     = subjects.reduce((s, r) => s + (f(r.understanding) ?? 0), 0) / subjects.length;
+        const avgR     = subjects.reduce((s, r) => s + (f(r.retention)     ?? 0), 0) / subjects.length;
+        const avgM     = subjects.reduce((s, r) => s + (f(r.mastery)       ?? 0), 0) / subjects.length;
+        const totMastered = subjects.reduce((s, r) => s + i(r.mastered_count), 0);
+        const totAtRisk   = subjects.reduce((s, r) => s + i(r.at_risk_count), 0);
+
+        const strongest = subjects.reduce((b, r) => (!b || f(r.crs_score) > f(b.crs_score) ? r : b), null);
+        const weakest   = subjects.reduce((w, r) => (!w || f(r.crs_score) < f(w.crs_score) ? r : w), null);
+
+        // Activity-based metrics
+        const days = activityRes.rows;
+        const activeDays30  = days.filter((d) => {
+            const age = (Date.now() - new Date(d.day).getTime()) / 86_400_000;
+            return age <= 30;
+        }).length;
+
+        // Streak: consecutive days ending today or yesterday
+        const daySet = new Set(days.map((d) => new Date(d.day).toISOString().slice(0, 10)));
+        let streak = 0;
+        const today = new Date();
+        for (let i = 0; i <= 60; i++) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            if (daySet.has(d.toISOString().slice(0, 10))) {
+                streak++;
+            } else if (i > 1) {
+                break;
+            }
+        }
+
+        // Momentum: 7d daily rate vs 30d daily rate
+        const interactions7d  = days.filter((d) => {
+            const age = (Date.now() - new Date(d.day).getTime()) / 86_400_000;
+            return age <= 7;
+        }).reduce((s, d) => s + i(d.cnt), 0);
+        const interactions30d = days.filter((d) => {
+            const age = (Date.now() - new Date(d.day).getTime()) / 86_400_000;
+            return age <= 30;
+        }).reduce((s, d) => s + i(d.cnt), 0);
+
+        const daily7d   = interactions7d / 7;
+        const daily30d  = interactions30d / 30;
+        const momentum  = daily30d > 0 ? Math.round((daily7d / daily30d) * 100) / 100 : 1;
+        const consistency = Math.round((activeDays30 / 30) * 100);
+
+        await query(
+            `INSERT INTO user_global_analytics
+                (user_id, overall_readiness, momentum_score, consistency_score, study_streak,
+                 active_days_30d, strongest_subject_id, weakest_subject_id,
+                 total_mastered, total_at_risk,
+                 global_understanding, global_retention, global_mastery, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+             ON CONFLICT (user_id) DO UPDATE SET
+                overall_readiness    = EXCLUDED.overall_readiness,
+                momentum_score       = EXCLUDED.momentum_score,
+                consistency_score    = EXCLUDED.consistency_score,
+                study_streak         = EXCLUDED.study_streak,
+                active_days_30d      = EXCLUDED.active_days_30d,
+                strongest_subject_id = EXCLUDED.strongest_subject_id,
+                weakest_subject_id   = EXCLUDED.weakest_subject_id,
+                total_mastered       = EXCLUDED.total_mastered,
+                total_at_risk        = EXCLUDED.total_at_risk,
+                global_understanding = EXCLUDED.global_understanding,
+                global_retention     = EXCLUDED.global_retention,
+                global_mastery       = EXCLUDED.global_mastery,
+                updated_at           = NOW()`,
+            [userId, Math.round(avgCRS * 100) / 100, momentum, consistency, streak,
+             activeDays30, strongest?.subject_id ?? null, weakest?.subject_id ?? null,
+             totMastered, totAtRisk,
+             Math.round(avgU * 100) / 100, Math.round(avgR * 100) / 100, Math.round(avgM * 100) / 100]
+        );
+
+        // Generate insights asynchronously — don't block the write response
+        this.#generateInsights(userId).catch((e) =>
+            console.error('[Analytics] insight generation failed:', e.message));
+    }
+
+    /** Ensure global snapshot exists; compute inline if missing or stale (>1h). */
+    static async #ensureGlobalSnapshot(userId) {
+        const { rows } = await query(
+            `SELECT updated_at FROM user_global_analytics WHERE user_id = $1`,
+            [userId]
+        );
+        const staleMs = 60 * 60 * 1000; // 1 hour
+        const isStale = !rows[0] || (Date.now() - new Date(rows[0].updated_at).getTime() > staleMs);
+        if (!isStale) return;
+
+        // Full re-aggregate: all subjects for this user
+        const { rows: subs } = await query(
+            'SELECT id FROM subjects WHERE user_id = $1',
+            [userId]
+        );
+        await Promise.all(subs.map((s) => this.#refreshSubjectAnalytics(userId, s.id)));
+        await this.#refreshGlobalAnalytics(userId);
+    }
+
+    /** Activity heatmap helper — returns { date, count }[]. */
+    static async #getHeatmapData(userId, days = 90) {
+        const { rows } = await query(
+            `SELECT DATE(activity_at)::text AS date, COUNT(*) AS count
+             FROM (
+                 SELECT completed_at AS activity_at FROM quiz_attempts
+                 WHERE user_id = $1 AND completed_at >= NOW() - ($2 || ' days')::interval
+                 UNION ALL
+                 SELECT reviewed_at FROM flashcard_reviews
+                 WHERE user_id = $1 AND reviewed_at >= NOW() - ($2 || ' days')::interval
+                 UNION ALL
+                 SELECT completed_at FROM mock_exam_attempts
+                 WHERE user_id = $1 AND completed_at >= NOW() - ($2 || ' days')::interval
+             ) all_act
+             GROUP BY DATE(activity_at)
+             ORDER BY date ASC`,
+            [userId, days]
+        );
+        return rows.map((r) => ({ date: r.date, count: i(r.count) }));
+    }
+
+    /** Rule-based insight engine. Evaluates patterns and upserts user_insights. */
+    static async #generateInsights(userId) {
+        const [subjectRes, weakConceptRes, flashOverdueRes, examGapRes] = await Promise.all([
+            query(
+                `SELECT s.id, s.name, usa.crs_score, usa.retention, usa.understanding,
+                        usa.mastery, usa.trend_7d, usa.last_activity_at, usa.at_risk_count
+                 FROM user_subject_analytics usa
+                 JOIN subjects s ON s.id = usa.subject_id
+                 WHERE usa.user_id = $1`,
+                [userId]
+            ),
+            // Concepts with CRS < 50 and last activity > 14 days
+            query(
+                `SELECT ucm.topic_name, ucm.mastery_score, ucm.last_activity_at, s.name AS subject_name, s.id AS subject_id
+                 FROM user_concept_mastery ucm
+                 JOIN subjects s ON s.id = ucm.subject_id
+                 WHERE ucm.user_id = $1
+                   AND ucm.mastery_score < 50
+                   AND ucm.last_activity_at < NOW() - INTERVAL '14 days'
+                 ORDER BY ucm.mastery_score ASC
+                 LIMIT 3`,
+                [userId]
+            ),
+            // Subjects with overdue flashcards
+            query(
+                `SELECT s.id AS subject_id, s.name, COUNT(*) AS overdue_count
+                 FROM (
+                     SELECT DISTINCT ON (fr.external_card_id)
+                            fr.external_card_id, fr.reviewed_at, fr.interval_days, m.subject_id
+                     FROM flashcard_reviews fr
+                     JOIN materials m ON m.id = fr.material_id AND m.deleted_at IS NULL
+                     WHERE fr.user_id = $1
+                     ORDER BY fr.external_card_id, fr.reviewed_at DESC
+                 ) latest
+                 JOIN subjects s ON s.id = latest.subject_id
+                 WHERE latest.reviewed_at + (latest.interval_days || ' days')::interval < NOW() - INTERVAL '2 days'
+                 GROUP BY s.id, s.name
+                 HAVING COUNT(*) >= 5`,
+                [userId]
+            ),
+            // Subjects where exam accuracy lags quiz accuracy by >15 pts
+            query(
+                `SELECT s.id AS subject_id, s.name,
+                        ROUND(AVG(qa.score::numeric / NULLIF(qa.max_score,0) * 100), 1) AS quiz_acc,
+                        ROUND(AVG(mea.score::numeric / NULLIF(mea.max_score,0) * 100), 1) AS exam_acc
+                 FROM subjects s
+                 JOIN quiz_attempts qa ON qa.subject_id = s.id AND qa.user_id = $1
+                 JOIN mock_exam_attempts mea ON mea.subject_id = s.id AND mea.user_id = $1
+                 WHERE s.user_id = $1
+                 GROUP BY s.id, s.name
+                 HAVING AVG(qa.score::numeric / NULLIF(qa.max_score,0) * 100) -
+                        AVG(mea.score::numeric / NULLIF(mea.max_score,0) * 100) > 15`,
+                [userId]
+            ),
+        ]);
+
+        const now    = new Date();
+        const expire = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h TTL
+        const insights = [];
+
+        // Rule 1: Decay — stale weak concepts
+        for (const r of weakConceptRes.rows) {
+            const daysSince = Math.floor((now - new Date(r.last_activity_at)) / 86_400_000);
+            insights.push({
+                type: 'decay', priority: 2,
+                subject_id: r.subject_id, concept_name: r.topic_name,
+                title: `"${r.topic_name}" is getting stale`,
+                body: `You haven't practiced ${r.topic_name} in ${daysSince} days. Your retention is likely declining.`,
+                cta_label: 'Review Now',
+                cta_action: JSON.stringify({ type: 'navigate', route: `/subjects/${r.subject_id}` }),
+            });
+        }
+
+        // Rule 2: Flashcards overdue
+        for (const r of flashOverdueRes.rows) {
+            insights.push({
+                type: 'decay', priority: 3,
+                subject_id: r.subject_id, concept_name: null,
+                title: `${r.overdue_count} flashcards overdue in ${r.name}`,
+                body: `${r.overdue_count} flashcards in ${r.name} haven't been reviewed on schedule. A short session would protect your retention.`,
+                cta_label: 'Review Flashcards',
+                cta_action: JSON.stringify({ type: 'navigate', route: `/subjects/${r.subject_id}` }),
+            });
+        }
+
+        // Rule 3: Exam-quiz gap
+        for (const r of examGapRes.rows) {
+            const gap = Math.round(f(r.quiz_acc) - f(r.exam_acc));
+            insights.push({
+                type: 'error_pattern', priority: 3,
+                subject_id: r.subject_id, concept_name: null,
+                title: `Quiz scores don't translate to exams in ${r.name}`,
+                body: `Your quiz accuracy in ${r.name} is ${gap} points above your exam score. Practice timed exam conditions to close this gap.`,
+                cta_label: 'Take Mock Exam',
+                cta_action: JSON.stringify({ type: 'navigate', route: `/subjects/${r.subject_id}` }),
+            });
+        }
+
+        // Rule 4: Momentum — subjects with strong upward trend
+        for (const r of subjectRes.rows) {
+            if (f(r.trend_7d) >= 8) {
+                insights.push({
+                    type: 'momentum', priority: 4,
+                    subject_id: r.id, concept_name: null,
+                    title: `You're on a roll in ${r.name}`,
+                    body: `Your ${r.name} score jumped ${Math.round(f(r.trend_7d))} points this week. Keep that pace going.`,
+                    cta_label: null, cta_action: null,
+                });
+            }
+        }
+
+        // Rule 5: Declining retention
+        for (const r of subjectRes.rows) {
+            if (f(r.trend_7d) <= -8 && f(r.retention) < 65) {
+                insights.push({
+                    type: 'decay', priority: 2,
+                    subject_id: r.id, concept_name: null,
+                    title: `Retention is sliding in ${r.name}`,
+                    body: `Your ${r.name} score has been declining this week. A focused review session could reverse the trend.`,
+                    cta_label: 'Study Now',
+                    cta_action: JSON.stringify({ type: 'navigate', route: `/subjects/${r.id}` }),
+                });
+            }
+        }
+
+        // Rule 6: Readiness forecast
+        for (const r of subjectRes.rows) {
+            const crs = f(r.crs_score) ?? 0;
+            const trend = f(r.trend_7d) ?? 0;
+            if (crs >= 40 && crs < 75 && trend > 2) {
+                const daysToReady = Math.ceil((75 - crs) / (trend / 7));
+                if (daysToReady <= 30) {
+                    insights.push({
+                        type: 'forecast', priority: 4,
+                        subject_id: r.id, concept_name: null,
+                        title: `Exam-ready in ${r.name} in ~${daysToReady} days`,
+                        body: `At your current pace, you'll reach exam readiness in ${r.name} in about ${daysToReady} days.`,
+                        cta_label: null, cta_action: null,
+                    });
+                }
+            }
+        }
+
+        if (!insights.length) return;
+
+        // Wipe old non-dismissed insights before inserting fresh ones
+        await query(
+            `DELETE FROM user_insights WHERE user_id = $1 AND dismissed = false`,
+            [userId]
+        );
+
+        for (const ins of insights) {
+            await query(
+                `INSERT INTO user_insights
+                    (user_id, subject_id, concept_name, type, priority, title, body, cta_label, cta_action, expires_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+                [userId, ins.subject_id ?? null, ins.concept_name ?? null,
+                 ins.type, ins.priority, ins.title, ins.body,
+                 ins.cta_label ?? null,
+                 ins.cta_action ? ins.cta_action : null,
+                 expire]
+            );
+        }
+    }
+
     static async #refreshMastery(userId, subjectId) {
         const [quizRes, examRes, flashRes] = await Promise.all([
             query(
@@ -1043,6 +1584,11 @@ class AnalyticsService {
                 [userId, subjectId, topicName, data.quiz, data.flash, data.exam, mastery, data.count, data.last]
             );
         }
+
+        // Bubble up through aggregation chain (non-blocking)
+        this.#refreshSubjectAnalytics(userId, subjectId)
+            .then(() => this.#refreshGlobalAnalytics(userId))
+            .catch((e) => console.error('[Analytics] subject/global refresh failed:', e.message));
     }
 }
 

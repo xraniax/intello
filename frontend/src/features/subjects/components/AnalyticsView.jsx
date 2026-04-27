@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Brain, Zap, BookOpen, TrendingUp, TrendingDown, Minus,
     RefreshCw, AlertTriangle, ChevronRight, BarChart2, Layers,
-    CheckCircle2, Clock, Target, Flame, Info
+    CheckCircle2, Clock, Target, Flame, Info, Check, X
 } from 'lucide-react';
 import useAnalyticsStore from '@/store/useAnalyticsStore';
 import AnalyticsService from '@/services/AnalyticsService';
@@ -230,7 +230,7 @@ function ConceptDetail({ subjectId, conceptName, onClose }) {
                             <div className="flex flex-wrap gap-1.5">
                                 {detail.recentQuizResponses.slice(0, 20).map((r, i) => (
                                     <span key={i} className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black ${r.is_correct ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-500'}`}>
-                                        {r.is_correct ? '✓' : '✗'}
+                                        {r.is_correct ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                                     </span>
                                 ))}
                             </div>

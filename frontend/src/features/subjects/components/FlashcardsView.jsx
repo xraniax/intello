@@ -718,7 +718,7 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                                         className="flex items-center gap-1 bg-gradient-to-r from-orange-500 to-rose-500 text-white px-2 py-0.5 rounded-lg shadow-lg shadow-orange-500/30 font-bold text-[11px] tracking-wide"
                                     >
                                         <Flame className="w-3 h-3 animate-pulse" />
-                                        {streak}🔥
+                                        {streak}
                                     </motion.div>
                                 )}
                             </AnimatePresence>

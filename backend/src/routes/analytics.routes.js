@@ -6,6 +6,13 @@ const router = Router();
 
 router.use(protect);
 
+// ── Global analytics (must be before /:subjectId pattern) ─────────────────────
+router.get('/global',          analyticsController.getGlobalDashboard);
+router.get('/global/subjects', analyticsController.getSubjectsList);
+router.get('/global/heatmap',  analyticsController.getActivityHeatmap);
+router.get('/insights',                     analyticsController.getInsights);
+router.patch('/insights/:id/dismiss',       analyticsController.dismissInsight);
+
 // ── Write endpoints ────────────────────────────────────────────────────────────
 router.post('/quiz-attempt',     analyticsController.recordQuizAttempt);
 router.post('/flashcard-review', analyticsController.recordFlashcardReview);

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2, Lock, Layers, BrainCircuit, ChevronDown, Edit2 } from 'lucide-react';
+import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2, Lock, Layers, BrainCircuit, ChevronDown, Edit2, Upload } from 'lucide-react';
 import { PROCESSING, normalizeStatus } from '@/constants/statusConstants';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { requireAuth } from '@/utils/requireAuth';
@@ -111,10 +111,10 @@ const FilePanel = ({
                     onClick={() => requireAuth(onOpenUpload)}
                 >
                     <div className="w-14 h-14 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform bg-gradient-to-br from-purple-100 to-indigo-100 text-purple-600 shadow-inner">
-                        {(isPublic && !user) ? <Lock className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
+                        {(isPublic && !user) ? <Lock className="w-6 h-6" /> : <Upload className="w-6 h-6" />}
                     </div>
-                    <span className="text-xs font-black uppercase tracking-[0.2em] mt-3 bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Grow Your Space</span>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 opacity-60">Add PDF or Text Source</span>
+                    <span className="text-xs font-black uppercase tracking-[0.2em] mt-3 bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Upload Source</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 opacity-60">Add PDF or Text Content</span>
                 </button>
             </div>
 

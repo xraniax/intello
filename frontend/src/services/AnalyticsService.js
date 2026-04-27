@@ -81,6 +81,35 @@ const AnalyticsService = {
         const { data } = await api.get(`/analytics/${subjectId}/progress/exams`, { params });
         return data.data;
     },
+
+    // ── Global analytics ───────────────────────────────────────────────────────
+
+    async getGlobalDashboard() {
+        const { data } = await api.get('/analytics/global');
+        return data.data;
+    },
+
+    async getSubjectsList() {
+        const { data } = await api.get('/analytics/global/subjects');
+        return data.data;
+    },
+
+    async getActivityHeatmap(days = 365) {
+        const { data } = await api.get('/analytics/global/heatmap', { params: { days } });
+        return data.data;
+    },
+
+    async getInsights({ limit = 5, type = null } = {}) {
+        const params = { limit };
+        if (type) params.type = type;
+        const { data } = await api.get('/analytics/insights', { params });
+        return data.data;
+    },
+
+    async dismissInsight(insightId) {
+        const { data } = await api.patch(`/analytics/insights/${insightId}/dismiss`);
+        return data;
+    },
 };
 
 export default AnalyticsService;

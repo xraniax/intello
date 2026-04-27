@@ -242,6 +242,47 @@ const analyticsController = {
         }
     },
 
+    // ── Global analytics ────────────────────────────────────────────────────────
+
+    async getGlobalDashboard(req, res, next) {
+        try {
+            const result = await AnalyticsService.getGlobalDashboard(req.user.id);
+            res.json({ status: 'ok', data: result });
+        } catch (err) { next(err); }
+    },
+
+    async getSubjectsList(req, res, next) {
+        try {
+            const result = await AnalyticsService.getSubjectsList(req.user.id);
+            res.json({ status: 'ok', data: result });
+        } catch (err) { next(err); }
+    },
+
+    async getActivityHeatmap(req, res, next) {
+        try {
+            const days   = Math.min(parseInt(req.query.days, 10) || 365, 365);
+            const result = await AnalyticsService.getActivityHeatmap(req.user.id, days);
+            res.json({ status: 'ok', data: result });
+        } catch (err) { next(err); }
+    },
+
+    async getInsights(req, res, next) {
+        try {
+            const limit  = Math.min(parseInt(req.query.limit, 10) || 5, 20);
+            const type   = req.query.type || null;
+            const result = await AnalyticsService.getInsights(req.user.id, { limit, type });
+            res.json({ status: 'ok', data: result });
+        } catch (err) { next(err); }
+    },
+
+    async dismissInsight(req, res, next) {
+        try {
+            const ok = await AnalyticsService.dismissInsight(req.user.id, req.params.id);
+            if (!ok) return res.status(404).json({ status: 'error', message: 'Insight not found.' });
+            res.json({ status: 'ok' });
+        } catch (err) { next(err); }
+    },
+
     // ── Legacy delegates (keep old routes working) ─────────────────────────────
 
     async getReadinessScore(req, res, next) {

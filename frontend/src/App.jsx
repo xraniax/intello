@@ -18,6 +18,8 @@ import AdminSettings from '@/pages/Admin/AdminSettings';
 import Trash from '@/pages/Trash';
 import AdminLayout from '@/components/Admin/AdminLayout';
 import SubjectDetail from '@/pages/SubjectDetail';
+import Analytics from '@/pages/Analytics';
+import AnalyticsSubject from '@/pages/AnalyticsSubject';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import LoadingOverlay from '@/components/ui/LoadingOverlay';
@@ -80,6 +82,7 @@ const AppContent = () => {
         }
       }).catch(err => {
         console.error('Landing token handling failed', err);
+        window.location.replace('/login?error=auth_failed');
       });
     }
   }, [loginWithToken]);
@@ -95,6 +98,8 @@ const AppContent = () => {
           <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/dashboard" element={<StudentRoute><Dashboard /></StudentRoute>} />
           <Route path="/subjects/:id" element={<StudentRoute><SubjectDetail /></StudentRoute>} />
+          <Route path="/analytics" element={<StudentRoute><Analytics /></StudentRoute>} />
+          <Route path="/analytics/subjects/:subjectId" element={<StudentRoute><AnalyticsSubject /></StudentRoute>} />
           <Route path="/upload" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

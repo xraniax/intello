@@ -5,7 +5,7 @@ import {
     Plus, Search, BookOpen, Trash2, Edit3, MoreHorizontal,
     Sparkles, LayoutDashboard, LogOut, Layers, Brain, Zap,
     Clock, ChevronRight, BookMarked, X, Shield,
-    FileText, FolderOpen,
+    FileText, FolderOpen, BarChart2,
 } from 'lucide-react';
 import { useSubjectStore } from '@/store/useSubjectStore';
 import { useUIStore } from '@/store/useUIStore';
@@ -34,6 +34,16 @@ const getGreeting = () => {
     if (h < 17) return 'Good afternoon';
     return 'Good evening';
 };
+// ── Floating decoration orbs ────────────────────────────────
+const Orb = ({ style, delay = 0, size = 80, opacity = 0.12 }) => (
+    <motion.div
+        className="absolute rounded-full pointer-events-none"
+        style={{ width: size, height: size, ...style, opacity }}
+        animate={{ y: [0, -18, 0], x: [0, 8, 0] }}
+        transition={{ duration: 5 + delay, repeat: Infinity, ease: 'easeInOut', delay }}
+    />
+);
+
 const timeSince = (dateStr) => {
     if (!dateStr) return null;
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -65,38 +75,38 @@ const SubjectCard = React.memo(({ subject, onDelete, onRename }) => {
             ref={tiltRef}
             variants={staggerItemBouncy}
             layout
-            className="group relative flex flex-col rounded-3xl overflow-hidden cursor-pointer"
+            className="group relative flex flex-col rounded-[24px] overflow-hidden cursor-pointer transition-all duration-300"
             style={{
                 background: 'var(--c-surface)',
-                border: '1.5px solid var(--c-border)',
-                boxShadow: 'var(--shadow-sm)',
+                border: '1px solid var(--c-border-strong)',
+                boxShadow: 'var(--shadow-xs)',
                 transformStyle: 'preserve-3d',
                 willChange: 'transform',
             }}
             onMouseMove={onMouseMove}
             onMouseLeave={(e) => {
                 onMouseLeave(e);
-                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-                e.currentTarget.style.borderColor = 'var(--c-border)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
+                e.currentTarget.style.borderColor = 'var(--c-border-strong)';
             }}
             onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = `0 12px 40px ${accent.hex}28, var(--shadow-lg)`;
-                e.currentTarget.style.borderColor = accent.hex + '30';
+                e.currentTarget.style.boxShadow = `0 12px 30px ${accent.hex}15, var(--shadow-md)`;
+                e.currentTarget.style.borderColor = accent.hex + '40';
             }}
-            whileTap={{ scale: 0.97 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => navigate(`/subjects/${subject.id}`)}
         >
             {/* Cursor-tracking glow overlay */}
             <div className="glow-overlay" />
 
-            {/* Gradient top band */}
-            <div className="h-[6px] w-full flex-shrink-0" style={{ background: accent.bg }} />
+            {/* Gradient top band - thinner, elegant */}
+            <div className="h-[4px] w-full flex-shrink-0" style={{ background: accent.bg }} />
 
             {/* Body */}
             <div className="flex flex-col flex-1 p-5 gap-4">
                 <div className="flex items-start justify-between gap-2">
                     <motion.div
-                        className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
                         style={{ background: accent.light }}
                         whileHover={{
                             rotate: [0, -8, 8, -4, 0],
@@ -104,7 +114,7 @@ const SubjectCard = React.memo(({ subject, onDelete, onRename }) => {
                             transition: { duration: 0.5, type: 'spring', damping: 10 }
                         }}
                     >
-                        <BookOpen className="w-5 h-5" style={{ color: accent.text }} />
+                        <BookOpen className="w-6 h-6" style={{ color: accent.text }} />
                     </motion.div>
 
                     {/* Context menu */}
@@ -156,13 +166,13 @@ const SubjectCard = React.memo(({ subject, onDelete, onRename }) => {
 
                 <div className="flex-1 min-w-0">
                     <h3
-                        className="font-bold text-[15px] leading-tight mb-1 truncate"
-                        style={{ color: 'var(--c-text)', letterSpacing: '-0.02em' }}
+                        className="font-bold text-[18px] leading-tight mb-2 truncate tracking-tight"
+                        style={{ color: 'var(--c-text)' }}
                     >
                         {subject.name}
                     </h3>
                     {subject.description && (
-                        <p className="text-[12px] line-clamp-2 leading-relaxed" style={{ color: 'var(--c-text-secondary)' }}>
+                        <p className="text-[13px] line-clamp-2 leading-relaxed" style={{ color: 'var(--c-text-secondary)' }}>
                             {subject.description}
                         </p>
                     )}
@@ -223,44 +233,50 @@ const AddCard = ({ onClick }) => {
             ref={cardRef}
             variants={staggerItemBouncy}
             layout
-            whileHover={{ y: -4, transition: { type: 'spring', damping: 18, stiffness: 260 } }}
-            whileTap={{ scale: 0.96 }}
+            whileHover={{ y: -2, transition: { type: 'spring', damping: 18, stiffness: 260 } }}
+            whileTap={{ scale: 0.98 }}
             onClick={onClick}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
-            className="flex flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed transition-all group min-h-[180px]"
-            style={{ borderColor: 'rgba(124,92,252,0.20)', background: 'rgba(124,92,252,0.03)' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-primary-ultra)'; }}
-            onFocus={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-primary-ultra)'; }}
-            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(124,92,252,0.20)'; e.currentTarget.style.background = 'rgba(124,92,252,0.03)'; }}
+            className="flex flex-col items-center justify-center gap-3 rounded-[24px] border border-dashed transition-all group min-h-[180px]"
+            style={{ borderColor: 'var(--c-border-strong)', background: 'var(--c-canvas)' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-surface)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+            onFocus={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-surface)'; }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'var(--c-border-strong)'; e.currentTarget.style.background = 'var(--c-canvas)'; e.currentTarget.style.boxShadow = 'none'; }}
         >
             <motion.div
                 ref={iconRef}
-                className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                style={{ background: 'var(--c-primary-light)', color: 'var(--c-primary)' }}
-                whileHover={{ rotate: 90, scale: 1.1 }}
-                transition={{ type: 'spring', damping: 12, stiffness: 200 }}
+                className="w-12 h-12 rounded-[14px] flex items-center justify-center"
+                style={{ background: 'var(--c-surface)', color: 'var(--c-text-muted)', border: '1px solid var(--c-border-soft)', boxShadow: 'var(--shadow-xs)' }}
+                whileHover={{ rotate: 90, scale: 1.05 }}
+                transition={{ type: 'spring', damping: 14, stiffness: 200 }}
             >
                 <Plus className="w-5 h-5" />
             </motion.div>
-            <span className="text-sm font-semibold" style={{ color: 'var(--c-primary)' }}>New Subject</span>
+            <span className="text-sm font-semibold tracking-tight" style={{ color: 'var(--c-text-secondary)' }}>Create new subject</span>
         </motion.button>
     );
 };
 
 // ── Animated greeting — word-by-word stagger ───────────────
-const AnimatedGreeting = ({ greeting, name }) => {
-    const words = `${greeting}, ${name || 'there'} 👋`.split(' ');
+const AnimatedGreeting = ({ greeting, isDark = false }) => {
+    const words = `${greeting}`.split(' ');
+    const textColor = isDark ? 'white' : 'var(--c-text)';
     return (
         <motion.h1
             variants={textRevealContainer}
             initial="initial"
             animate="animate"
-            className="text-[22px] font-black text-white mb-1.5 flex flex-wrap gap-x-[0.3em]"
-            style={{ letterSpacing: '-0.03em', perspective: '400px' }}
+            className="text-[1.75rem] sm:text-[2.25rem] font-extrabold mb-2 flex flex-wrap gap-x-[0.3em]"
+            style={{ color: textColor, letterSpacing: '-0.02em', perspective: '400px', fontWeight: 800 }}
         >
             {words.map((word, i) => (
-                <motion.span key={i} variants={textRevealWord} style={{ display: 'inline-block' }}>
+                <motion.span 
+                    key={i} 
+                    variants={textRevealWord} 
+                    style={{ display: 'inline-block' }}
+                    className={i === words.length - 1 ? 'text-gradient-hero' : ''}
+                >
                     {word}
                 </motion.span>
             ))}
@@ -268,23 +284,28 @@ const AnimatedGreeting = ({ greeting, name }) => {
     );
 };
 
-// ── Animated stat — count-up number ───────────────────────
+// ── Animated stat — magazine/editorial style ────────────────
 const AnimatedStat = ({ value, label, icon: Icon, color, bg }) => {
     const displayed = useCountUp(value, 800);
     return (
-        <div className="flex flex-col gap-1 p-3 rounded-2xl" style={{ background: bg }}>
-            <Icon className="w-4 h-4" style={{ color }} />
+        <div className="flex flex-col gap-3 p-4 rounded-2xl relative overflow-hidden group hover-lift" style={{ background: 'var(--c-surface)', border: `1px solid ${bg}`, boxShadow: 'var(--shadow-xs)' }}>
+            <div className="absolute top-0 right-0 -mr-4 -mt-4 w-20 h-20 rounded-full opacity-0 group-hover:opacity-20 pointer-events-none transition-opacity duration-500" style={{ background: bg }} />
+            <div className="flex justify-between items-start">
+                <span className="text-[11px] font-bold uppercase tracking-wider relative z-10" style={{ color: 'var(--c-text-muted)' }}>{label}</span>
+                <div className="p-1.5 rounded-[10px] relative z-10" style={{ background: bg }}>
+                    <Icon className="w-3.5 h-3.5" style={{ color }} />
+                </div>
+            </div>
             <motion.span
                 key={value}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ type: 'spring', damping: 18, stiffness: 220 }}
-                className="text-lg font-black leading-none"
-                style={{ color }}
+                className="text-[28px] font-black leading-none font-serif tracking-tight relative z-10"
+                style={{ color: 'var(--c-text)' }}
             >
                 {displayed}
             </motion.span>
-            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color, opacity: 0.7 }}>{label}</span>
         </div>
     );
 };
@@ -360,12 +381,12 @@ const Dashboard = () => {
     const totalMaterials = subjects.reduce((a, s) => a + (s.material_count ?? 0), 0);
 
     return (
-        <div className="flex h-[calc(100vh-58px)] overflow-hidden" style={{ background: 'var(--c-canvas)' }}>
+        <div className="flex h-[calc(100vh-58px)] overflow-hidden" style={{ background: 'var(--c-surface)' }}>
 
             {/* ── Sidebar ── */}
             <aside
-                className="hidden lg:flex flex-col w-60 flex-shrink-0 overflow-hidden"
-                style={{ background: 'var(--c-surface)', borderRight: '1.5px solid var(--c-border-soft)' }}
+                className="hidden lg:flex flex-col w-80 flex-shrink-0 overflow-hidden pt-4 pb-8"
+                style={{ background: 'var(--c-canvas)', borderRight: '1px solid var(--c-border-soft)' }}
             >
                 {/* User */}
                 <div className="p-4">
@@ -386,10 +407,10 @@ const Dashboard = () => {
                                 {initials}
                             </motion.div>
                             <div className="min-w-0">
-                                <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--c-text)' }}>
+                                <p className="text-[15px] font-bold truncate" style={{ color: 'var(--c-text)' }}>
                                     {user?.name || 'Student'}
                                 </p>
-                                <p className="text-[11px] truncate" style={{ color: 'var(--c-text-muted)' }}>
+                                <p className="text-[12px] truncate" style={{ color: 'var(--c-text-muted)' }}>
                                     {user?.email || ''}
                                 </p>
                             </div>
@@ -399,13 +420,16 @@ const Dashboard = () => {
 
                 {/* Nav — with layoutId animated pill */}
                 <nav className="px-3 flex flex-col gap-0.5 relative">
-                    {[{ label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard }].map(item => {
+                    {[
+                        { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+                        { label: 'Analytics', path: '/analytics',  icon: BarChart2 },
+                    ].map(item => {
                         const active = isActivePath(item.path);
                         return (
                             <Link
                                 key={item.path}
                                 to={item.path}
-                                className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all"
+                                className="relative flex items-center gap-3 px-4 py-3 rounded-xl text-[15px] font-bold transition-all"
                                 style={{
                                     color: active ? 'var(--c-primary)' : 'var(--c-text-muted)',
                                     border: '1.5px solid transparent',
@@ -508,64 +532,70 @@ const Dashboard = () => {
             </aside>
 
             {/* ── Main ── */}
-            <main className="flex-1 overflow-y-auto custom-scrollbar">
-                <div className="max-w-6xl mx-auto px-6 py-8">
+            <main className="relative flex-1 overflow-y-auto custom-scrollbar" style={{ background: 'var(--c-surface)', borderTopLeftRadius: '32px', fontSize: '20px', zoom: 1.1, boxShadow: '-4px 0 32px rgba(0,0,0,0.03)' }}>
+                
+                {/* Background decoration orbs — fixed in the viewport of the main element */}
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <Orb style={{ background: 'var(--grad-primary)', top: '15%', left: '5%' }} size={160} delay={0} opacity={0.07} />
+                    <Orb style={{ background: 'var(--grad-candy)', top: '10%', right: '8%' }} size={120} delay={1.5} opacity={0.06} />
+                    <Orb style={{ background: 'var(--grad-cool)', bottom: '25%', left: '12%' }} size={90} delay={2.5} opacity={0.05} />
+                    <Orb style={{ background: 'var(--grad-warm)', bottom: '15%', right: '6%' }} size={140} delay={1} opacity={0.07} />
+                    <Orb style={{ background: 'var(--grad-ocean)', top: '50%', left: '45%' }} size={200} delay={2} opacity={0.04} />
+                </div>
 
-                    {/* Hero greeting banner with ambient orbs */}
+                <div className="relative z-10 max-w-[1440px] mx-auto px-10 py-10">
+
+                    {/* Hero greeting banner — Soft, welcoming, editorial */}
                     <motion.div
                         {...slideDown}
-                        className="relative rounded-3xl overflow-hidden mb-8 px-7 py-6"
-                        style={{ background: 'var(--grad-primary)', boxShadow: 'var(--shadow-brand-lg)' }}
+                        className="relative rounded-[32px] overflow-hidden mb-12 px-12 py-14 flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white group"
+                        style={{ 
+                            border: '1px solid var(--c-border-strong)',
+                            boxShadow: 'var(--shadow-sm)',
+                        }}
                     >
-                        {/* Ambient orb layer — gives the banner life */}
+                        {/* Interactive border glow — the "pop of color" */}
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none">
+                            <div className="absolute inset-[-1px] rounded-[32px] border border-transparent" 
+                                 style={{ background: 'var(--grad-primary)', mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', maskComposite: 'exclude', padding: '1px' }} />
+                        </div>
+                        {/* Ambient orb layer — very subtle */}
                         <div
                             className="ambient-orb ambient-orb-md ambient-orb-1"
-                            style={{ background: '#C084FC', top: '-40px', right: '-20px' }}
+                            style={{ background: 'var(--c-primary)', top: '-40px', right: '0px', opacity: 0.15 }}
                         />
                         <div
                             className="ambient-orb ambient-orb-sm ambient-orb-2"
-                            style={{ background: '#FF6B6B', bottom: '-30px', left: '40px' }}
-                        />
-                        <div
-                            className="ambient-orb ambient-orb-sm ambient-orb-3"
-                            style={{ background: '#3BAAFF', top: '10px', left: '45%' }}
+                            style={{ background: 'var(--c-coral)', bottom: '-20px', left: '10%', opacity: 0.12 }}
                         />
 
-                        <div className="relative z-10 flex items-center justify-between">
-                            <div>
-                                <motion.p
-                                    initial={{ opacity: 0, y: -4 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: 0.1 }}
-                                    className="text-white/70 text-sm font-medium mb-0.5"
-                                >
-                                    {getGreeting()},
-                                </motion.p>
+                        <div className="relative z-10">
+                            <AnimatedGreeting
+                                greeting={getGreeting()}
+                                isDark={false}
+                            />
 
-                                <AnimatedGreeting
-                                    greeting=""
-                                    name={(user?.name?.split(' ')[0] ?? 'there') + ' 👋'}
-                                />
-
-                                <motion.p
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ delay: 0.35 }}
-                                    className="text-white/65 text-sm"
-                                >
-                                    {subjects.length > 0
-                                        ? `${subjects.length} subject${subjects.length !== 1 ? 's' : ''} · keep learning!`
-                                        : 'Create your first subject to begin.'}
-                                </motion.p>
-                            </div>
-                            <motion.div
-                                className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0 hidden sm:flex"
-                                animate={{ rotate: [0, 8, -8, 0], scale: [1, 1.05, 0.97, 1] }}
-                                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                            <motion.p
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.35 }}
+                                className="text-sm font-medium mt-1"
+                                style={{ color: 'var(--c-text-secondary)' }}
                             >
-                                <Brain className="w-7 h-7 text-white" />
-                            </motion.div>
+                                {subjects.length > 0
+                                    ? `You have ${subjects.length} subject${subjects.length !== 1 ? 's' : ''} in your workspace.`
+                                    : 'Create your first subject to begin building your workspace.'}
+                            </motion.p>
                         </div>
+                        
+                        <motion.div
+                            className="relative z-10 w-16 h-16 rounded-[20px] hidden md:flex items-center justify-center flex-shrink-0"
+                            style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border-strong)', boxShadow: 'var(--shadow-sm)' }}
+                            animate={{ rotate: [0, 5, -5, 0], y: [0, -4, 0] }}
+                            transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+                        >
+                            <Brain className="w-8 h-8" style={{ color: 'var(--c-primary)' }} />
+                        </motion.div>
                     </motion.div>
 
                     {/* Toolbar */}
@@ -714,29 +744,28 @@ const Dashboard = () => {
 
                     {/* Empty state */}
                     {!loading && subjects.length === 0 && (
-                        <motion.div {...bounceUp} className="flex flex-col items-center justify-center text-center py-24">
+                        <motion.div {...bounceUp} className="flex flex-col items-center justify-center text-center py-20">
                             <motion.div
-                                className="w-24 h-24 rounded-3xl flex items-center justify-center mb-6 shimmer-border-cta"
-                                style={{ background: 'var(--grad-primary)', boxShadow: 'var(--shadow-brand-lg)' }}
-                                animate={{ y: [0, -8, 0] }}
-                                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                                className="w-24 h-24 rounded-3xl flex items-center justify-center mb-6 relative group"
+                                style={{ background: 'var(--c-canvas)', border: '1px solid var(--c-border-strong)' }}
+                                animate={{ y: [0, -6, 0] }}
+                                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
                             >
-                                <BookMarked className="w-12 h-12 text-white" />
+                                <BookMarked className="w-10 h-10" style={{ color: 'var(--c-text-muted)' }} />
                             </motion.div>
-                            <h2 className="text-2xl font-black mb-2" style={{ color: 'var(--c-text)', letterSpacing: '-0.03em' }}>
+                            <h2 className="text-[26px] font-black mb-2 font-serif" style={{ color: 'var(--c-text)', letterSpacing: '-0.02em' }}>
                                 Your learning space awaits
                             </h2>
-                            <p className="text-base mb-8 max-w-sm" style={{ color: 'var(--c-text-secondary)' }}>
+                            <p className="text-sm mb-8 max-w-sm leading-relaxed" style={{ color: 'var(--c-text-secondary)' }}>
                                 Create your first subject to start uploading materials and generating AI-powered study tools.
                             </p>
                             <motion.button
-                                whileHover={{ scale: 1.04, y: -2 }}
-                                whileTap={{ scale: 0.94 }}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.96 }}
                                 onClick={() => setShowAdd(true)}
-                                className="btn btn-lg btn-solid flex items-center gap-2 shimmer-border-cta"
-                                style={{ borderRadius: 'var(--radius-2xl)' }}
+                                className="btn btn-lg btn-solid flex items-center gap-2"
                             >
-                                <Sparkles className="w-5 h-5" />
+                                <Sparkles className="w-4 h-4" />
                                 Create your first subject
                             </motion.button>
                         </motion.div>

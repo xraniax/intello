@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Sparkles, Layers, Brain, BookMarked, ArrowRight, Zap, Star } from 'lucide-react';
+import { Sparkles, Layers, Brain, BookMarked, ArrowRight, Zap, Star, GraduationCap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { staggerContainer, staggerItemBouncy, heroSlideUp, bounceUp, popIn } from '@/utils/motion';
 
@@ -9,7 +9,6 @@ import { staggerContainer, staggerItemBouncy, heroSlideUp, bounceUp, popIn } fro
 const FEATURES = [
     {
         icon: Layers,
-        emoji: '📚',
         label: 'Curated Workspaces',
         body: 'Organize materials by subject. Every quiz, flashcard deck, and summary lives exactly where you expect it.',
         grad: 'var(--grad-ocean)',
@@ -19,7 +18,6 @@ const FEATURES = [
     },
     {
         icon: Brain,
-        emoji: '🤖',
         label: 'Contextual AI Tutor',
         body: 'Ask anything and get answers grounded strictly in your own documents — zero hallucinations from generic training data.',
         grad: 'var(--grad-candy)',
@@ -28,14 +26,13 @@ const FEATURES = [
         shadow: 'var(--shadow-rose)',
     },
     {
-        icon: BookMarked,
-        emoji: '⚡',
+        icon: Zap,
         label: 'Active Generation',
         body: 'Turn passive PDFs into quizzes, flashcard decks, and structured summaries in seconds with one click.',
-        grad: 'var(--grad-success)',
-        light: 'var(--c-mint-light)',
-        textColor: 'var(--c-mint)',
-        shadow: 'var(--shadow-mint)',
+        grad: 'var(--grad-cool)',
+        light: 'var(--c-teal-light)',
+        textColor: 'var(--c-teal)',
+        shadow: 'var(--shadow-teal)',
     },
 ];
 
@@ -55,45 +52,43 @@ const Welcome = () => {
 
     return (
         <div
-            className="min-h-[calc(100vh-58px)] flex flex-col overflow-auto custom-scrollbar"
+            className="flex flex-col"
             style={{ background: 'var(--c-canvas)' }}
         >
             {/* ── Hero ── */}
-            <main className="relative flex-1 flex flex-col items-center justify-center text-center px-6 pt-20 pb-16 overflow-hidden">
+            <main className="relative flex flex-col items-center text-center px-6 pt-20 md:pt-28 pb-16 min-h-[calc(100vh-58px)]">
 
-                {/* Background orbs */}
-                <Orb style={{ background: 'var(--grad-primary)', top: '10%', left: '5%' }} size={120} delay={0} />
-                <Orb style={{ background: 'var(--grad-candy)', top: '15%', right: '8%' }} size={80} delay={1.5} />
-                <Orb style={{ background: 'var(--grad-cool)', bottom: '20%', left: '12%' }} size={60} delay={2.5} />
-                <Orb style={{ background: 'var(--grad-warm)', bottom: '25%', right: '6%' }} size={100} delay={1} />
+                {/* Background orbs — contained so they don't scroll-overflow */}
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <Orb style={{ background: 'var(--grad-primary)', top: '10%', left: '5%' }} size={120} delay={0} />
+                    <Orb style={{ background: 'var(--grad-candy)', top: '15%', right: '8%' }} size={80} delay={1.5} />
+                    <Orb style={{ background: 'var(--grad-cool)', bottom: '20%', left: '12%' }} size={60} delay={2.5} />
+                    <Orb style={{ background: 'var(--grad-warm)', bottom: '25%', right: '6%' }} size={100} delay={1} />
+                </div>
 
                 <div className="relative z-10 max-w-3xl mx-auto flex flex-col items-center gap-6">
 
                     {/* Eyebrow badge */}
                     <motion.div {...popIn} transition={{ delay: 0 }}>
                         <motion.div
-                            className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full text-[11px] font-bold uppercase tracking-wider"
+                            className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full text-[12px] font-bold tracking-wider"
                             style={{
-                                background: 'var(--grad-primary)',
-                                color: 'white',
-                                boxShadow: 'var(--shadow-primary)',
+                                background: 'white',
+                                color: 'var(--c-primary)',
+                                border: '1px solid var(--c-border-strong)',
+                                boxShadow: 'var(--shadow-xs)',
                             }}
-                            whileHover={{ scale: 1.05 }}
+                            whileHover={{ scale: 1.02 }}
                         >
-                            <motion.span
-                                animate={{ rotate: [0, 20, -20, 0] }}
-                                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                            >
-                                <Sparkles className="w-3.5 h-3.5" />
-                            </motion.span>
+                            <Sparkles className="w-3.5 h-3.5" />
                             AI-powered learning — made delightful
                         </motion.div>
                     </motion.div>
 
                     {/* Headline */}
-                    <motion.div {...heroSlideUp} transition={{ delay: 0.08 }} className="flex flex-col gap-1">
+                    <motion.div {...heroSlideUp} transition={{ delay: 0.08 }} className="flex flex-col gap-2">
                         <h1
-                            className="text-[3rem] sm:text-[4rem] font-black leading-[1.05] tracking-tight"
+                            className="text-[3.5rem] sm:text-[4.5rem] font-black leading-[1.02] tracking-tight"
                             style={{ color: 'var(--c-text)', letterSpacing: '-0.04em' }}
                         >
                             Study smarter.{' '}
@@ -102,7 +97,7 @@ const Welcome = () => {
                             </span>
                         </h1>
                         <h2
-                            className="text-[3rem] sm:text-[4rem] font-black leading-[1.05] tracking-tight text-display"
+                            className="text-[3.5rem] sm:text-[4.5rem] font-black leading-[1.02] tracking-tight text-display"
                             style={{ color: 'var(--c-primary)', letterSpacing: '-0.04em', WebkitTextFillColor: 'initial', background: 'none' }}
                         >
                             Remember more.
@@ -113,7 +108,7 @@ const Welcome = () => {
                     <motion.p
                         {...heroSlideUp}
                         transition={{ delay: 0.14 }}
-                        className="text-lg leading-relaxed max-w-xl"
+                        className="text-lg leading-relaxed max-w-xl font-medium"
                         style={{ color: 'var(--c-text-secondary)' }}
                     >
                         Upload your notes, lecture slides, and PDFs. Cognify builds personalized
@@ -124,27 +119,29 @@ const Welcome = () => {
                     <motion.div
                         {...heroSlideUp}
                         transition={{ delay: 0.20 }}
-                        className="flex flex-col sm:flex-row items-center gap-3 pt-2"
+                        className="flex flex-col sm:flex-row items-center gap-4 pt-4"
                     >
                         <motion.div whileTap={{ scale: 0.94 }}>
                             <Link
                                 to="/register"
                                 className="btn btn-lg btn-solid flex items-center gap-2.5 group"
+                                style={{ padding: '0 32px' }}
                             >
-                                <Zap className="w-5 h-5" />
+                                <Zap className="w-5 h-5 opacity-90" />
                                 Start learning for free
                                 <motion.span
                                     className="inline-block"
                                     animate={{ x: [0, 3, 0] }}
                                     transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
                                 >
-                                    <ArrowRight className="w-5 h-5" />
+                                    <ArrowRight className="w-5 h-5 opacity-90" />
                                 </motion.span>
                             </Link>
                         </motion.div>
                         <Link
                             to="/login"
                             className="btn btn-lg btn-outline"
+                            style={{ padding: '0 32px' }}
                         >
                             Log in
                         </Link>
@@ -170,7 +167,7 @@ const Welcome = () => {
             {/* ── Feature cards ── */}
             <section
                 className="py-16 px-6"
-                style={{ borderTop: '1.5px solid var(--c-border-soft)' }}
+                style={{ borderTop: '1px solid var(--c-border-soft)', background: 'var(--c-surface)' }}
             >
                 <div className="max-w-5xl mx-auto">
                     {/* Section label */}
@@ -180,17 +177,17 @@ const Welcome = () => {
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
                         transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-                        className="text-center mb-10"
+                        className="text-center mb-12"
                     >
                         <p
-                            className="text-[11px] font-bold uppercase tracking-widest mb-3"
+                            className="text-[12px] font-bold tracking-widest uppercase mb-3"
                             style={{ color: 'var(--c-primary)' }}
                         >
                             Everything you need
                         </p>
                         <h2
-                            className="text-2xl font-black"
-                            style={{ color: 'var(--c-text)', letterSpacing: '-0.03em' }}
+                            className="text-3xl font-black font-serif"
+                            style={{ color: 'var(--c-text)', letterSpacing: '-0.02em' }}
                         >
                             Built for serious learners
                         </h2>
@@ -201,42 +198,44 @@ const Welcome = () => {
                         initial="initial"
                         whileInView="animate"
                         viewport={{ once: true, amount: 0.2 }}
-                        className="grid grid-cols-1 md:grid-cols-3 gap-5"
+                        className="grid grid-cols-1 md:grid-cols-3 gap-6"
                     >
-                        {FEATURES.map(({ icon: Icon, emoji, label, body, grad, light, textColor, shadow }) => (
+                        {FEATURES.map(({ icon: Icon, label, body, grad, light, textColor, shadow }) => (
                             <motion.div
                                 key={label}
                                 variants={staggerItemBouncy}
-                                className="flex flex-col gap-4 p-6 rounded-3xl transition-all group"
+                                className="flex flex-col gap-5 p-8 rounded-[32px] transition-all group bg-white"
                                 style={{
-                                    background: 'var(--c-surface)',
-                                    border: '1.5px solid var(--c-border)',
-                                    boxShadow: 'var(--shadow-sm)',
+                                    border: '1px solid var(--c-border-strong)',
+                                    boxShadow: 'var(--shadow-xs)',
                                 }}
                                 whileHover={{
-                                    y: -6, scale: 1.015,
-                                    boxShadow: `${shadow}, var(--shadow-lg)`,
-                                    transition: { type: 'spring', damping: 18, stiffness: 260 },
+                                    scale: 1.03,
+                                    y: -8,
+                                    boxShadow: `0 24px 40px rgba(0,0,0,0.08)`,
+                                    borderColor: 'rgba(0,0,0,0.12)',
+                                    transition: { type: 'spring', damping: 20, stiffness: 300 }
                                 }}
                             >
                                 {/* Icon */}
                                 <motion.div
-                                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
-                                    style={{ background: grad, boxShadow: shadow }}
-                                    whileHover={{ rotate: [0, -8, 8, 0], scale: 1.08 }}
-                                    transition={{ duration: 0.4 }}
+                                    className="w-16 h-16 rounded-[20px] flex items-center justify-center relative overflow-hidden"
+                                    style={{ background: light, color: textColor }}
+                                    whileHover={{ scale: 1.15, rotate: [0, -10, 10, -5, 0] }}
+                                    transition={{ duration: 0.5, type: 'spring' }}
                                 >
-                                    {emoji}
+                                    <div className="absolute inset-0 opacity-10" style={{ background: grad }} />
+                                    <Icon className="w-8 h-8 relative z-10" strokeWidth={2.5} />
                                 </motion.div>
 
                                 <div>
                                     <p
-                                        className="text-[15px] font-bold mb-1.5"
-                                        style={{ color: 'var(--c-text)', letterSpacing: '-0.02em' }}
+                                        className="text-[18px] font-bold mb-2 tracking-tight"
+                                        style={{ color: 'var(--c-text)' }}
                                     >
                                         {label}
                                     </p>
-                                    <p className="text-[13px] leading-relaxed" style={{ color: 'var(--c-text-secondary)' }}>
+                                    <p className="text-[14px] leading-relaxed font-medium" style={{ color: 'var(--c-text-secondary)' }}>
                                         {body}
                                     </p>
                                 </div>
@@ -248,47 +247,46 @@ const Welcome = () => {
 
             {/* ── Bottom CTA ── */}
             <section
-                className="py-14 px-6"
-                style={{ borderTop: '1.5px solid var(--c-border-soft)' }}
+                className="py-20 px-6"
+                style={{ borderTop: '1px solid var(--c-border-strong)', background: 'var(--c-canvas)' }}
             >
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-                    className="max-w-xl mx-auto relative rounded-3xl overflow-hidden px-8 py-10 text-center"
-                    style={{ background: 'var(--grad-primary)', boxShadow: 'var(--shadow-brand-lg)' }}
+                    className="max-w-3xl mx-auto relative rounded-[32px] overflow-hidden px-10 py-12 text-center bg-white hover-lift"
+                    style={{ border: '1px solid var(--c-border-strong)', boxShadow: 'var(--shadow-sm)' }}
                 >
                     {/* Decorative orbs */}
-                    <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-white/10 pointer-events-none" />
-                    <div className="absolute -bottom-4 -left-4 w-16 h-16 rounded-full bg-white/8 pointer-events-none" />
+                    <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none" style={{ background: 'var(--c-primary-light)', opacity: 0.5 }} />
+                    <div className="absolute -bottom-4 -left-4 w-24 h-24 rounded-full pointer-events-none" style={{ background: 'var(--c-coral-light)', opacity: 0.5 }} />
 
                     <div className="relative z-10">
                         <motion.div
-                            className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center mx-auto mb-5 text-2xl"
-                            animate={{ rotate: [0, 8, -8, 0] }}
-                            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                            className="w-16 h-16 rounded-[20px] flex items-center justify-center mx-auto mb-6"
+                            style={{ background: 'var(--c-surface-alt)', border: '1px solid var(--c-border-soft)' }}
+                            animate={{ rotate: [0, 8, -8, 0], scale: [1, 1.05, 1.05, 1] }}
+                            whileHover={{ scale: 1.15, rotate: 360, transition: { duration: 0.6 } }}
+                            transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
                         >
-                            🎓
+                            <GraduationCap className="w-8 h-8" style={{ color: 'var(--c-primary)' }} />
                         </motion.div>
                         <h3
-                            className="text-2xl font-black text-white mb-2"
-                            style={{ letterSpacing: '-0.03em' }}
+                            className="text-[32px] font-black mb-3 font-serif"
+                            style={{ color: 'var(--c-text)', letterSpacing: '-0.02em' }}
                         >
                             Ready to level up?
                         </h3>
-                        <p className="text-white/70 text-sm mb-6">
+                        <p className="text-[15px] font-medium mb-8 max-w-md mx-auto" style={{ color: 'var(--c-text-secondary)' }}>
                             Join students turning passive study sessions into active learning journeys.
                         </p>
-                        <motion.div whileTap={{ scale: 0.94 }}>
+                        <motion.div whileTap={{ scale: 0.94 }} className="inline-block">
                             <Link
                                 to="/register"
-                                className="inline-flex items-center gap-2 px-7 py-3.5 rounded-2xl text-[14px] font-bold bg-white text-purple-700 transition-all"
-                                style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}
-                                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 30px rgba(0,0,0,0.20)'; }}
-                                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.15)'; }}
+                                className="btn btn-lg btn-solid flex items-center gap-2.5 px-8"
                             >
-                                <Sparkles className="w-4 h-4" />
+                                <Sparkles className="w-4 h-4 opacity-90" />
                                 Create free account
                             </Link>
                         </motion.div>

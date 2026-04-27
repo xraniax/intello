@@ -90,15 +90,14 @@ const Login = () => {
     const passwordErrorVisible = touched.password && fieldErrors.password;
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[90vh] p-6 animate-in fade-in duration-700 bg-gradient-to-br from-indigo-50 via-white to-pink-50 relative overflow-hidden">
+        <div className="flex flex-col items-center justify-center min-h-[90vh] p-6 animate-in fade-in duration-700 relative overflow-hidden" style={{ background: 'var(--c-canvas)' }}>
             {/* Decorative background elements */}
-            <div className="absolute top-1/4 -left-32 w-96 h-96 bg-purple-400 rounded-full mix-blend-multiply blur-[128px] opacity-40 animate-neural pointer-events-none"></div>
-            <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-pink-400 rounded-full mix-blend-multiply blur-[128px] opacity-40 animate-neural pointer-events-none" style={{ animationDelay: '2s' }}></div>
+            <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(var(--c-primary) 1px, transparent 1px)', backgroundSize: '32px 32px' }}></div>
 
-            <div className="w-full max-w-[420px] bg-white/80 backdrop-blur-xl p-10 rounded-[2.5rem] shadow-[0_20px_50px_-12px_rgba(124,92,252,0.15)] border-4 border-white relative z-10">
+            <div className="w-full max-w-[420px] p-10 rounded-[2.5rem] relative z-10" style={{ background: 'var(--c-surface)', boxShadow: 'var(--shadow-xl)', border: '1px solid var(--c-border-soft)' }}>
                 <div className="text-center mb-10">
-                    <h1 className="mb-2 text-4xl font-black text-indigo-950">Welcome Back</h1>
-                    <p className="font-bold text-gray-500">Please enter your details to sign in</p>
+                    <h1 className="mb-2 text-4xl font-black font-serif" style={{ color: 'var(--c-text)' }}>Welcome Back</h1>
+                    <p className="font-bold" style={{ color: 'var(--c-text-secondary)' }}>Please enter your details to sign in</p>
                 </div>
 
                 {displayedGlobalError && (
@@ -204,8 +203,8 @@ const Login = () => {
                     </button>
                 </form>
 
-                <p className="text-center mt-8 text-sm font-bold text-gray-500">
-                    New to Cognify? <Link to="/register" className="font-black text-purple-600 transition-colors hover:text-pink-500 hover:underline underline-offset-4">Create an account</Link>
+                <p className="text-center mt-8 text-sm font-bold" style={{ color: 'var(--c-text-muted)' }}>
+                    New to Cognify? <Link to="/register" className="font-black transition-colors hover:underline underline-offset-4" style={{ color: 'var(--c-primary)' }}>Create an account</Link>
                 </p>
             </div>
 

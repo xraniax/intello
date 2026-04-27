@@ -114,27 +114,26 @@ const Profile = () => {
     return (
         <div className="min-h-full overflow-y-auto animate-in fade-in" style={{ background: 'var(--c-canvas)' }}>
             {/* Header Banner */}
-            <div className="h-64 relative overflow-hidden bg-gradient-to-r from-purple-500 via-pink-500 to-rose-400">
-                <div className="absolute inset-0 bg-white/10 mix-blend-overlay"></div>
-                <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-white/20 blur-3xl rounded-full"></div>
+            <div className="h-64 relative overflow-hidden" style={{ background: 'var(--c-surface)', borderBottom: '1px solid var(--c-border-soft)' }}>
+                <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(var(--c-primary) 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
             </div>
 
             <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 -mt-24 pb-12 relative z-10">
                 {/* Profile Avatar & Title */}
-                <div className="card-minimal p-8 mb-8 flex flex-col md:flex-row items-center md:items-end gap-6 bg-white/90 backdrop-blur-md rounded-[2.5rem] border-white border-4 shadow-sm shadow-purple-900/5">
-                    <div className="w-36 h-36 rounded-full border-8 shadow-md flex items-center justify-center overflow-hidden shrink-0 relative transition-transform hover:scale-105 duration-300 bg-gradient-to-br from-indigo-100 to-purple-100 border-white text-purple-600 z-10 -mt-16 md:-mt-24">
+                <div className="card-minimal p-8 mb-8 flex flex-col md:flex-row items-center md:items-end gap-6 bg-white/90 backdrop-blur-md rounded-[2.5rem] border-[3px] border-white" style={{ boxShadow: 'var(--shadow-sm)' }}>
+                    <div className="w-36 h-36 rounded-full border-[6px] shadow-sm flex items-center justify-center overflow-hidden shrink-0 relative transition-transform hover:scale-105 duration-300 z-10 -mt-16 md:-mt-24" style={{ background: 'var(--c-primary-ultra)', borderColor: 'var(--c-surface)', color: 'var(--c-primary)' }}>
                         {basic_info.avatar_url ? (
                             <img src={basic_info.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                         ) : (
-                            <span className="text-6xl font-black">
+                            <span className="text-6xl font-black font-serif">
                                 {basic_info.name?.charAt(0).toUpperCase()}
                             </span>
                         )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none"></div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent pointer-events-none"></div>
                     </div>
                     <div className="flex-1 text-center md:text-left mb-2">
-                        <h1 className="text-4xl font-black mb-1 tracking-tight text-indigo-950">{basic_info.name}</h1>
-                        <div className="font-bold flex items-center justify-center md:justify-start gap-3 mt-2 text-gray-500">
+                        <h1 className="text-4xl font-black mb-1 tracking-tight font-serif" style={{ color: 'var(--c-text)' }}>{basic_info.name}</h1>
+                        <div className="font-bold flex items-center justify-center md:justify-start gap-3 mt-2" style={{ color: 'var(--c-text-secondary)' }}>
                             {basic_info.email}
                             <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest" style={{ background: 'var(--c-success-light)', color: 'var(--c-success)' }}>
                                 {basic_info.role}
@@ -317,15 +316,19 @@ const Profile = () => {
                             <div className="space-y-6 animate-in fade-in">
                                 {/* Top Stats */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="card-minimal p-6 flex flex-col items-center justify-center text-center bg-gradient-to-br from-indigo-50 to-white hover:border-indigo-200">
-                                        <div className="w-14 h-14 shadow-sm shadow-indigo-200 rounded-[1.25rem] flex items-center justify-center mb-4 bg-indigo-100 text-indigo-600"><Icons.Stats /></div>
-                                        <h3 className="text-4xl font-black mb-1 text-indigo-950">{stats.total_workspaces}</h3>
-                                        <p className="font-bold tracking-tight text-gray-500">Active Workspaces</p>
+                                    <div className="card-minimal p-6 flex flex-col items-center justify-center text-center group cursor-default transition-all duration-300 overflow-hidden relative">
+                                        <div className="w-14 h-14 shadow-sm rounded-[1.25rem] flex items-center justify-center mb-4 transition-all" style={{ background: 'var(--c-primary-light)', color: 'var(--c-primary)', border: '1px solid var(--c-primary-ultra)' }}>
+                                            <Icons.Stats />
+                                        </div>
+                                        <h3 className="text-4xl font-black mb-1 font-serif tracking-tight" style={{ color: 'var(--c-text)' }}>{stats.total_workspaces}</h3>
+                                        <p className="font-bold tracking-tight text-[13px] uppercase" style={{ color: 'var(--c-text-muted)' }}>Active Workspaces</p>
                                     </div>
-                                    <div className="card-minimal p-6 flex flex-col items-center justify-center text-center bg-gradient-to-br from-pink-50 to-white hover:border-pink-200">
-                                        <div className="w-14 h-14 shadow-sm shadow-pink-200 rounded-[1.25rem] flex items-center justify-center mb-4 bg-pink-100 text-pink-600"><Icons.Activity /></div>
-                                        <h3 className="text-4xl font-black mb-1 text-pink-600">{stats.total_materials}</h3>
-                                        <p className="font-bold tracking-tight text-gray-500">Total Materials</p>
+                                    <div className="card-minimal p-6 flex flex-col items-center justify-center text-center group cursor-default transition-all duration-300 overflow-hidden relative">
+                                        <div className="w-14 h-14 shadow-sm rounded-[1.25rem] flex items-center justify-center mb-4 transition-all" style={{ background: 'var(--c-coral-light)', color: 'var(--c-coral)', border: '1px solid rgba(255,107,107,0.1)' }}>
+                                            <Icons.Activity />
+                                        </div>
+                                        <h3 className="text-4xl font-black mb-1 font-serif tracking-tight" style={{ color: 'var(--c-text)' }}>{stats.total_materials}</h3>
+                                        <p className="font-bold tracking-tight text-[13px] uppercase" style={{ color: 'var(--c-text-muted)' }}>Total Materials</p>
                                     </div>
                                 </div>
 
@@ -369,8 +372,8 @@ const Profile = () => {
                                     <h2 className="text-xl font-bold tracking-tight mb-6">Learning Insights</h2>
                                     
                                     <div className="mb-8">
-                                        <p className="text-xs font-black mb-3 uppercase tracking-[0.2em] text-gray-400">Learning Status</p>
-                                        <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-black shadow-lg shadow-purple-200">
+                                        <p className="text-xs font-black mb-3 uppercase tracking-[0.2em]" style={{ color: 'var(--c-text-muted)' }}>Learning Status</p>
+                                        <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl shadow-sm text-white font-black" style={{ background: 'var(--c-primary)', boxShadow: '0 8px 24px -6px var(--c-primary-light)' }}>
                                             <Sparkles className="w-5 h-5" />
                                             <span className="text-xl uppercase tracking-wider">{analytics.learning_status}</span>
                                         </div>
