@@ -201,6 +201,25 @@ const SubjectDetail = () => {
         const tab = tabs.find(t => t.id === tabId);
         if (!tab) return null;
 
+        // Adaptive quiz tabs have no backing material — handle before the null guard
+        if (tab.type === 'quiz' && tab.quizMode === 'adaptive') {
+            return (
+                <div className="flex-1 h-full overflow-y-auto bg-transparent">
+                    <MaterialErrorBoundary type="quiz">
+                        <QuizView
+                            key={tab.id}
+                            quizMode="adaptive"
+                            quizData={null}
+                            isExpanded={isExpanded}
+                            subjectId={id}
+                            topic={subject?.name || null}
+                            language="en"
+                        />
+                    </MaterialErrorBoundary>
+                </div>
+            );
+        }
+
         const material = tab.material;
 
         if (!material) {
@@ -270,7 +289,15 @@ const SubjectDetail = () => {
             return (
                 <div className="flex-1 h-full overflow-y-auto bg-transparent">
                     <MaterialErrorBoundary type="quiz">
-                        <QuizView key={parsedContent?.id || 'quiz'} quizData={parsedContent} isExpanded={isExpanded} />
+                        <QuizView
+                            key={tab.id}
+                            quizMode="static"
+                            quizData={parsedContent}
+                            isExpanded={isExpanded}
+                            subjectId={id}
+                            topic={subject?.name || null}
+                            language="en"
+                        />
                     </MaterialErrorBoundary>
                 </div>
             );

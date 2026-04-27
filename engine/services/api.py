@@ -6,7 +6,7 @@ import time
 import asyncio
 import json
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import requests
 import httpx
@@ -29,10 +29,10 @@ from .google_client import (
 )
 from .schemas import (
     EmbedRequest, ProcessTextRequest, RetrieveRequest, GenerateRequest,
-    ChatRequest, QuizEvaluateRequest, QuizEvaluateResponse
+    ChatRequest, QuizEvaluateRequest, QuizEvaluateResponse,
+    QuizNextRequest, QuizSubmitAnswerRequest,
 )
 from .google_drive import upload_file_to_drive_from_bytes
-from .redis_client import get_quiz_session, update_quiz_session
 from streaming.stream_core import stream_llm_response
 from gpu_detector import detect_gpu_and_ollama
 try:
@@ -287,11 +287,28 @@ async def _run_text_job(
             "provider": "ollama",
             "model": os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"),
         }
+        # Prevent cancelled jobs from being overwritten as SUCCESS
+        job_state = await _text_job_get(job_id)
+        if job_state and job_state.get("status") == "REVOKED":
+            logger.info("Text job %s was cancelled before completion", job_id)
+            return
+
         await _text_job_update(job_id, status="SUCCESS", result=job_result, error=None)
     except Exception as e:
-        logger.exception("Text processing job failed for job_id=%s", job_id)
-        await _text_job_update(job_id, status="FAILURE", error=str(e), result=None)
+           logger.exception("Text processing job failed for job_id=%s", job_id)
 
+    job_state = await _text_job_get(job_id)
+    if job_state and job_state.get("status") == "REVOKED":
+        logger.info("Cancelled text job %s exited after revoke", job_id)
+        return
+
+    await _text_job_update(
+        job_id,
+        status="FAILURE",
+        error=str(e),
+        result=None,
+    )
+       
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -1058,8 +1075,8 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
             status_code=404,
         )
 
-    def generation_generator():
-        for piece in generate_study_material_stream(
+    async def generation_async_generator():
+        async for piece in generate_study_material_stream(
             chunk_texts,
             material_type,
             topic,
@@ -1072,10 +1089,6 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
             if text.startswith("[ERROR]"):
                 raise RuntimeError(text[7:].strip() or "Generation stream failed")
             yield text
-
-    async def generation_async_generator():
-        for piece in generation_generator():
-            yield piece
             await asyncio.sleep(0)
 
     return StreamingResponse(
@@ -1114,113 +1127,47 @@ async def evaluate_quiz_route(body: QuizEvaluateRequest):
 
 
 @app.post("/quiz/next")
-async def quiz_next_route(body: dict, db: Session = Depends(get_db)):
-    """Adaptive quiz loop endpoint: update student profile and return one next question."""
+async def quiz_next_route(body: QuizNextRequest, db: Session = Depends(get_db)):
+    """Return the first adaptive question for a session. Thin controller — logic in quiz_manager."""
+    from .quiz_manager import next_question_only
+
     try:
-        from .student_model import get_student, update_student_performance
-
-        user_id = str((body or {}).get("user_id") or "").strip()
-        subject_id = (body or {}).get("subject_id")
-        topic = (body or {}).get("topic")
-        language = (body or {}).get("language") or "en"
-        top_k = (body or {}).get("top_k") or 5
-
-        if not user_id:
-            return _stage_error_response(
-                "quiz_next",
-                "Missing required field: user_id",
-                status_code=400,
-            )
-        if not subject_id:
-            return _stage_error_response(
-                "quiz_next",
-                "Missing required field: subject_id",
-                status_code=400,
-            )
-
-        session = get_quiz_session(user_id, str(subject_id)) or {
-            "correct_streak": 0,
-            "current_difficulty": 1,
-            "total": 0,
-        }
-
-        previous_answer = (body or {}).get("previous_answer")
-        if previous_answer is not None and str(previous_answer).strip() != "":
-            is_correct = bool((body or {}).get("is_correct", False))
-            response_time_raw = (body or {}).get("response_time", 0.0)
-            try:
-                response_time = float(response_time_raw)
-            except (TypeError, ValueError):
-                response_time = 0.0
-            update_student_performance(
-                user_id=user_id,
-                is_correct=is_correct,
-                response_time=response_time,
-                topic=str(topic or "general"),
-            )
-
-            session["total"] = int(session.get("total", 0)) + 1
-            if is_correct:
-                session["correct_streak"] = int(session.get("correct_streak", 0)) + 1
-            else:
-                session["correct_streak"] = 0
-
-            difficulty = int(session.get("current_difficulty", 1))
-            if session["correct_streak"] >= 3:
-                difficulty = min(3, difficulty + 1)
-            if not is_correct:
-                difficulty = max(1, difficulty - 1)
-            session["current_difficulty"] = difficulty
-
-            update_quiz_session(user_id, str(subject_id), session)
-
-        student = get_student(user_id)
-
-        chunks = retrieve_chunks_by_topic(db, str(subject_id), topic, int(top_k))
-        chunk_texts = [c.content for c in chunks if c.content]
-        if not chunk_texts:
-            return _stage_error_response(
-                "quiz_next",
-                "No retrieval context found for this subject/topic",
-                status_code=404,
-            )
-
-        from .generation import generate_single_quiz_question
-
-        question = generate_single_quiz_question(
-            chunks=chunk_texts,
-            student_profile=student,
-            topic=topic,
-            language=language,
+        return next_question_only(
+            user_id=body.user_id.strip(),
+            subject_id=body.subject_id,
+            topic=body.topic,
+            language=body.language,
+            top_k=body.top_k,
+            db=db,
         )
+    except ValueError as exc:
+        return _stage_error_response("quiz_next", str(exc), status_code=404)
+    except Exception as exc:
+        logger.exception("quiz/next failed")
+        return _stage_error_response("quiz_next", "Failed to fetch question", details=str(exc), status_code=500)
 
-        difficulty_map = {1: "easy", 2: "medium", 3: "hard"}
-        current_difficulty = int(session.get("current_difficulty", 1))
-        if current_difficulty < 1:
-            current_difficulty = 1
-        if current_difficulty > 3:
-            current_difficulty = 3
-        difficulty = difficulty_map[current_difficulty]
-        accuracy = float(student.get("accuracy", 0.5))
 
-        return {
-            "question": question,
-            "progress": {
-                "accuracy": accuracy,
-                "weak_topics": student.get("weak_topics") or [],
-                "difficulty": difficulty,
-            },
-            "session": session,
-        }
-    except Exception as e:
-        logger.exception("Adaptive quiz next failed")
-        return _stage_error_response(
-            "quiz_next",
-            "Adaptive quiz next failed",
-            details=str(e),
-            status_code=500,
+@app.post("/quiz/submit-answer")
+async def quiz_submit_answer_route(body: QuizSubmitAnswerRequest, db: Session = Depends(get_db)):
+    """Record answer, update student model, return next adaptive question. Thin controller — logic in quiz_manager."""
+    from .quiz_manager import submit_answer_and_get_next
+
+    try:
+        return submit_answer_and_get_next(
+            user_id=body.user_id.strip(),
+            subject_id=body.subject_id,
+            topic=body.topic,
+            is_correct=body.is_correct,
+            response_time=body.response_time,
+            language=body.language,
+            top_k=body.top_k,
+            db=db,
         )
-
+    except ValueError as exc:
+        return _stage_error_response("quiz_submit", str(exc), status_code=404)
+    except Exception as exc:
+        logger.exception("quiz/submit-answer failed")
+        return _stage_error_response("quiz_submit", "Failed to process answer", details=str(exc), status_code=500)
 
 
 @app.post("/chat/stream")

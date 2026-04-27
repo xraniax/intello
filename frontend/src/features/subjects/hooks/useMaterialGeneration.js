@@ -44,6 +44,17 @@ export const useMaterialGeneration = ({
     const handleGenerateMaterial = useCallback(async (genType, singleId = null, genOptions = undefined) => {
         setMaterialGenError('');
 
+        // Adaptive quiz: skip bulk generation, open a live AdaptiveQuizView tab
+        if (genType === 'quiz' && genOptions?.difficulty === 'adaptive') {
+            const tabId = `adaptive-quiz-${subjectId}`;
+            setTabs(prev => prev.find(t => t.id === tabId)
+                ? prev
+                : [...prev, { id: tabId, title: 'Adaptive Quiz', type: 'quiz', quizMode: 'adaptive', material: null, pinned: false }]
+            );
+            setActiveTabId(tabId);
+            return;
+        }
+
         const targets = (singleId ? [singleId] : selectedUploads)
             .filter(t => t && typeof t === 'string' && t !== '[object Object]')
             .map(String);
@@ -56,7 +67,7 @@ export const useMaterialGeneration = ({
         setGenResult('');
         hasRenamedRef.current = false;
         activeMaterialIdRef.current = null;
-        
+
         const isFlashGen = genType === 'flashcards' && genOptions?.count;
         const requestedCount = genOptions?.count;
 

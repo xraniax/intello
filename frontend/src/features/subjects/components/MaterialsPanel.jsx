@@ -21,7 +21,7 @@ const MaterialsPanel = ({
 }) => {
     const [genOptions, setGenOptions] = useState({
         count: 10,
-        difficulty: 'Default',
+        difficulty: 'adaptive', // 'adaptive' = no preset difficulty (server-adaptive or default)
         cardType: 'mixed',
         topics: '',
         examTypes: ['single_choice', 'multiple_select', 'short_answer'],
@@ -29,7 +29,8 @@ const MaterialsPanel = ({
     });
 
     const hasOptions = ['flashcards', 'quiz', 'mock_exam'].includes(genType);
-    const requiresSources = genType !== 'mock_exam';
+    const isAdaptiveQuiz = genType === 'quiz' && genOptions.difficulty === 'adaptive';
+    const requiresSources = genType !== 'mock_exam' && !isAdaptiveQuiz;
     const canGenerate = !isGenerating && (!requiresSources || selectedCount > 0);
     const displayMessage = jobProgress?.message || (hasOptions ? `Assembling ${genOptions.count} ${genType.replace('_', ' ')}...` : 'Processing Knowledge...');
 
@@ -107,19 +108,35 @@ const MaterialsPanel = ({
                             <div>
                                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-2">Difficulty Curve</label>
                                 <div className="grid grid-cols-3 gap-1 bg-gray-100/80 rounded-xl p-1">
-                                    {['Intro', 'Inter', 'Adv', 'Progression', 'Balanced'].map(curve => (
-                                        <button
-                                            key={curve}
-                                            onClick={() => setGenOptions(prev => ({ ...prev, difficulty: curve }))}
-                                            className={`py-1.5 text-[8px] font-black uppercase tracking-wider rounded-lg transition-all ${genOptions.difficulty === curve
-                                                    ? 'bg-white text-indigo-600 shadow-sm'
-                                                    : 'text-gray-400 hover:text-gray-600 hover:bg-white/40'
-                                                }`}
-                                        >
-                                            {curve}
-                                        </button>
+                                    {[
+                                        { label: 'Adaptive', value: 'adaptive', badge: 'RECOMMENDED' },
+                                        { label: 'Intro', value: 'Intro', badge: null },
+                                        { label: 'Inter', value: 'Inter', badge: null },
+                                        { label: 'Adv', value: 'Adv', badge: null },
+                                        { label: 'Progression', value: 'Progression', badge: null },
+                                        { label: 'Balanced', value: 'Balanced', badge: null },
+                                    ].map(({ label, value, badge }) => (
+                                        <div key={label} className="relative">
+                                            <button
+                                                onClick={() => setGenOptions(prev => ({ ...prev, difficulty: value }))}
+                                                className={`w-full py-1.5 text-[8px] font-black uppercase tracking-wider rounded-lg transition-all ${genOptions.difficulty === value
+                                                        ? 'bg-white text-indigo-600 shadow-sm'
+                                                        : 'text-gray-400 hover:text-gray-600 hover:bg-white/40'
+                                                    }`}
+                                            >
+                                                {label}
+                                            </button>
+                                            {badge && (
+                                                <span className="absolute -top-1 -right-1 text-[6px] font-black bg-blue-500 text-white px-1 rounded-full">
+                                                    {badge}
+                                                </span>
+                                            )}
+                                        </div>
                                     ))}
                                 </div>
+                                {genOptions.difficulty === 'adaptive' && (
+                                    <p className="text-[8px] text-gray-400 mt-2 italic">Questions adapt to your performance level</p>
+                                )}
                             </div>
 
                             {genType === 'flashcards' && (

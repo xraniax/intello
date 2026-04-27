@@ -2,8 +2,11 @@ import os
 import json
 import logging
 import time
-from typing import List, Optional, Dict, Any, Union, Iterator
+import re
+import asyncio
+from typing import List, Optional, Dict, Any, Union, Iterator, AsyncIterator
 
+import httpx
 import requests
 from requests.exceptions import RequestException, Timeout
 
@@ -201,6 +204,22 @@ def _strip_markdown_fences(text: str) -> str:
     return cleaned
 
 
+def _extract_json_payload(text: str) -> str:
+    """Extract JSON object from text while rejecting clearly invalid payloads."""
+    cleaned = _strip_markdown_fences(text).strip()
+    if not cleaned:
+        raise ValueError("LLM output is empty")
+
+    if cleaned.startswith("{") and cleaned.endswith("}"):
+        return cleaned
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("LLM output does not contain a JSON object")
+    return cleaned[start : end + 1]
+
+
 def _validate_non_empty_material(material_type: str, parsed: Dict[str, Any]) -> Optional[str]:
     """Check for empty cards/questions and return a warning message if detected.
 
@@ -227,6 +246,75 @@ def _validate_non_empty_material(material_type: str, parsed: Dict[str, Any]) -> 
     except Exception as e:
         logger.warning("Non-empty validation failed for %s: %s", material_type, e)
     return None
+
+
+def _validate_mode_specific_constraints(material_type: str, parsed: Dict[str, Any]) -> None:
+    """Validate constraints that are stricter than schema shape validation."""
+    if material_type == "exam":
+        questions = parsed.get("questions") or []
+        answer_sheet = parsed.get("answer_sheet") or []
+        for idx, q in enumerate(questions, start=1):
+            if str(q.get("answer_space") or "").strip() == "":
+                raise ValueError(f"Exam question {idx} must include non-empty answer_space")
+        # Ensure answer sheet can be matched deterministically.
+        ids = {int(a.get("question_id")) for a in answer_sheet if a.get("question_id") is not None}
+        expected = set(range(1, len(questions) + 1))
+        if ids != expected:
+            raise ValueError("Exam answer_sheet question_id values must match questions numbering (1..N)")
+
+    if material_type == "flashcards":
+        cards = parsed.get("cards") or []
+        for idx, card in enumerate(cards, start=1):
+            if not str(card.get("front") or "").strip() or not str(card.get("back") or "").strip():
+                raise ValueError(f"Flashcard {idx} must include non-empty front/back")
+
+    if material_type == "quiz":
+        questions = parsed.get("questions") or []
+        for idx, q in enumerate(questions, start=1):
+            question_text = str(q.get("question") or "").strip()
+            if not question_text:
+                raise ValueError(f"Quiz question {idx} must include non-empty question text")
+            if q.get("options") is not None:
+                options = q.get("options") or []
+                if len(options) < 2:
+                    raise ValueError(f"Quiz question {idx} options must include at least 2 choices when present")
+
+
+def _canonical_answer(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[^\w\s]", "", text)
+    return text
+
+
+def build_quiz_answer_key(questions: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+    """Build internal answer key map from generated quiz questions."""
+    answer_key: Dict[int, Dict[str, Any]] = {}
+    for q in questions or []:
+        try:
+            qid = int(q.get("id"))
+        except (TypeError, ValueError):
+            continue
+        answer_key[qid] = {
+            "correct_answer": str(q.get("correct_answer") or "").strip(),
+            "explanation": str(q.get("explanation") or "").strip(),
+        }
+    return answer_key
+
+
+def build_student_quiz_view(quiz_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Return quiz payload without exposing correct answers before submission."""
+    questions = quiz_payload.get("questions") or []
+    safe_questions = []
+    for q in questions:
+        safe_item = {
+            "id": q.get("id"),
+            "question": q.get("question"),
+        }
+        if q.get("options") is not None:
+            safe_item["options"] = q.get("options")
+        safe_questions.append(safe_item)
+    return {"type": "quiz", "questions": safe_questions}
 
 def build_prompt(
     material_type: str,
@@ -281,7 +369,7 @@ def build_prompt(
 
         base_instructions = (
             f"Generate a multiple-choice or short-answer quiz based on the context in {language}. "
-            f"Include {question_count} questions. For each question, provide options (if MCQ), the correct answer, and a short explanation."
+            f"Include exactly {question_count} questions. For each question, provide options (if MCQ), the correct answer, and a short explanation."
         )
         base_instructions += f"\nSet quiz difficulty to: {difficulty}."
         if weak_topics:
@@ -303,7 +391,10 @@ def build_prompt(
                 }
             ]
         }
-        base_instructions += f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
+        base_instructions += (
+            f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
+            "\nUse numeric ids starting from 1 and increment by 1."
+        )
 
     elif material_type == "flashcards":
         card_count = count if isinstance(count, int) and count > 0 else None
@@ -322,9 +413,10 @@ def build_prompt(
         base_instructions += f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
 
     elif material_type == "exam":
+        exam_count = count if isinstance(count, int) and count > 0 else 5
         base_instructions = (
             f"Create an exam based on the context in {language}. "
-            f"Include 5 questions. Each question must have an 'answer_space' (e.g. '__________'). "
+            f"Include exactly {exam_count} questions. Each question must have an 'answer_space' (e.g. '__________'). "
             f"DO NOT include answers in the questions list. "
             f"Provide a SEPARATE 'answer_sheet' section with 'question_id', 'answer', and 'explanation'."
         )
@@ -337,7 +429,10 @@ def build_prompt(
                 {"question_id": 1, "answer": "The answer", "explanation": "Explanation"}
             ]
         }
-        base_instructions += f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
+        base_instructions += (
+            f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
+            "\nQuestion numbering in answer_sheet must start at 1 and map to questions order."
+        )
     else:
         base_instructions = f"Process the given context and generate {material_type} in {language}."
 
@@ -360,13 +455,13 @@ def _build_generation_context(chunks: List[str]) -> str:
     return context
 
 
-def generate_study_material_stream(
+async def generate_study_material_stream(
     chunks: List[str],
     material_type: str,
     topic: Optional[str] = None,
     language: str = "en",
     options: Optional[Dict[str, Any]] = None,
-) -> Iterator[str]:
+) -> AsyncIterator[str]:
     """Stream study material tokens/chunks directly from Ollama.
 
     This path is intentionally independent from Celery so callers can forward
@@ -405,34 +500,34 @@ def generate_study_material_stream(
     retries = OLLAMA_REQUEST_RETRIES
     for attempt in range(1, retries + 1):
         try:
-            with requests.post(
-                OLLAMA_GENERATE_URL,
-                json=payload,
-                timeout=OLLAMA_GENERATION_TIMEOUT,
-                stream=True,
-            ) as resp:
-                resp.raise_for_status()
+            async with httpx.AsyncClient(timeout=OLLAMA_GENERATION_TIMEOUT) as client:
+                async with client.stream(
+                    "POST",
+                    OLLAMA_GENERATE_URL,
+                    json=payload,
+                ) as resp:
+                    resp.raise_for_status()
 
-                for line in resp.iter_lines(decode_unicode=True):
-                    if not line:
-                        continue
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError:
-                        logger.debug("Skipping non-JSON stream line for %s", material_type)
-                        continue
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except json.JSONDecodeError:
+                            logger.debug("Skipping non-JSON stream line for %s", material_type)
+                            continue
 
-                    if not isinstance(chunk, dict):
-                        continue
+                        if not isinstance(chunk, dict):
+                            continue
 
-                    piece = chunk.get("response")
-                    if isinstance(piece, str) and piece:
-                        yield piece
+                        piece = chunk.get("response")
+                        if isinstance(piece, str) and piece:
+                            yield piece
 
-                    if chunk.get("done") is True:
-                        return
+                        if chunk.get("done") is True:
+                            return
             return
-        except (Timeout, RequestException) as e:
+        except (httpx.TimeoutException, httpx.RequestError) as e:
             if attempt == retries:
                 logger.error(
                     "Streaming generation failed after %d attempts for material_type=%s: %s",
@@ -449,7 +544,7 @@ def generate_study_material_stream(
                 material_type,
                 e,
             )
-            time.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
+            await asyncio.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
         except Exception as e:
             logger.exception("Streaming generation failed for material_type=%s", material_type)
             yield f"[ERROR] {e}"
@@ -541,8 +636,7 @@ def generate_study_material(
             # Parsing/validation layer
             try:
                 # Clean up potential markdown / fenced JSON
-                cleaned = _strip_markdown_fences(generated_text)
-                parsed_json = json.loads(cleaned)
+                parsed_json = json.loads(_extract_json_payload(generated_text))
                 
                 # Structural validation
                 from .schemas import ExamOutput, QuizOutput, FlashcardsOutput
@@ -555,6 +649,8 @@ def generate_study_material(
                         parsed_json = ExamOutput(**parsed_json).model_dump()
                     elif material_type == "flashcards":
                         parsed_json = FlashcardsOutput(**parsed_json).model_dump()
+
+                    _validate_mode_specific_constraints(material_type, parsed_json)
 
                     # Detect structurally valid but empty payloads
                     empty_warning = _validate_non_empty_material(material_type, parsed_json)
@@ -798,37 +894,55 @@ def generate_chat_response(
 
     raise RuntimeError("All chat retry attempts failed")
 
-def evaluate_quiz(questions: List[Dict[str, Any]], submissions: List[Dict[str, Any]]) -> Dict[str, Any]:
+def evaluate_quiz(
+    questions: List[Dict[str, Any]],
+    submissions: List[Dict[str, Any]],
+    answer_key: Optional[Dict[Union[str, int], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """
     Compare user answers with correct answers and return color-coded results.
     """
     results = []
-    
-    # Create a mapping for quick lookup
-    question_map = {q["id"]: q for q in questions}
-    
-    for sub in submissions:
-        q_id = sub.get("question_id")
-        user_ans = sub.get("user_answer", "").strip().lower()
-        
-        q = question_map.get(q_id)
-        if not q:
+    question_map: Dict[int, Dict[str, Any]] = {}
+    for q in questions or []:
+        try:
+            question_map[int(q.get("id"))] = q
+        except (TypeError, ValueError):
             continue
-            
-        correct_ans = str(q.get("correct_answer", "")).strip().lower()
-        is_correct = user_ans == correct_ans
-        
+
+    resolved_answer_key: Dict[int, Dict[str, Any]] = {}
+    if isinstance(answer_key, dict):
+        for key, value in answer_key.items():
+            try:
+                resolved_answer_key[int(key)] = value if isinstance(value, dict) else {}
+            except (TypeError, ValueError):
+                continue
+    else:
+        resolved_answer_key = build_quiz_answer_key(questions or [])
+
+    for sub in submissions or []:
+        try:
+            q_id = int(sub.get("question_id"))
+        except (TypeError, ValueError):
+            continue
+        user_ans = _canonical_answer(sub.get("user_answer", ""))
+
+        answer_info = resolved_answer_key.get(q_id) or {}
+        q = question_map.get(q_id) or {}
+        correct_ans = _canonical_answer(answer_info.get("correct_answer") or q.get("correct_answer", ""))
+        is_correct = bool(correct_ans) and user_ans == correct_ans
+
         result = {
             "question_id": q_id,
             "status": "correct" if is_correct else "wrong",
             "color": "green" if is_correct else "red",
         }
-        
+
         if not is_correct:
-            result["explanation"] = q.get("explanation", "Incorrect answer.")
-            
+            result["explanation"] = answer_info.get("explanation") or q.get("explanation") or "Incorrect answer."
+
         results.append(result)
-        
+
     return {
         "type": "quiz_result",
         "results": results

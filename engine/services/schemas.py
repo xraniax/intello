@@ -119,3 +119,23 @@ class QuizResultItem(BaseModel):
 class QuizEvaluateResponse(BaseModel):
     type: Literal["quiz_result"] = "quiz_result"
     results: List[QuizResultItem]
+
+
+# --- Adaptive Quiz Schemas ---
+
+class QuizNextRequest(BaseModel):
+    user_id: str
+    subject_id: str
+    topic: Optional[str] = None
+    language: str = Field(default="en")
+    top_k: int = Field(default=5, ge=1, le=50)
+
+
+class QuizSubmitAnswerRequest(BaseModel):
+    user_id: str
+    subject_id: str
+    topic: Optional[str] = None
+    is_correct: bool
+    response_time: float = Field(default=0.0, ge=0.0)
+    language: str = Field(default="en")
+    top_k: int = Field(default=5, ge=1, le=50)

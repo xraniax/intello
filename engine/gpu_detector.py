@@ -228,7 +228,7 @@ def detect_gpu_and_ollama() -> Dict[str, Any]:
     }
     
     logger.info("=" * 80)
-        logger.info("Overall Status: %s", normalize_status(status))
+    logger.info("Overall Status: %s", normalize_status(status))
     logger.info("=" * 80)
     
     return result
