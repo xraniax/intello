@@ -853,3 +853,41 @@
   .printable-summary p  { font-size: 12pt !important; line-height: 1.6 !important; }
   @page { margin: 1.5cm; size: auto; }
 }
+
+/* ─── Narrative Dashboard (Admin) ────────────────────────── */
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Soft Viewport Snapping */
+main.narrative-container {
+  scroll-snap-type: y proximity;
+}
+
+section[id] {
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+  transition: opacity 1s var(--ease-out), transform 1s var(--ease-out);
+}
+
+/* Narrative Progress Line Animation */
+@keyframes journey-line {
+  from { height: 0; opacity: 0; }
+  to { height: 100%; opacity: 1; }
+}
+
+.journey-line-grow {
+  animation: journey-line 1.5s var(--ease-spring) forwards;
+}
+
+/* Fade-in section entry */
+.section-reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 1.2s var(--ease-spring);
+}
+
+.section-reveal.active {
+  opacity: 1;
+  transform: translateY(0);
+}

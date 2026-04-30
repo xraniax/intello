@@ -32,6 +32,7 @@ const AdminUsers = () => {
     const [expandedUserId, setExpandedUserId] = useState(null);
     const [activeDropdownId, setActiveDropdownId] = useState(null);
     const [storageBudget, setStorageBudget] = useState(null);
+    const [showAll, setShowAll] = useState(false);
     
     // Action Modals State
     const [selectedUser, setSelectedUser] = useState(null);
@@ -98,6 +99,10 @@ const AdminUsers = () => {
             return 0;
         });
     }, [users, debouncedSearch, filterStatus, filterRole, sortBy, sortOrder]);
+
+    const displayedUsers = useMemo(() => {
+        return showAll ? filteredUsers : filteredUsers.slice(0, 6);
+    }, [filteredUsers, showAll]);
 
     // Metrics
     const metrics = useMemo(() => {
@@ -524,9 +529,24 @@ const AdminUsers = () => {
                             </button>
                         </div>
                     ) : (
-                        filteredUsers.map(user => <UserCard key={user.id} user={user} />)
+                        displayedUsers.map(user => <UserCard key={user.id} user={user} />)
                     )}
                 </div>
+                
+                {!isLoading && filteredUsers.length > 6 && (
+                    <div className="mt-8 flex justify-center">
+                        <button 
+                            onClick={() => setShowAll(!showAll)}
+                            className="px-8 py-3 bg-white border border-gray-100 rounded-full text-sm font-black text-gray-600 hover:text-indigo-600 hover:border-indigo-100 hover:shadow-lg hover:shadow-indigo-50/50 transition-all flex items-center gap-2"
+                        >
+                            {showAll ? (
+                                <><ChevronUp className="w-4 h-4" /> Show Less</>
+                            ) : (
+                                <><ChevronDown className="w-4 h-4" /> See All {filteredUsers.length} Users</>
+                            )}
+                        </button>
+                    </div>
+                )}
 
                 <CustomModal
                     isOpen={!!modalType && modalType !== 'quota'}

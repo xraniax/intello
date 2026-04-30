@@ -1,15 +1,22 @@
-import React, { useState } from 'react';
-import { 
+import React, { useState, useEffect } from 'react';
+import {
     File as FileIcon, Trash2, User, Book, Eye, Search,
-    Filter, LayoutGrid, LayoutList, CheckSquare, Square, 
-    Download, RefreshCw, X
+    Filter, LayoutGrid, LayoutList, CheckSquare, Square,
+    Download, RefreshCw, X, ChevronDown
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatBytes } from '@/utils/format';
 
 
+const PAGE_SIZE = 5;
+
 const FileList = ({ files, onDelete, onDownload, filters, setFilters, settings, selectedIds, setSelectedIds, onBulkDelete }) => {
-    const [viewMode, setViewMode] = useState('table'); // 'table' or 'grid'
+    const [viewMode, setViewMode] = useState('table');
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+    useEffect(() => { setVisibleCount(PAGE_SIZE); }, [files]);
+
+    const visibleFiles = files.slice(0, visibleCount);
 
     const handleSelectAll = () => {
         if (selectedIds.size === files.length) {
@@ -211,7 +218,7 @@ const FileList = ({ files, onDelete, onDownload, filters, setFilters, settings, 
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {files.map(file => {
+                                {visibleFiles.map(file => {
                                     const isSelected = selectedIds.has(file.id);
                                     return (
                                         <tr key={file.id} className={`transition-colors group ${isSelected ? 'bg-indigo-50/40' : 'hover:bg-gray-50/50'}`}>
@@ -284,7 +291,20 @@ const FileList = ({ files, onDelete, onDownload, filters, setFilters, settings, 
                 </div>
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {files.map(file => <FileCard key={file.id} file={file} />)}
+                    {visibleFiles.map(file => <FileCard key={file.id} file={file} />)}
+                </div>
+            )}
+
+            {visibleCount < files.length && (
+                <div className="flex flex-col items-center gap-2 mt-4">
+                    <button
+                        onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+                        className="px-8 py-3 bg-white border border-gray-100 rounded-full text-sm font-black text-gray-600 hover:text-indigo-600 hover:border-indigo-100 hover:shadow-lg hover:shadow-indigo-50/50 transition-all flex items-center gap-2"
+                    >
+                        <ChevronDown className="w-4 h-4" />
+                        Show {Math.min(PAGE_SIZE, files.length - visibleCount)} more
+                        <span className="text-gray-400 font-bold">({files.length - visibleCount} remaining)</span>
+                    </button>
                 </div>
             )}
 

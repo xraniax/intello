@@ -114,18 +114,23 @@ function LogDetailJSON({ details }) {
     );
 }
 
+const PAGE_SIZE = 5;
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 const AdminLogs = () => {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterLevel, setFilterLevel] = useState('all');
+    const [showAll, setShowAll] = useState(false);
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
     const fetchLogs = async () => {
         setLoading(true);
         try {
             const res = await adminService.getLogs();
             setLogs(res.data.data || []);
+            setVisibleCount(PAGE_SIZE);
         } catch {
             toast.error('Failed to load system logs');
         } finally {
@@ -134,6 +139,7 @@ const AdminLogs = () => {
     };
 
     useEffect(() => { fetchLogs(); }, []);
+    useEffect(() => { setVisibleCount(PAGE_SIZE); }, [searchQuery, filterLevel]);
 
     const stats = useMemo(() => ({
         total: logs.length,
@@ -155,7 +161,7 @@ const AdminLogs = () => {
         return matchesSearch && matchesLevel;
     }), [logs, searchQuery, filterLevel]);
 
-    const grouped = useMemo(() => groupByDate(filtered), [filtered]);
+    const grouped = useMemo(() => groupByDate(filtered.slice(0, visibleCount)), [filtered, visibleCount]);
 
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 md:px-8 py-10 animate-in fade-in duration-500">
@@ -241,6 +247,7 @@ const AdminLogs = () => {
                     <p className="text-gray-500 font-medium">Try adjusting your filters or search query.</p>
                 </div>
             ) : (
+                <>
                 <div className="space-y-8">
                     {grouped.map((group) => (
                         <div key={group.date}>
@@ -291,6 +298,20 @@ const AdminLogs = () => {
                         </div>
                     ))}
                 </div>
+
+                {visibleCount < filtered.length && (
+                    <div className="mt-8 flex flex-col items-center gap-2">
+                        <button
+                            onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+                            className="px-8 py-3 bg-white border border-gray-100 rounded-full text-sm font-black text-gray-600 hover:text-indigo-600 hover:border-indigo-100 hover:shadow-lg hover:shadow-indigo-50/50 transition-all flex items-center gap-2"
+                        >
+                            <ChevronDown className="w-4 h-4" />
+                            Show {Math.min(PAGE_SIZE, filtered.length - visibleCount)} more
+                            <span className="text-gray-400 font-bold">({filtered.length - visibleCount} remaining)</span>
+                        </button>
+                    </div>
+                )}
+                </>
             )}
         </div>
     );

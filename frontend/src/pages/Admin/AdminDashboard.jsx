@@ -1,204 +1,255 @@
 import React, { useState, useEffect } from 'react';
 import { adminService } from '@/features/admin/services/AdminService';
-import { Users, HardDrive, Activity, ShieldAlert, CheckCircle2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+    Users, Database, Zap, ArrowRight, ShieldCheck, Activity, 
+    FileText, UserCheck, HardDrive, BarChart3
+} from 'lucide-react';
 import Skeleton from '@/components/ui/Skeleton';
-import { formatDistanceToNow } from 'date-fns';
 import { formatBytes } from '@/utils/format';
 import AdminAlertCentre from '@/components/Admin/AdminAlertCentre';
 
+// Import sub-page components
+import AdminUsers from './AdminUsers';
+import AdminFiles from './AdminFiles';
+import AdminLogs from './AdminLogs';
+
+const SECTION_ANIM = {
+    initial: { opacity: 0, y: 40 },
+    whileInView: { opacity: 1, y: 0 },
+    viewport: { once: true, margin: "-100px" },
+    transition: { duration: 1, ease: [0.16, 1, 0.3, 1] }
+};
+
+const AmbientOrb = ({ className, color }) => (
+    <motion.div 
+        animate={{ 
+            scale: [1, 1.2, 1],
+            opacity: [0.3, 0.5, 0.3],
+            x: [0, 50, 0],
+            y: [0, 30, 0]
+        }}
+        transition={{ 
+            duration: 10 + Math.random() * 5, 
+            repeat: Infinity, 
+            ease: "easeInOut" 
+        }}
+        className={`absolute rounded-full blur-[140px] pointer-events-none -z-10 mix-blend-multiply ${className} ${color}`}
+    />
+);
+
 const AdminDashboard = () => {
-    const [stats, setStats] = useState(null);
-    const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [stats, setStats] = useState({
+        totalUsers: 0,
+        onlineNow: 0,
+        totalStorage: 0
+    });
 
     useEffect(() => {
-        const fetchDashboardData = async () => {
+        const fetchDashboardStats = async () => {
             try {
-                const [usersRes, settingsRes, logsRes] = await Promise.all([
+                const [usersRes, settingsRes] = await Promise.all([
                     adminService.getUsers(),
-                    adminService.getSettings(),
-                    adminService.getLogs()
+                    adminService.getSettings()
                 ]);
                 
-                const users = usersRes.data.data || [];
+                const users = usersRes.data?.data || [];
                 const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
                 const now = Date.now();
                 const onlineNow = Math.max(1, users.filter(u => {
                     const lastActive = u.last_active_at ? new Date(u.last_active_at).getTime() : 0;
                     return now - lastActive < ONLINE_THRESHOLD_MS;
                 }).length);
-                const settings = settingsRes.data?.data?.storage || {};
-                const statsFromSettings = settingsRes.data?.data?.stats || {};
-                const totalStorage = statsFromSettings.total_storage_bytes || users.reduce((acc, u) => acc + (parseInt(u.storage_usage_bytes) || 0), 0) || 0;
+
+                const settings = settingsRes.data?.data || {};
+                const totalStorage = settings.stats?.total_storage_bytes || 0;
                 
                 setStats({
                     totalUsers: users.length,
                     onlineNow,
                     totalStorage
                 });
-                
-                const fetchedLogs = logsRes.data.data?.logs || logsRes.data.data || [];
-                setLogs(Array.isArray(fetchedLogs) ? fetchedLogs.slice(0, 5) : []);
 
             } catch (err) {
-                console.error("Dashboard dataload error", err);
+                console.error("Dashboard stats error", err);
             } finally {
                 setLoading(false);
             }
         };
-        fetchDashboardData();
+        fetchDashboardStats();
     }, []);
 
-
     return (
-        <div className="relative min-h-[calc(100vh-64px)] p-6 md:p-10 max-w-7xl mx-auto overflow-hidden">
-            {/* Ambient Decorative Orbs */}
-            <div className="ambient-orb ambient-orb-lg ambient-orb-1 top-[-10%] left-[-5%] bg-indigo-200/40"></div>
-            <div className="ambient-orb ambient-orb-md ambient-orb-2 bottom-[10%] right-[-5%] bg-purple-200/30"></div>
-            <div className="ambient-orb ambient-orb-sm ambient-orb-3 top-[30%] right-[10%] bg-pink-100/20"></div>
+        <div className="w-full relative bg-[#F8FAFC]">
+            <AmbientOrb className="w-[600px] h-[600px] top-0 -left-64" color="bg-indigo-300/40" />
+            <AmbientOrb className="w-[500px] h-[500px] top-[100vh] -right-32" color="bg-fuchsia-300/40" />
+            <AmbientOrb className="w-[700px] h-[700px] top-[200vh] -left-80" color="bg-teal-300/40" />
 
-            <div className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                {/* Hero Header */}
-                <div className="mb-12 group">
-                    <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-[0.2em] mb-2 text-indigo-500">
-                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 anim-pulse"></div>
-                        <span>Command Center</span>
+            {/* SECTION 1: OVERVIEW */}
+            <motion.section 
+                id="overview" 
+                className="min-h-[calc(100vh-80px)] flex flex-col justify-center p-8 md:p-24 relative"
+                {...SECTION_ANIM}
+            >
+                <div className="max-w-7xl mx-auto w-full">
+                    <div className="inline-flex items-center gap-3 px-5 py-2 bg-gray-50 border border-gray-100 rounded-full mb-10 shadow-sm">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-900">Administrative Terminal</span>
                     </div>
-                    <h1 className="text-5xl md:text-6xl font-black tracking-tighter mb-3">
-                        System Health <span className="text-gradient-hero">Overview</span>
+
+                    <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-tight mb-8">
+                        Platform <br className="hidden md:block" />
+                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500">
+                            Intelligence
+                        </span>
                     </h1>
-                    <p className="font-medium text-lg text-gray-500/80 max-w-2xl">
-                        Monitor your platform's heartbeat. Real-time metrics, system health, and administrative audit trails.
+
+                    <p className="max-w-2xl text-xl font-bold text-gray-500 mb-20 leading-relaxed">
+                        Architecture is stable. Nodes are synchronized. <br />
+                        Explore your platform's narrative journey below.
                     </p>
-                </div>
 
-                {/* KPI Row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-                    {/* Total Users */}
-                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-indigo-100/20 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-1">
-                        <div className="w-14 h-14 rounded-3xl flex items-center justify-center mb-6 transition-all bg-indigo-50 text-indigo-600 group-hover:scale-110 duration-500">
-                            <Users className="w-6 h-6" />
-                        </div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 text-gray-400">Total Users</p>
-                        <h3 className="text-4xl font-black tracking-tighter text-gray-900">
-                            {loading ? <div className="w-16 h-10 bg-gray-100 rounded-lg animate-pulse" /> : stats?.totalUsers}
-                        </h3>
-                        <div className="mt-4 h-1 w-12 bg-indigo-100 rounded-full group-hover:w-full transition-all duration-700" />
-                    </div>
-
-                    {/* Online Now */}
-                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-coral-100/20 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-1">
-                        <div className="w-14 h-14 rounded-3xl flex items-center justify-center mb-6 transition-all bg-coral-light text-coral group-hover:scale-110 duration-500">
-                            <Activity className="w-6 h-6" />
-                        </div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 text-gray-400">Live Presence</p>
-                        <div className="flex items-center gap-3">
-                            <h3 className="text-4xl font-black tracking-tighter text-gray-900">
-                                {loading ? <div className="w-16 h-10 bg-gray-100 rounded-lg animate-pulse" /> : stats?.onlineNow}
-                            </h3>
-                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 anim-pulse shadow-[0_0_12px_rgba(16,185,129,0.5)]"></span>
-                        </div>
-                        <p className="text-[10px] font-bold mt-2 text-emerald-600/80 uppercase">Active within 5m</p>
-                    </div>
-
-                    {/* Cluster Storage */}
-                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-teal-100/20 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-1 lg:col-span-2 flex flex-col justify-between">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="w-14 h-14 rounded-3xl flex items-center justify-center transition-all bg-teal-light text-teal group-hover:scale-110 duration-500">
-                                <HardDrive className="w-6 h-6" />
-                            </div>
-                            <div className="text-right">
-                                <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 text-gray-400">Cluster Infrastructure</p>
-                                <h3 className="text-4xl font-black tracking-tighter text-gray-900">
-                                    {loading ? <div className="w-32 h-10 bg-gray-100 rounded-lg animate-pulse" /> : formatBytes(stats?.totalStorage || 0)}
-                                </h3>
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <div className="flex justify-between text-[10px] font-black uppercase mb-3 tracking-widest text-teal-600/60">
-                                <span>Physical Utilization</span>
-                                <span>10 GB Cap</span>
-                            </div>
-                            <div className="w-full h-3 bg-teal-50 rounded-full overflow-hidden border border-teal-100/50 p-0.5">
-                                <div className="h-full rounded-full transition-all duration-1500 ease-out bg-gradient-to-r from-teal-400 to-teal-500 shadow-[0_0_12px_rgba(20,184,166,0.3)]" 
-                                     style={{ width: `${Math.min(((stats?.totalStorage || 0) / 10737418240) * 100, 100)}%` }}></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Main Content Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
-                    {/* Activity Feed */}
-                    <div className="lg:col-span-2 glass-card p-10 rounded-[3rem] border border-white/40 shadow-xl shadow-gray-200/50">
-                        <div className="flex justify-between items-center mb-10">
-                            <div>
-                                <h2 className="text-2xl font-black text-gray-900 tracking-tight">Audit Stream</h2>
-                                <p className="text-sm font-medium text-gray-500 mt-1">Live administrative events feed</p>
-                            </div>
-                            <Link to="/admin/logs" className="btn-secondary px-6 rounded-2xl shadow-sm hover:shadow-md">
-                                Full History
-                            </Link>
-                        </div>
-                        
-                        <div className="space-y-6">
-                            {loading ? (
-                                Array(4).fill(0).map((_, i) => (
-                                    <div key={i} className="flex gap-6 items-center">
-                                        <Skeleton className="w-14 h-14 rounded-2xl shrink-0" />
-                                        <div className="space-y-2 w-full">
-                                            <Skeleton className="h-5 w-1/2" />
-                                            <Skeleton className="h-4 w-1/4" />
-                                        </div>
-                                    </div>
-                                ))
-                            ) : logs.length === 0 ? (
-                                <div className="py-20 text-center flex flex-col items-center gap-4">
-                                    <div className="w-16 h-16 rounded-3xl bg-gray-50 flex items-center justify-center text-gray-300">
-                                        <Activity className="w-8 h-8" />
-                                    </div>
-                                    <p className="font-bold text-gray-400 uppercase tracking-widest text-xs">No recent activity detected</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                        {[
+                            { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'indigo' },
+                            { label: 'Active Presence', value: stats.onlineNow, icon: Zap, color: 'indigo' },
+                            { label: 'Cluster Data', value: formatBytes(stats.totalStorage), icon: Database, color: 'indigo' }
+                        ].map((s, i) => (
+                            <motion.div 
+                                key={i} 
+                                whileHover={{ y: -10 }}
+                                className="p-10 rounded-[3rem] bg-white/70 backdrop-blur-xl border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_40px_rgba(99,102,241,0.1)] transition-all duration-500 group relative overflow-hidden"
+                            >
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-white/0 pointer-events-none" />
+                                <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-8 group-hover:bg-gray-900 group-hover:text-white transition-all duration-500">
+                                    <s.icon className="w-6 h-6" />
                                 </div>
-                            ) : (
-                                logs.map((log, idx) => (
-                                    <div key={log.id} 
-                                         className="flex gap-6 items-start p-5 rounded-[2rem] border border-transparent hover:border-indigo-100 hover:bg-indigo-50/30 transition-all duration-300 group"
-                                         style={{ animationDelay: `${idx * 100}ms` }}>
-                                        <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-sm border border-gray-100 bg-white group-hover:scale-110 group-hover:shadow-md transition-all duration-500">
-                                            <Activity className="w-5 h-5 text-indigo-400" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <p className="text-lg font-bold text-gray-900 leading-tight truncate">{log.action}</p>
-                                                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-tighter bg-indigo-50 px-2 py-1 rounded-lg">
-                                                    {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
-                                                </span>
-                                            </div>
-                                            <p className="text-sm font-medium text-gray-500">
-                                                Entity: <span className="text-gray-900 font-bold uppercase text-[10px] tracking-widest ml-1">{log.entity_type}</span>
-                                                {log.target_user_id && <span className="mx-2 text-gray-300">|</span>}
-                                                {log.target_user_id && <span className="text-indigo-600 font-bold">User Context</span>}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">{s.label}</p>
+                                <h3 className="text-5xl font-black tracking-tighter">{loading ? <Skeleton className="w-20 h-10" /> : s.value}</h3>
+                            </motion.div>
+                        ))}
                     </div>
 
-                    {/* System Alerts */}
-                    <div className="glass-card p-10 rounded-[3rem] border border-white/40 shadow-xl shadow-gray-200/50 flex flex-col">
-                        <AdminAlertCentre 
-                            limit={5} 
-                            onUpdate={() => {
-                                // Potentially re-fetch other dashboard stats if needed
-                            }} 
-                        />
+                    <div className="mt-24">
+                        <AdminAlertCentre limit={3} />
                     </div>
                 </div>
-            </div>
+                
+                <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 0.3 }}
+                    transition={{ delay: 2 }}
+                    className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
+                >
+                    <span className="text-[10px] font-black uppercase tracking-[0.4em] rotate-90 mb-8 border-b border-gray-900 pb-2">Scroll</span>
+                    <ArrowRight className="w-5 h-5 rotate-90" />
+                </motion.div>
+            </motion.section>
+
+            {/* SECTION 2: USERS */}
+            <motion.section 
+                id="users" 
+                className="min-h-screen border-t border-gray-50 py-24"
+                {...SECTION_ANIM}
+            >
+                <div className="max-w-7xl mx-auto w-full px-8 mb-16">
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-10">
+                        <div className="max-w-2xl">
+                            <h2 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-gray-900">
+                                Identity <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-indigo-300">& Access</span>
+                            </h2>
+                            <p className="text-lg font-bold text-gray-500 leading-relaxed">Manage your community. Oversee roles, monitor activity, and ensure platform integrity.</p>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="px-8 py-6 bg-white/70 backdrop-blur-md border border-white rounded-[2.5rem] shadow-xl shadow-indigo-100/50">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-1">Status</p>
+                                <p className="text-2xl font-black text-indigo-600 flex items-center gap-2">
+                                    <UserCheck className="w-5 h-5 text-indigo-500" /> All Nodes Green
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="max-w-[1600px] mx-auto px-4 md:px-8">
+                    <div className="rounded-[2.5rem] bg-white border border-white shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] overflow-hidden w-full ring-1 ring-gray-100/50">
+                        <AdminUsers />
+                    </div>
+                </div>
+            </motion.section>
+
+            {/* SECTION 3: FILES (WITH SCROLL CONTAINMENT) */}
+            <motion.section 
+                id="files" 
+                className="min-h-screen border-t border-gray-50 py-24 bg-gray-50/30"
+                {...SECTION_ANIM}
+            >
+                <div className="max-w-7xl mx-auto w-full px-8 mb-16">
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-10">
+                        <div className="max-w-2xl">
+                            <h2 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-gray-900">
+                                Storage <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-fuchsia-400">Vaults</span>
+                            </h2>
+                            <p className="text-lg font-bold text-gray-500 leading-relaxed">The collective memory of your platform. Monitor global quotas and explore asset clusters.</p>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="px-8 py-6 bg-white/70 backdrop-blur-md border border-white rounded-[2.5rem] shadow-xl shadow-purple-100/50">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-purple-400 mb-1">Utilization</p>
+                                <p className="text-2xl font-black text-purple-600 flex items-center gap-2">
+                                    <HardDrive className="w-5 h-5 text-purple-500" /> {loading ? '...' : formatBytes(stats.totalStorage)}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="max-w-[1600px] mx-auto px-4 md:px-8">
+                    <div className="rounded-[2.5rem] bg-white border border-white shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] overflow-hidden w-full flex flex-col ring-1 ring-gray-100/50">
+                        <div className="flex-1">
+                            <AdminFiles />
+                        </div>
+                    </div>
+                </div>
+            </motion.section>
+
+            {/* SECTION 4: AUDIT LOGS (WITH SCROLL CONTAINMENT) */}
+            <motion.section 
+                id="logs" 
+                className="min-h-screen border-t border-gray-50 py-24"
+                {...SECTION_ANIM}
+            >
+                <div className="max-w-7xl mx-auto w-full px-8 mb-16">
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-10">
+                        <div className="max-w-2xl">
+                            <h2 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-gray-900">
+                                Audit <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-400">Stream</span>
+                            </h2>
+                            <p className="text-lg font-bold text-gray-500 leading-relaxed">An immutable record of every breath your platform takes. Forensic intelligence at scale.</p>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="px-8 py-6 bg-white/70 backdrop-blur-md border border-white rounded-[2.5rem] shadow-xl shadow-emerald-100/50">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">Ingestion Rate</p>
+                                <p className="text-2xl font-black text-emerald-600 flex items-center gap-2">
+                                    <BarChart3 className="w-5 h-5 text-emerald-500" /> Optimal
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="max-w-[1600px] mx-auto px-4 md:px-8">
+                    <div className="rounded-[2.5rem] bg-white border border-white shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] overflow-hidden w-full flex flex-col ring-1 ring-gray-100/50">
+                        <div className="flex-1">
+                            <AdminLogs />
+                        </div>
+                    </div>
+                </div>
+            </motion.section>
+
+            <footer className="py-20 border-t border-gray-50 flex flex-col items-center">
+                <div className="w-12 h-12 bg-gray-900 rounded-2xl flex items-center justify-center mb-8">
+                    <span className="text-white text-sm font-black italic">C</span>
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-[1em] text-gray-300">Cognify Admin Cluster &bull; {new Date().getFullYear()}</p>
+            </footer>
         </div>
     );
 };
