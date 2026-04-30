@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import sendEmail from '../utils/services/email.service.js';
+import SettingsService from '../services/settings.service.js';
 import { normalizeStatus } from '../constants/status.enum.js';
 
 const generateToken = (id) => {
@@ -17,6 +18,14 @@ class AuthController {
     static register = asyncHandler(async (req, res) => {
         const { email, password, name } = req.body;
         console.log(`[AUTH] Registration attempt for email: ${email}`);
+
+        // Check if public registration is allowed
+        const controls = await SettingsService.getStorageControls();
+        if (controls.allow_public_registration === false) {
+            console.warn(`[AUTH] Registration blocked: Public registration is disabled.`);
+            res.status(403);
+            throw new Error('Public registration is currently disabled. Please contact an administrator.');
+        }
 
         const userExists = await User.findByEmail(email);
         if (userExists) {

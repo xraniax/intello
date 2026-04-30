@@ -230,7 +230,7 @@ export const useMaterialStore = create(devtools((set, get) => ({
             }
         },
 
-        startPolling: (materialId) => {
+        startPolling: (materialId, onComplete = null) => {
             if (pollingIntervals.has(materialId)) return;
 
             const startTime = Date.now();
@@ -294,7 +294,11 @@ export const useMaterialStore = create(devtools((set, get) => ({
                                 }
                             }));
                         }
-                        await get().actions.fetchMaterials();
+                        const updatedMaterials = await get().actions.fetchMaterials();
+                        if (onComplete) {
+                            const mat = updatedMaterials.find(m => String(m.id) === String(materialId));
+                            if (mat) onComplete(mat);
+                        }
                     } else if (status === FAILED) {
                         get().actions.clearPolling(materialId);
                         set((state) => ({

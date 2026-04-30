@@ -5,16 +5,10 @@ import {
     Download, RefreshCw, X
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatBytes } from '@/utils/format';
 
-const formatBytes = (bytes) => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
 
-const FileList = ({ files, onDelete, filters, setFilters, settings, selectedIds, setSelectedIds, onBulkDelete }) => {
+const FileList = ({ files, onDelete, onDownload, filters, setFilters, settings, selectedIds, setSelectedIds, onBulkDelete }) => {
     const [viewMode, setViewMode] = useState('table'); // 'table' or 'grid'
 
     const handleSelectAll = () => {
@@ -78,7 +72,7 @@ const FileList = ({ files, onDelete, filters, setFilters, settings, selectedIds,
                     {/* Hover Actions */}
                     <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 w-full justify-end bg-gradient-to-b from-white/90 to-transparent pb-10 pointer-events-none">
                         <div className="pointer-events-auto flex gap-1 bg-white/90 backdrop-blur-sm shadow-sm border border-gray-100 rounded-xl p-1 mr-8">
-                            <button className="p-2 text-gray-400 hover:text-indigo-500 rounded-lg transition-colors hover:bg-indigo-50" onClick={(e) => e.stopPropagation()}>
+                            <button className="p-2 text-gray-400 hover:text-indigo-500 rounded-lg transition-colors hover:bg-indigo-50" onClick={(e) => { e.stopPropagation(); onDownload(file.id, file.original_name); }}>
                                 <Download className="w-4 h-4" />
                             </button>
                             <button className="p-2 text-gray-400 hover:text-red-500 rounded-lg transition-colors hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(file.id, file.original_name); }}>
@@ -267,7 +261,10 @@ const FileList = ({ files, onDelete, filters, setFilters, settings, selectedIds,
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button className="p-2 rounded-xl text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
+                                                    <button 
+                                                        onClick={() => onDownload(file.id, file.original_name)}
+                                                        className="p-2 rounded-xl text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all"
+                                                    >
                                                         <Download className="w-4 h-4" />
                                                     </button>
                                                     <button 

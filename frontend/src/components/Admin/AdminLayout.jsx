@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/AuthContext';
 import { 
     LayoutDashboard, Users, HardDrive, UploadCloud, 
     Activity, Settings, LogOut, ChevronLeft, ChevronRight,
-    Search, Bell, Menu, X, User as UserIcon, Trash2
+    Search, Bell, Menu, X, User as UserIcon
 } from 'lucide-react';
 
 const AdminLayout = ({ children }) => {
@@ -39,14 +39,14 @@ const AdminLayout = ({ children }) => {
             items: [
                 { name: 'Dashboard', path: '/admin', icon: LayoutDashboard },
                 { name: 'Users', path: '/admin/users', icon: Users },
-                { name: 'Storage', path: '/admin/files', icon: HardDrive }
+                { name: 'File Explorer', path: '/admin/files', icon: HardDrive }
             ]
         },
         {
             group: 'SYSTEM',
             items: [
                 { name: 'Activity Log', path: '/admin/logs', icon: Activity },
-                { name: 'Settings', path: '/admin/settings', icon: Settings }
+                { name: 'System Rules', path: '/admin/settings', icon: Settings }
             ]
         }
     ];
@@ -113,28 +113,6 @@ const AdminLayout = ({ children }) => {
                         </nav>
                     </div>
                 ))}
-            </div>
-
-            {/* Bottom Trash Navigation Item */}
-            <div className="px-3 border-t border-gray-100 py-3 bg-white z-10 shrink-0">
-                <NavLink
-                    to="/trash"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'px-3 py-2.5'} gap-3 rounded-xl font-semibold text-sm transition-all duration-200 group relative text-gray-400 hover:text-red-500 hover:bg-red-50/50`}
-                >
-                    <Trash2 className="w-4 h-4 group-hover:text-red-500 transition-colors" />
-                    
-                    {!isSidebarCollapsed && (
-                        <span className="flex-1 truncate">Trash</span>
-                    )}
-                    
-                    {/* Tooltip for collapsed mode */}
-                    {isSidebarCollapsed && (
-                        <div className="absolute left-14 px-2.5 py-1.5 bg-red-500 text-white text-[10px] uppercase tracking-widest font-black rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 whitespace-nowrap shadow-xl">
-                            Trash
-                        </div>
-                    )}
-                </NavLink>
             </div>
 
             {/* Bottom Admin User Profile inside Sidebar */}

@@ -110,9 +110,14 @@ def task_ocr(self, file_path, document_id, subject_id, user_id=None):
     from services.preprocessing import preprocess_step
     try:
         pre = preprocess_step(file_path, job_id=job_id)
-        text = pre["cleaned_text"]
+        text = pre.get("cleaned_text", "")
         duration = time.perf_counter() - start_time
-        log.info(f"STEP: OCR SUCCESS (duration: {duration:.2f}s, chars: {len(text)})")
+        
+        if not text or len(text.strip()) == 0:
+            log.warning(f"STEP: OCR FINISHED but no text was extracted (duration: {duration:.2f}s)")
+            text = "" # Ensure it's a string
+        else:
+            log.info(f"STEP: OCR SUCCESS (duration: {duration:.2f}s, chars: {len(text)})")
         return {
             "document_id": document_id,       # backend UUID (kept for reference)
             "engine_doc_id": engine_doc_id,   # integer FK for engine chunks table
@@ -139,8 +144,13 @@ def task_chunk(self, data):
     """Step 2: Split extracted text into semantic chunks."""
     job_id = self.request.id
     log = get_job_logger(job_id, "tasks.chunk")
-    text = data["extracted_text"]
+    text = data.get("extracted_text", "")
     user_id = data.get("user_id")
+    
+    if not text or len(text.strip()) == 0:
+        log.info("STEP: CHUNKING SKIPPED because extracted text is empty.")
+        return {**data, "chunks": []}
+
     log.info(f"STEP: CHUNKING STARTED for {len(text)} chars (Attempt {self.request.retries + 1})")
     start_time = time.perf_counter()
 
@@ -407,6 +417,10 @@ def task_process_document(
     if not subject_id:
         raise ValueError("Missing subject context: subject_id is required for ingestion")
     
+    from database import SessionLocal
+    from services.ingestion import ingest_file
+    from services.google_drive import download_file_from_drive
+
     tmp_path = None
     db = SessionLocal()
     try:
@@ -560,9 +574,16 @@ def task_generate_material(
     top_k: int = 5,
     user_id: Optional[str] = None,
     options: Optional[dict] = None,
+    chunks: Optional[List[str]] = None,
+    **kwargs,
 ):
     """Background celery task for executing Retrieval-Augmented LLM generation."""
     logger.info("Celery task_generate_material started: subject=%s, type=%s, topic=%s", subject_id, material_type, topic)
+    
+    from database import SessionLocal
+    from services.retrieval import retrieve_chunks_by_topic
+    from services.generation import generate_study_material
+    
     db = SessionLocal()
     try:
         request_options = options if isinstance(options, dict) else {}
@@ -577,9 +598,12 @@ def task_generate_material(
         if difficulty == "":
             difficulty = None
 
-        # 1. Retrieve context chunks
-        chunks = retrieve_chunks_by_topic(db, subject_id, effective_topic, top_k)
-        chunk_texts = [c.content for c in chunks if c.content]
+        # 1. Retrieve context chunks if explicit chunks were not provided
+        if chunks and isinstance(chunks, list) and len(chunks) > 0:
+            chunk_texts = chunks
+        else:
+            retrieved_chunks = retrieve_chunks_by_topic(db, subject_id, effective_topic, top_k)
+            chunk_texts = [c.content for c in retrieved_chunks if c.content]
         
         logger.info(f"Retrieved {len(chunk_texts)} chunk texts for generation.")
         

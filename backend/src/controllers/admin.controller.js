@@ -111,6 +111,20 @@ class AdminController {
         }
     }
 
+    static async downloadFile(req, res) {
+        try {
+            const { id } = req.params;
+            const file = await AdminService.downloadFile(req.user.id, id);
+            res.download(file.path, file.original_name);
+        } catch (error) {
+            console.error('Admin Download File Error:', error);
+            res.status(error.message === 'File not found' ? 404 : 500).json({ 
+                success: false, 
+                message: error.message || 'Failed to download file' 
+            });
+        }
+    }
+
     /**
      * Settings Management
      */
@@ -163,6 +177,70 @@ class AdminController {
         } catch (error) {
             console.error('Admin Cleanup Storage Error:', error);
             res.status(500).json({ success: false, message: 'Failed to perform storage cleanup' });
+        }
+    }
+
+    /**
+     * Get quota impact statistics
+     */
+    static async getQuotaImpact(req, res) {
+        try {
+            const { limitMb } = req.query;
+            if (!limitMb) return res.status(400).json({ success: false, message: 'limitMb is required' });
+            const impact = await AdminService.getQuotaImpact(limitMb);
+            res.status(200).json({ success: true, data: impact });
+        } catch (error) {
+            console.error('Admin Get Quota Impact Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch quota impact' });
+        }
+    }
+
+    /**
+     * Alert Management
+     */
+    static async getAlerts(req, res) {
+        try {
+            const isResolved = req.query.isResolved === 'true' ? true : 
+                              req.query.isResolved === 'false' ? false : undefined;
+            const limit = parseInt(req.query.limit) || 50;
+            
+            const alerts = await AdminService.getAlerts({ isResolved, limit });
+            res.json({ success: true, data: alerts });
+        } catch (error) {
+            console.error('Admin Fetch Alerts Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch alerts' });
+        }
+    }
+
+    static async getAlertStats(req, res) {
+        try {
+            const stats = await AdminService.getAlertStats();
+            res.json({ success: true, data: stats });
+        } catch (error) {
+            console.error('Admin Fetch Alert Stats Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch alert stats' });
+        }
+    }
+
+    static async resolveAlert(req, res) {
+        try {
+            const { id } = req.params;
+            const alert = await AdminService.resolveAlert(req.user.id, id);
+            res.json({ success: true, data: alert, message: 'Alert marked as resolved' });
+        } catch (error) {
+            console.error('Admin Resolve Alert Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to resolve alert' });
+        }
+    }
+
+    static async deleteAlert(req, res) {
+        try {
+            const { id } = req.params;
+            await AdminService.deleteAlert(req.user.id, id);
+            res.json({ success: true, message: 'Alert deleted successfully' });
+        } catch (error) {
+            console.error('Admin Delete Alert Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to delete alert' });
         }
     }
 }

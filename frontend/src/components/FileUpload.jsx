@@ -49,11 +49,17 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
         if (!selected) return;
 
         const ext = selected.name.split('.').pop().toLowerCase();
-        const isMimeAllowed = systemLimits.allowed_types.includes(selected.type);
-        const isPdfFallback = ext === 'pdf' && systemLimits.allowed_types.includes('application/pdf');
+        
+        // Fallback to defaults if the DB contains empty or undefined allowed_types
+        const allowedTypes = (systemLimits.allowed_types && systemLimits.allowed_types.length > 0) 
+            ? systemLimits.allowed_types 
+            : ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+
+        const isMimeAllowed = allowedTypes.includes(selected.type);
+        const isPdfFallback = ext === 'pdf' && allowedTypes.includes('application/pdf');
 
         if (!isMimeAllowed && !isPdfFallback) {
-            setFileError(`Only ${systemLimits.allowed_types.join(', ')} files are accepted.`);
+            setFileError(`Only ${allowedTypes.join(', ')} files are accepted.`);
             setFile(null);
             return;
         }

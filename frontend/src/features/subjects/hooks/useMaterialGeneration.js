@@ -18,11 +18,26 @@ export const useMaterialGeneration = ({
     setActiveTabId,
 }) => {
     const fetchMaterials = useMaterialStore(s => s.actions.fetchMaterials);
-    const startPolling = useMaterialStore(s => s.actions.startPolling);
-    const clearAllPolling = useMaterialStore(s => s.actions.clearAllPolling);
-    const setMaterialMetadata = useMaterialStore(s => s.actions.setMaterialMetadata);
-    const setExpectedFlashcards = useMaterialStore(s => s.actions.setExpectedFlashcards);
+    const { startPolling, clearAllPolling, setExpectedFlashcards } = useMaterialStore(s => s.actions);
     const jobProgress = useMaterialStore(s => s.data.jobProgress);
+
+    const openMaterialTab = useCallback((mat) => {
+        if (!mat) return;
+        if (!tabsRef.current.find(t => String(t.id) === String(mat.id))) {
+            setTabs(prev => {
+                if (prev.some(t => String(t.id) === String(mat.id))) return prev;
+                return [...prev, {
+                    id: String(mat.id),
+                    title: mat.title || (mat.type ? mat.type.charAt(0).toUpperCase() + mat.type.slice(1) : 'Material'),
+                    type: mat.type,
+                    material: mat,
+                    pinned: false
+                }];
+            });
+        }
+        setActiveTabId(String(mat.id));
+        setGenResult('');
+    }, [setTabs, setActiveTabId, tabsRef]);
 
     const [materialGenError, setMaterialGenError] = useState('');
     const [isGeneratingMaterial, setIsGeneratingMaterial] = useState(false);
@@ -101,88 +116,6 @@ export const useMaterialGeneration = ({
         const requestedCount = genOptions?.count;
 
         try {
-            streamControllerRef.current?.abort();
-            const controller = new AbortController();
-            streamControllerRef.current = controller;
-
-            setIsGeneratingMaterial(true);
-            const streamResponse = await MaterialService.generateStream(
-                targets,
-                genType,
-                subjectId,
-                genOptions,
-                controller.signal
-            );
-
-            if (!streamResponse.body) {
-                throw new Error('Streaming response body is unavailable.');
-            }
-
-            const reader = streamResponse.body.getReader();
-            const decoder = new TextDecoder();
-            let sseBuffer = '';
-            let streamDone = false;
-
-            while (!streamDone) {
-                const { value, done } = await reader.read();
-                if (done) break;
-
-                sseBuffer += decoder.decode(value, { stream: true });
-                const events = sseBuffer.split('\n\n');
-                sseBuffer = events.pop() || '';
-
-                for (const eventBlock of events) {
-                    const lines = eventBlock.split('\n');
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) {
-                            continue;
-                        }
-
-                        const payloadText = trimmed.slice(5).trim();
-                        if (!payloadText) {
-                            continue;
-                        }
-
-                        let parsed;
-                        try {
-                            parsed = JSON.parse(payloadText);
-                        } catch {
-                            continue;
-                        }
-
-                        if (parsed.type === 'error') {
-                            throw new Error(parsed.message || 'Streaming error');
-                        }
-
-                        if (parsed.type === 'delta' && typeof parsed.data === 'string') {
-                            setGenResult(prev => (prev || '') + parsed.data);
-                        }
-
-                        // Backward compatibility for older payloads.
-                        if (parsed.delta) {
-                            setGenResult(prev => (prev || '') + String(parsed.delta));
-                        }
-
-                        if ((parsed.type === 'final' && parsed.done === true) || parsed.done === true) {
-                            streamDone = true;
-                            break;
-                        }
-                    }
-                    if (streamDone) break;
-                }
-            }
-
-            streamControllerRef.current = null;
-            finishGenerating();
-            return;
-        } catch (streamErr) {
-            console.warn('[MaterialGen] Streaming path failed, falling back to async job flow:', streamErr?.message || streamErr);
-            streamControllerRef.current = null;
-            // Note: we don't finishGenerating() here because we're about to start the async/poll fallback
-        }
-
-        try {
             const res = await MaterialService.generate(targets, genType, subjectId, genOptions);
             const { material_id } = res.data.data;
             activeMaterialIdRef.current = material_id;
@@ -225,32 +158,38 @@ export const useMaterialGeneration = ({
                             return next;
                         });
                     },
-                    () => {
+                    async () => {
                         streamControllerRef.current = null;
                         finishGenerating();
                         if (String(currentSubjectIdRef.current) !== normalizedId) return;
 
-                        MaterialService.sync(material_id, controller.signal).then(() => {
+                        try {
+                            await MaterialService.sync(material_id, controller.signal);
                             if (String(currentSubjectIdRef.current) !== normalizedId) return;
-                            fetchMaterials().then(() => {
-                                const mat = useMaterialStore.getState().data.materials
-                                    .find(m => String(m.id) === String(material_id));
-                                if (!mat) return;
-                                if (!tabsRef.current.find(t => String(t.id) === String(mat.id))) {
-                                    setTabs(prev => [...prev, {
-                                        id: mat.id, title: mat.title || mat.type,
-                                        type: mat.type, material: mat, pinned: false
-                                    }]);
+                            
+                            const mats = await fetchMaterials();
+                            const mat = mats.find(m => String(m.id) === String(material_id));
+                            if (mat) {
+                                openMaterialTab(mat);
+                            }
+                        } catch (err) {
+                            console.error("[MaterialGen] Completion sync/fetch error", err);
+                            // Fallback to polling if sync fails or material not found
+                            startPolling(String(material_id), (mat) => {
+                                if (String(currentSubjectIdRef.current) === normalizedId) {
+                                    openMaterialTab(mat);
                                 }
-                                setActiveTabId(mat.id);
-                                setGenResult('');
                             });
-                        });
+                        }
                     },
                     () => {
                         streamControllerRef.current = null;
                         finishGenerating();
-                        startPolling(String(material_id));
+                        startPolling(String(material_id), (mat) => {
+                            if (String(currentSubjectIdRef.current) === normalizedId) {
+                                openMaterialTab(mat);
+                            }
+                        });
                     }
                 );
             } else {

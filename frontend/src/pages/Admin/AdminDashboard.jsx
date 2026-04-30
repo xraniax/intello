@@ -4,11 +4,12 @@ import { Users, HardDrive, Activity, ShieldAlert, CheckCircle2 } from 'lucide-re
 import { Link } from 'react-router-dom';
 import Skeleton from '@/components/ui/Skeleton';
 import { formatDistanceToNow } from 'date-fns';
+import { formatBytes } from '@/utils/format';
+import AdminAlertCentre from '@/components/Admin/AdminAlertCentre';
 
 const AdminDashboard = () => {
     const [stats, setStats] = useState(null);
     const [logs, setLogs] = useState([]);
-    const [alerts, setAlerts] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -23,47 +24,19 @@ const AdminDashboard = () => {
                 const users = usersRes.data.data || [];
                 const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
                 const now = Date.now();
-                const onlineNow = users.filter(u => {
+                const onlineNow = Math.max(1, users.filter(u => {
                     const lastActive = u.last_active_at ? new Date(u.last_active_at).getTime() : 0;
                     return now - lastActive < ONLINE_THRESHOLD_MS;
-                }).length;
-                const settings = settingsRes.data.data.storage || {};
-                const statsFromSettings = settingsRes.data.data.stats || {};
+                }).length);
+                const settings = settingsRes.data?.data?.storage || {};
+                const statsFromSettings = settingsRes.data?.data?.stats || {};
                 const totalStorage = statsFromSettings.total_storage_bytes || users.reduce((acc, u) => acc + (parseInt(u.storage_usage_bytes) || 0), 0) || 0;
                 
-                // Calculate ALerts dynamically
-                const defaultQuota = (settings.default_user_quota_mb || 100) * 1024 * 1024;
-                const nearQuotaUsers = users.filter(u => {
-                    const limit = u.storage_limit_bytes || defaultQuota;
-                    const usage = parseInt(u.storage_usage_bytes) || 0;
-                    return limit > 0 && usage > limit * 0.9;
-                });
-
-                const newAlerts = [];
-                if (nearQuotaUsers.length > 0) {
-                    newAlerts.push({
-                        id: 'quota',
-                        title: 'Quota Warning',
-                        message: `${nearQuotaUsers.length} user(s) are approaching their storage limit.`,
-                        type: 'warning'
-                    });
-                }
-                
-                if (newAlerts.length === 0) {
-                    newAlerts.push({
-                        id: 'system',
-                        title: 'System Optimal',
-                        message: 'All cluster nodes are operating within strict limits.',
-                        type: 'success'
-                    });
-                }
-
                 setStats({
                     totalUsers: users.length,
                     onlineNow,
                     totalStorage
                 });
-                setAlerts(newAlerts);
                 
                 const fetchedLogs = logsRes.data.data?.logs || logsRes.data.data || [];
                 setLogs(Array.isArray(fetchedLogs) ? fetchedLogs.slice(0, 5) : []);
@@ -77,138 +50,152 @@ const AdminDashboard = () => {
         fetchDashboardData();
     }, []);
 
-    const formatBytes = (bytes) => {
-        if (!bytes || bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const index = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, index)).toFixed(2)) + ' ' + ['Bytes', 'KB', 'MB', 'GB', 'TB'][index];
-    };
 
     return (
-        <div className="p-6 md:p-10 max-w-7xl mx-auto animate-in fade-in duration-500">
-            <div className="mb-8 group">
-                <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-widest mb-1" style={{ color: 'var(--c-primary)' }}>
-                    <div className="w-1.5 h-1.5 rounded-full anim-pulse" style={{ background: 'var(--c-primary)' }}></div>
-                    <span>Admin Console</span>
-                </div>
-                <h1 className="text-4xl md:text-5xl font-black tracking-tight" style={{ color: 'var(--c-text)', letterSpacing: '-0.03em' }}>
-                    System <span className="text-gradient-hero">Overview</span>
-                </h1>
-                <p className="font-medium text-lg mt-2" style={{ color: 'var(--c-text-secondary)' }}>Real-time metrics and system health monitoring.</p>
-            </div>
+        <div className="relative min-h-[calc(100vh-64px)] p-6 md:p-10 max-w-7xl mx-auto overflow-hidden">
+            {/* Ambient Decorative Orbs */}
+            <div className="ambient-orb ambient-orb-lg ambient-orb-1 top-[-10%] left-[-5%] bg-indigo-200/40"></div>
+            <div className="ambient-orb ambient-orb-md ambient-orb-2 bottom-[10%] right-[-5%] bg-purple-200/30"></div>
+            <div className="ambient-orb ambient-orb-sm ambient-orb-3 top-[30%] right-[10%] bg-pink-100/20"></div>
 
-            {/* KPI Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-                <div className="card-minimal flex flex-col relative overflow-hidden group">
-                    <div className="w-12 h-12 rounded-[14px] flex items-center justify-center mb-4 transition-all" style={{ background: 'var(--c-primary-light)', color: 'var(--c-primary)', border: '1px solid var(--c-primary-ultra)' }}>
-                        <Users className="w-5 h-5" />
+            <div className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                {/* Hero Header */}
+                <div className="mb-12 group">
+                    <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-[0.2em] mb-2 text-indigo-500">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 anim-pulse"></div>
+                        <span>Command Center</span>
                     </div>
-                    <p className="text-[11px] font-black uppercase tracking-widest mb-1" style={{ color: 'var(--c-text-muted)' }}>Total Users</p>
-                    <h3 className="text-[28px] font-black font-serif tracking-tight" style={{ color: 'var(--c-text)' }}>{loading ? <Skeleton className="w-16 h-8" /> : stats?.totalUsers}</h3>
-                </div>
-
-                <div className="card-minimal flex flex-col relative overflow-hidden group">
-                    <div className="w-12 h-12 rounded-[14px] flex items-center justify-center mb-4 transition-all" style={{ background: 'var(--c-coral-light)', color: 'var(--c-coral)', border: '1px solid rgba(255,107,107,0.1)' }}>
-                        <Activity className="w-5 h-5" />
-                    </div>
-                    <p className="text-[11px] font-black uppercase tracking-widest mb-1" style={{ color: 'var(--c-text-muted)' }}>Online Now</p>
-                    <div className="flex items-center gap-2 mt-1">
-                        <span className="w-2 h-2 rounded-full anim-pulse shrink-0" style={{ background: 'var(--c-success)' }}></span>
-                        <h3 className="text-[28px] font-black font-serif tracking-tight" style={{ color: 'var(--c-text)' }}>{loading ? <Skeleton className="w-16 h-8" /> : stats?.onlineNow}</h3>
-                    </div>
-                    <p className="text-[10px] font-bold mt-1" style={{ color: 'var(--c-text-muted)' }}>Active within 5 min</p>
+                    <h1 className="text-5xl md:text-6xl font-black tracking-tighter mb-3">
+                        System Health <span className="text-gradient-hero">Overview</span>
+                    </h1>
+                    <p className="font-medium text-lg text-gray-500/80 max-w-2xl">
+                        Monitor your platform's heartbeat. Real-time metrics, system health, and administrative audit trails.
+                    </p>
                 </div>
 
-                <div className="card-minimal flex flex-col relative overflow-hidden group lg:col-span-2">
-                    <div className="flex justify-between items-start mb-6">
-                        <div className="w-12 h-12 rounded-[14px] flex items-center justify-center transition-all bg-white shadow-sm border border-gray-100" style={{ color: 'var(--c-teal)' }}>
-                            <HardDrive className="w-5 h-5" />
+                {/* KPI Row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+                    {/* Total Users */}
+                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-indigo-100/20 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-1">
+                        <div className="w-14 h-14 rounded-3xl flex items-center justify-center mb-6 transition-all bg-indigo-50 text-indigo-600 group-hover:scale-110 duration-500">
+                            <Users className="w-6 h-6" />
                         </div>
-                        <div className="text-right">
-                            <p className="text-[11px] font-black uppercase tracking-widest mb-1" style={{ color: 'var(--c-text-muted)' }}>Cluster Storage</p>
-                            <h3 className="text-[28px] font-black font-serif tracking-tight" style={{ color: 'var(--c-text)' }}>{loading ? <Skeleton className="w-24 h-8" /> : formatBytes(stats?.totalStorage || 0)}</h3>
-                        </div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 text-gray-400">Total Users</p>
+                        <h3 className="text-4xl font-black tracking-tighter text-gray-900">
+                            {loading ? <div className="w-16 h-10 bg-gray-100 rounded-lg animate-pulse" /> : stats?.totalUsers}
+                        </h3>
+                        <div className="mt-4 h-1 w-12 bg-indigo-100 rounded-full group-hover:w-full transition-all duration-700" />
                     </div>
-                    
-                    <div className="mt-auto">
-                        <div className="flex justify-between text-[10px] font-bold uppercase mb-2 tracking-widest" style={{ color: 'var(--c-text-muted)' }}>
-                            <span>Utilized</span>
-                            <span>10 GB Cap</span>
+
+                    {/* Online Now */}
+                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-coral-100/20 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-1">
+                        <div className="w-14 h-14 rounded-3xl flex items-center justify-center mb-6 transition-all bg-coral-light text-coral group-hover:scale-110 duration-500">
+                            <Activity className="w-6 h-6" />
                         </div>
-                        <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--c-surface-alt)' }}>
-                            <div className="h-full rounded-full transition-all duration-1000" style={{ background: 'var(--c-teal)', width: `${Math.min(((stats?.totalStorage || 0) / 10737418240) * 100, 100)}%` }}></div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 text-gray-400">Live Presence</p>
+                        <div className="flex items-center gap-3">
+                            <h3 className="text-4xl font-black tracking-tighter text-gray-900">
+                                {loading ? <div className="w-16 h-10 bg-gray-100 rounded-lg animate-pulse" /> : stats?.onlineNow}
+                            </h3>
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 anim-pulse shadow-[0_0_12px_rgba(16,185,129,0.5)]"></span>
+                        </div>
+                        <p className="text-[10px] font-bold mt-2 text-emerald-600/80 uppercase">Active within 5m</p>
+                    </div>
+
+                    {/* Cluster Storage */}
+                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-teal-100/20 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-1 lg:col-span-2 flex flex-col justify-between">
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="w-14 h-14 rounded-3xl flex items-center justify-center transition-all bg-teal-light text-teal group-hover:scale-110 duration-500">
+                                <HardDrive className="w-6 h-6" />
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 text-gray-400">Cluster Infrastructure</p>
+                                <h3 className="text-4xl font-black tracking-tighter text-gray-900">
+                                    {loading ? <div className="w-32 h-10 bg-gray-100 rounded-lg animate-pulse" /> : formatBytes(stats?.totalStorage || 0)}
+                                </h3>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div className="flex justify-between text-[10px] font-black uppercase mb-3 tracking-widest text-teal-600/60">
+                                <span>Physical Utilization</span>
+                                <span>10 GB Cap</span>
+                            </div>
+                            <div className="w-full h-3 bg-teal-50 rounded-full overflow-hidden border border-teal-100/50 p-0.5">
+                                <div className="h-full rounded-full transition-all duration-1500 ease-out bg-gradient-to-r from-teal-400 to-teal-500 shadow-[0_0_12px_rgba(20,184,166,0.3)]" 
+                                     style={{ width: `${Math.min(((stats?.totalStorage || 0) / 10737418240) * 100, 100)}%` }}></div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 card-minimal">
-                    <div className="flex justify-between items-center mb-8">
-                        <h2 className="text-[17px] font-bold" style={{ color: 'var(--c-text)' }}>Recent Activity Feed</h2>
-                        <Link to="/admin/logs" className="text-[11px] font-bold uppercase tracking-widest hover:opacity-80 transition-opacity" style={{ color: 'var(--c-primary)' }}>
-                            View All
-                        </Link>
-                    </div>
-                    
-                    <div className="space-y-6">
-                        {loading ? (
-                            Array(4).fill(0).map((_, i) => (
-                                <div key={i} className="flex gap-4">
-                                    <Skeleton className="w-10 h-10 rounded-[14px] shrink-0" />
-                                    <div className="space-y-2 w-full">
-                                        <Skeleton className="h-4 w-3/4" />
-                                        <Skeleton className="h-3 w-1/4" />
+                {/* Main Content Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
+                    {/* Activity Feed */}
+                    <div className="lg:col-span-2 glass-card p-10 rounded-[3rem] border border-white/40 shadow-xl shadow-gray-200/50">
+                        <div className="flex justify-between items-center mb-10">
+                            <div>
+                                <h2 className="text-2xl font-black text-gray-900 tracking-tight">Audit Stream</h2>
+                                <p className="text-sm font-medium text-gray-500 mt-1">Live administrative events feed</p>
+                            </div>
+                            <Link to="/admin/logs" className="btn-secondary px-6 rounded-2xl shadow-sm hover:shadow-md">
+                                Full History
+                            </Link>
+                        </div>
+                        
+                        <div className="space-y-6">
+                            {loading ? (
+                                Array(4).fill(0).map((_, i) => (
+                                    <div key={i} className="flex gap-6 items-center">
+                                        <Skeleton className="w-14 h-14 rounded-2xl shrink-0" />
+                                        <div className="space-y-2 w-full">
+                                            <Skeleton className="h-5 w-1/2" />
+                                            <Skeleton className="h-4 w-1/4" />
+                                        </div>
                                     </div>
+                                ))
+                            ) : logs.length === 0 ? (
+                                <div className="py-20 text-center flex flex-col items-center gap-4">
+                                    <div className="w-16 h-16 rounded-3xl bg-gray-50 flex items-center justify-center text-gray-300">
+                                        <Activity className="w-8 h-8" />
+                                    </div>
+                                    <p className="font-bold text-gray-400 uppercase tracking-widest text-xs">No recent activity detected</p>
                                 </div>
-                            ))
-                        ) : logs.length === 0 ? (
-                            <div className="py-20 text-center font-medium" style={{ color: 'var(--c-text-muted)' }}>No recent activity found.</div>
-                        ) : (
-                            logs.map(log => (
-                                <div key={log.id} className="flex gap-4 items-start pb-4 border-b last:border-0 last:pb-0" style={{ borderColor: 'var(--c-border-soft)' }}>
-                                    <div className="w-10 h-10 rounded-[14px] flex items-center justify-center shrink-0 shadow-sm border" style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border-soft)' }}>
-                                        <Activity className="w-4 h-4" style={{ color: 'var(--c-text-muted)' }} />
+                            ) : (
+                                logs.map((log, idx) => (
+                                    <div key={log.id} 
+                                         className="flex gap-6 items-start p-5 rounded-[2rem] border border-transparent hover:border-indigo-100 hover:bg-indigo-50/30 transition-all duration-300 group"
+                                         style={{ animationDelay: `${idx * 100}ms` }}>
+                                        <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-sm border border-gray-100 bg-white group-hover:scale-110 group-hover:shadow-md transition-all duration-500">
+                                            <Activity className="w-5 h-5 text-indigo-400" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <p className="text-lg font-bold text-gray-900 leading-tight truncate">{log.action}</p>
+                                                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-tighter bg-indigo-50 px-2 py-1 rounded-lg">
+                                                    {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm font-medium text-gray-500">
+                                                Entity: <span className="text-gray-900 font-bold uppercase text-[10px] tracking-widest ml-1">{log.entity_type}</span>
+                                                {log.target_user_id && <span className="mx-2 text-gray-300">|</span>}
+                                                {log.target_user_id && <span className="text-indigo-600 font-bold">User Context</span>}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="text-[14px] font-bold leading-tight mb-1" style={{ color: 'var(--c-text)' }}>{log.action}</p>
-                                        <p className="text-[12px] font-medium" style={{ color: 'var(--c-text-secondary)' }}>
-                                            {log.entity_type} {log.target_user_id ? `• User Context ` : ''} 
-                                            <span className="font-semibold ml-1" style={{ color: 'var(--c-primary)' }}>{formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}</span>
-                                        </p>
-                                    </div>
-                                </div>
-                            ))
-                        )}
+                                ))
+                            )}
+                        </div>
                     </div>
-                </div>
 
-                <div className="card-minimal">
-                    <h2 className="text-[17px] font-bold mb-8 flex items-center gap-2" style={{ color: 'var(--c-text)' }}>
-                        <ShieldAlert className="w-5 h-5" /> System Alerts
-                    </h2>
-                    
-                    <div className="space-y-4">
-                        {loading ? (
-                            <Skeleton className="h-20 w-full rounded-[20px]" />
-                        ) : alerts.length > 0 ? (
-                            alerts.map(alert => (
-                                <div key={alert.id} className="p-4 rounded-[18px] flex gap-4" style={{ 
-                                    background: alert.type === 'warning' ? 'var(--c-warning-light)' : 'var(--c-success-light)',
-                                    border: `1px solid ${alert.type === 'warning' ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)'}`
-                                }}>
-                                    <div className="shrink-0 w-2 h-2 mt-2 rounded-full anim-pulse" style={{ background: alert.type === 'warning' ? 'var(--c-warning)' : 'var(--c-success)' }}></div>
-                                    <div>
-                                        <p className="text-[14px] font-bold mb-1 flex items-center gap-1.5" style={{ color: 'var(--c-text)' }}>
-                                            {alert.type === 'success' && <CheckCircle2 className="w-4 h-4" style={{ color: 'var(--c-success)' }} />}
-                                            {alert.title}
-                                        </p>
-                                        <p className="text-[13px] font-medium" style={{ color: 'var(--c-text-secondary)' }}>{alert.message}</p>
-                                    </div>
-                                </div>
-                            ))
-                        ) : null}
+                    {/* System Alerts */}
+                    <div className="glass-card p-10 rounded-[3rem] border border-white/40 shadow-xl shadow-gray-200/50 flex flex-col">
+                        <AdminAlertCentre 
+                            limit={5} 
+                            onUpdate={() => {
+                                // Potentially re-fetch other dashboard stats if needed
+                            }} 
+                        />
                     </div>
                 </div>
             </div>

@@ -286,7 +286,7 @@ const SubjectDetail = () => {
                     return (
                         <div className="flex-1 h-full w-full flex flex-col" style={{ background: 'var(--c-canvas)' }}>
                             <iframe
-                                src={isDrive ? fileUrl : `${fileUrl}#view=Fit&toolbar=0&navpanes=0&scrollbar=1`}
+                                src={isDrive ? (fileUrl.includes('?') ? `${fileUrl}&rm=minimal` : `${fileUrl}?rm=minimal`) : `${fileUrl}#view=Fit&zoom=page-fit`}
                                 className="w-full flex-1 border-none"
                                 title={tab.title}
                                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms"

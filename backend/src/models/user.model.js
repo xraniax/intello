@@ -211,11 +211,53 @@ class User {
     }
 
     /**
+     * Count users exceeding a specific storage limit.
+     */
+    static async countExceedingStorage(limitBytes) {
+        // We use the same complex subquery logic as in findAll to get the actual usage
+        // This is necessary because storage_usage_bytes isn't a physical column
+        const res = await query(
+            `WITH user_usage AS (
+                SELECT u.id,
+                ((SELECT COALESCE(SUM(f.size_bytes), 0)::bigint FROM files f WHERE f.user_id = u.id) + 
+                 (SELECT COALESCE(SUM(OCTET_LENGTH(COALESCE(m.content, ''))), 0)::bigint FROM materials m WHERE m.user_id = u.id AND UPPER(m.status) != 'FAILED')
+                ) as usage
+                FROM users u
+                WHERE u.role != 'admin'
+            )
+            SELECT COUNT(*)::int as count FROM user_usage WHERE usage > $1`,
+            [limitBytes]
+        );
+        return res.rows[0].count;
+    }
+
+    /**
      * Compare provided password with stored hash
      */
     static async comparePassword(password, hashedPassword) {
         if (!hashedPassword) return false;
         return bcrypt.compare(password, hashedPassword);
+    }
+
+    /**
+     * Count users by role.
+     */
+    static async countByRole(role) {
+        const res = await query('SELECT COUNT(*)::int as count FROM users WHERE role = $1', [role]);
+        return res.rows[0].count;
+    }
+
+    /**
+     * Get aggregate storage budget stats for over-provisioning analysis.
+     */
+    static async getStorageBudget() {
+        const res = await query(`
+            SELECT 
+                COUNT(*) FILTER (WHERE storage_limit_bytes IS NULL AND role != 'admin')::int as default_quota_user_count,
+                COALESCE(SUM(storage_limit_bytes) FILTER (WHERE storage_limit_bytes IS NOT NULL AND role != 'admin'), 0)::bigint as custom_quota_total_bytes
+            FROM users
+        `);
+        return res.rows[0];
     }
 }
 

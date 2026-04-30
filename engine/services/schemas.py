@@ -67,6 +67,7 @@ class GenerateRequest(BaseModel):
     language: str = Field(default="en")
     user_id: Optional[str] = None
     generation_options: Optional[dict] = None
+    chunks: Optional[List[str]] = None
 
 class ChatRequest(BaseModel):
     subject_id: UUID
@@ -75,6 +76,7 @@ class ChatRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=50)
     language: str = Field(default="en")
     user_id: Optional[str] = None
+    chunks: Optional[List[str]] = None
 
 # --- Structured Output Models ---
 

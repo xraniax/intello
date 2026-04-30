@@ -999,6 +999,8 @@ async def chat_route(body: ChatRequest, db: Session = Depends(get_db)):
     try:
         if body.context and body.context.strip():
             context = body.context
+        elif body.chunks and isinstance(body.chunks, list) and len(body.chunks) > 0:
+            context = "\n\n".join(body.chunks)
         else:
             if body.subject_id is None:
                 return _stage_error_response(
@@ -1053,14 +1055,17 @@ async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
             )
 
         # Dispatch to celery
-        task = task_generate_material.delay(
-            str(body.subject_id),
-            material_type,
-            topic,
-            language,
-            body.top_k,
-            getattr(body, 'user_id', None),
-            request_options,
+        task = task_generate_material.apply_async(
+            kwargs={
+                "subject_id": str(body.subject_id) if body.subject_id else "",
+                "material_type": material_type,
+                "topic": topic,
+                "language": language,
+                "top_k": body.top_k,
+                "user_id": str(body.user_id) if body.user_id else None,
+                "options": request_options,
+                "chunks": body.chunks,
+            }
         )
         
         return {
@@ -1112,8 +1117,11 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
         )
 
     try:
-        chunks = retrieve_chunks_by_topic(db, str(body.subject_id), topic, body.top_k)
-        chunk_texts = [c.content for c in chunks if c.content]
+        if body.chunks and isinstance(body.chunks, list) and len(body.chunks) > 0:
+            chunk_texts = body.chunks
+        else:
+            chunks = retrieve_chunks_by_topic(db, str(body.subject_id), topic, body.top_k)
+            chunk_texts = [c.content for c in chunks if c.content]
     except Exception as e:
         logger.exception("Generation stream retrieval failed")
         return _stage_error_response(

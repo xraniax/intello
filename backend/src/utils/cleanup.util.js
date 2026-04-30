@@ -16,8 +16,9 @@ export const performStorageCleanup = async () => {
     };
 
     try {
-        const uploadDir = path.resolve('uploads');
+        const uploadDir = process.env.PDF_STORAGE_PATH || path.resolve('uploads');
         if (!fs.existsSync(uploadDir)) {
+            console.warn(`[Cleanup] Storage directory not found at: ${uploadDir}`);
             return stats;
         }
 

@@ -9,6 +9,7 @@ import SubjectService from './subject.service.js';
 import SettingsService from './settings.service.js';
 import QuotaService from './quota.service.js';
 import FallbackGenerationService from './fallback_generation.service.js';
+import AlertService from './alert.service.js';
 import { query } from '../utils/config/db.js';
 import {
     COMPLETED,
@@ -71,7 +72,7 @@ class MaterialService {
         let fileData = null;
         if (file) {
             const fileName = file.filename || file.originalname;
-            const filePath = file.path || `memory://${fileName}`;
+            const filePath = file.path;
 
             await File.create(
                 userId,
@@ -84,7 +85,6 @@ class MaterialService {
                 filePath
             );
             fileData = {
-                buffer: file.buffer,
                 name: file.originalname,
                 mimetype: file.mimetype,
                 path: filePath
@@ -103,7 +103,7 @@ class MaterialService {
 
             if (fileData) {
                 formData.append('file_path', fileData.path);
-                formData.append('file', fileData.buffer, {
+                formData.append('file', fs.createReadStream(fileData.path), {
                     filename: fileData.name,
                     contentType: fileData.mimetype,
                 });
@@ -124,6 +124,8 @@ class MaterialService {
             console.error(`[MaterialService] Failed to trigger AI job: ${error.message}`, { ...opContext, materialId: documentRecord?.id });
             if (documentRecord) {
                 await Material.updateStatus(documentRecord.id, userId, FAILED);
+                // Trigger Admin Alert
+                await AlertService.triggerGenerationFailure(userId, documentRecord.id, error.message);
             }
             return documentRecord ? await Material.findById(documentRecord.id, userId) : null;
         }
@@ -152,7 +154,9 @@ class MaterialService {
             if (diffMinutes > 10) {
                 console.warn(`[MaterialService] Job ${material.job_id} timed out after ${diffMinutes.toFixed(1)} mins.`);
                 generationConstraintByMaterialId.delete(String(materialId));
-                await Material.recordFailure(materialId, userId, 'Job timeout / worker failure');
+                const errorMsg = 'Job timeout / worker failure';
+                await Material.recordFailure(materialId, userId, errorMsg);
+                await AlertService.triggerGenerationFailure(userId, materialId, errorMsg);
                 await MaterialService._garbageCollectFile(materialId);
                 return await Material.findById(materialId, userId);
             }
@@ -202,8 +206,15 @@ class MaterialService {
                         );
                         generationConstraintByMaterialId.delete(String(materialId));
                     } else {
-                        const extractedText = result.extracted_text || material.content;
-                        await Material.updateContent(materialId, userId, extractedText);
+                        const extractedText = result.extracted_text;
+                        if (extractedText !== undefined && (typeof extractedText === 'string' && extractedText.trim() === '')) {
+                            console.log(`[MaterialService] Detected empty extraction for material ${materialId}. Marking as EMPTY.`);
+                            await Material.updateStatus(materialId, userId, 'EMPTY');
+                            return await Material.findById(materialId, userId);
+                        }
+                        
+                        const textToSave = extractedText || material.content;
+                        await Material.updateContent(materialId, userId, textToSave);
                         await Material.updateAIResult(materialId, userId, {
                             chunk_count: result.chunk_count,
                             provider: result.provider,
@@ -219,6 +230,7 @@ class MaterialService {
                 if (engineStatus === FAILURE || result?.status === 'FAILED') {
                     generationConstraintByMaterialId.delete(String(materialId));
                     await Material.recordFailure(materialId, userId, errorMsg);
+                    await AlertService.triggerGenerationFailure(userId, materialId, errorMsg);
                     await MaterialService._garbageCollectFile(materialId);
                     return await Material.findById(materialId, userId);
                 }
@@ -299,17 +311,42 @@ class MaterialService {
      * AI Chat grounded in a subject's knowledge base.
      */
     static async chatWithContext(userId, materialIds, question) {
-        const sourceDocuments = await Material.findByIds(materialIds, userId);
-        if (sourceDocuments.length === 0) return { result: "No source documents selected for context." };
+        const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const safeIds = (Array.isArray(materialIds) ? materialIds : [])
+            .filter(id => typeof id === 'string' && UUID_PATTERN.test(id));
 
-        const subjectId = sourceDocuments[0].subject_id;
+        const sourceDocuments = await Material.findByIds(safeIds, userId);
+        
+        // Validation: Check for failed or empty documents in the selection
+        const failedDocs = sourceDocuments.filter(d => d.status === 'FAILED');
+        if (failedDocs.length > 0) {
+            throw new Error(`Impossible to chat: One or more selected documents (e.g. "${failedDocs[0].title}") failed to process.`);
+        }
+
+        const emptyDocs = sourceDocuments.filter(d => d.status === 'EMPTY');
+        if (emptyDocs.length > 0 && sourceDocuments.length === emptyDocs.length) {
+            throw new Error('Context is not enough to chat. All selected documents are empty.');
+        }
+
+        const chunks = sourceDocuments
+            .filter(d => d.status === COMPLETED)
+            .map(d => d.content)
+            .filter(c => c && typeof c === 'string' && c.trim() !== '');
+
+        if (chunks.length === 0) {
+            throw new Error('Context is not enough: No readable text found in the selected documents.');
+        }
+
+        const subjectId = sourceDocuments.length > 0 ? sourceDocuments[0].subject_id : null;
+        if (!subjectId) return { result: "No source documents selected for context." };
 
         try {
             const payload = {
                 subject_id: subjectId,
                 question: question,
                 top_k: 8,
-                user_id: userId
+                user_id: userId,
+                chunks: chunks,
             };
             const options = { timeout: 300000 };
 
@@ -341,7 +378,29 @@ class MaterialService {
         const safeIds = (Array.isArray(materialIds) ? materialIds : [])
             .filter(id => typeof id === 'string' && UUID_PATTERN.test(id));
 
-        const finalSubjectId = subjectId || (safeIds.length > 0 ? (await Material.findById(safeIds[0], userId))?.subject_id : null);
+        const sourceDocuments = await Material.findByIds(safeIds, userId);
+        
+        // Validation: Check for failed or empty documents in the selection
+        const failedDocs = sourceDocuments.filter(d => d.status === 'FAILED');
+        if (failedDocs.length > 0) {
+            throw new Error(`Impossible to generate material: One or more selected documents (e.g. "${failedDocs[0].title}") failed to process.`);
+        }
+
+        const emptyDocs = sourceDocuments.filter(d => d.status === 'EMPTY');
+        if (emptyDocs.length > 0 && sourceDocuments.length === emptyDocs.length) {
+            throw new Error('Context is not enough to generate material. All selected documents are empty.');
+        }
+
+        const chunks = sourceDocuments
+            .filter(d => d.status === COMPLETED)
+            .map(d => d.content)
+            .filter(c => c && typeof c === 'string' && c.trim() !== '');
+
+        if (chunks.length === 0) {
+            throw new Error('Context is not enough: No readable text found in the selected documents.');
+        }
+
+        const finalSubjectId = subjectId || (sourceDocuments.length > 0 ? sourceDocuments[0].subject_id : null);
         if (!finalSubjectId) throw new Error('No subject context available for generation.');
 
         const materialType = TASK_TYPE_TO_MATERIAL_TYPE[taskType] || 'summary';
@@ -353,7 +412,8 @@ class MaterialService {
             language: (genOptions || {}).language || 'en',
             top_k: 20,
             user_id: userId,
-            options: genOptions
+            options: genOptions,
+            chunks: sourceDocuments.map(d => d.content)
         };
 
         return engineClient.post('/generate/stream', enginePayload, {
@@ -398,7 +458,7 @@ class MaterialService {
         const enginePayload = {
             subject_id: finalSubjectId,
             material_type: materialType,
-            chunks: sourceDocuments.map(d => d.content),
+            chunks: chunks,
             topic: genOptions.topic,
             language: genOptions.language || 'en',
             generation_options: gps,
@@ -418,12 +478,13 @@ class MaterialService {
         } catch (error) {
             console.error(`[MaterialService] Primary Path Failed: ${error.message}. Triggering Fallback Path.`);
             try {
-                const context = enginePayload.chunks.join('\n\n');
+                const context = chunks.join('\n\n');
                 await FallbackGenerationService.generateSync(userId, materialRecord.id, materialType, gps, context);
                 return { status: 'success', material_id: materialRecord.id, is_fallback: true };
             } catch (fallbackError) {
                 console.error(`[MaterialService] Critical Failure: Both paths failed.`, fallbackError);
                 await Material.recordFailure(materialRecord.id, userId, `All paths failed: ${fallbackError.message}`);
+                await AlertService.triggerGenerationFailure(userId, materialRecord.id, `Critical Failure: Primary and Fallback paths failed. ${fallbackError.message}`);
                 throw fallbackError;
             }
         }

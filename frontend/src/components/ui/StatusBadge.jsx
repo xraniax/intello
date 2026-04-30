@@ -32,6 +32,13 @@ const StatusBadge = ({ status }) => {
                     color: 'bg-red-50 text-red-600 border-red-100',
                     tooltip: 'Something went wrong during processing. Please try again.'
                 };
+            case 'EMPTY':
+                return {
+                    label: 'Empty',
+                    icon: <AlertCircle className="w-3.5 h-3.5" />,
+                    color: 'bg-slate-50 text-slate-500 border-slate-100',
+                    tooltip: 'This document contains no readable text. It cannot be used as context.'
+                };
             default:
                 return {
                     label: status || 'Pending',

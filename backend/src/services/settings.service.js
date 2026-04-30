@@ -37,15 +37,16 @@ class SettingsService {
         return value;
     }
 
-    /**
-     * Helper specifically for storage controls.
-     */
     static async getStorageControls() {
-        return await this.get('storage_controls') || {
-            max_file_size_mb: 10,
-            allowed_types: ["application/pdf"],
-            default_user_quota_mb: 100,
-            trash_ttl_days: parseInt(process.env.TRASH_TTL_DAYS, 10) || 30
+        const stored = await this.get('storage_controls') || {};
+        return {
+            max_file_size_mb: stored.max_file_size_mb ?? 10,
+            allowed_types: (stored.allowed_types?.length ? stored.allowed_types : ["application/pdf"]),
+            default_user_quota_mb: stored.default_user_quota_mb ?? 100,
+            max_cluster_size_gb: stored.max_cluster_size_gb ?? 100,
+            max_cluster_size_bytes: stored.max_cluster_size_bytes ?? (100 * 1024 * 1024 * 1024),
+            trash_ttl_days: stored.trash_ttl_days ?? (parseInt(process.env.TRASH_TTL_DAYS, 10) || 30),
+            allow_public_registration: stored.allow_public_registration ?? true,
         };
     }
 }

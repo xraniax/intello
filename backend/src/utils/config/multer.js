@@ -1,35 +1,43 @@
 import multer from 'multer';
 import path from 'path';
 import SettingsService from '../../services/settings.service.js';
+import AlertService from '../../services/alert.service.js';
 
 import fs from 'fs';
 
 // Use shared upload path in containers; local dev can override via PDF_STORAGE_PATH.
-const destPath = process.env.PDF_STORAGE_PATH || '/app/data/uploads';
+const destPath = process.env.PDF_STORAGE_PATH || path.resolve('uploads');
 // Ensure the directory exists (crucial for freshly mounted NFS volumes or fresh clones)
 fs.mkdirSync(destPath, { recursive: true });
 
 /**
- * Multer memory storage configuration.
- * Files are held in memory as buffers, avoiding disk permission issues.
+ * Multer disk storage configuration.
+ * Files are persisted to disk to act as a fallback, enabling admin download
+ * and correct metadata passing to processing pipelines.
  */
-const storage = multer.memoryStorage();
-
-const ALLOWED_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg']);
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, destPath);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
 
 /**
- * File filter: only allow supported document files.
+ * File filter: only allow supported document formats based on system rules.
  */
 const documentOnlyFilter = (req, file, cb) => {
-  const extOk = ALLOWED_EXTENSIONS.has(path.extname(file.originalname).toLowerCase());
+  const allowed = req.allowedMimeTypes || ['application/pdf'];
+  const mimeOk = allowed.includes(file.mimetype);
 
-  if (extOk) {
-    cb(null, true); // Accept file
+  if (mimeOk) {
+    cb(null, true);
   } else {
-    // Pass an error with a status code so errorHandler can render it correctly
-    const err = new Error(`Only supported document formats are allowed: ${[...ALLOWED_EXTENSIONS].join(', ')}.`);
+    const err = new Error(`File type prohibited. Allowed formats: ${allowed.join(', ')}.`);
     err.statusCode = 400;
-    cb(err, false); // Reject file
+    cb(err, false);
   }
 };
 
@@ -40,6 +48,9 @@ export const documentUpload = async (req, res, next) => {
   try {
     const controls = await SettingsService.getStorageControls();
     const maxSizeBytes = (controls?.max_file_size_mb || 10) * 1024 * 1024;
+    
+    // Pass allowed types to the filter via the request object
+    req.allowedMimeTypes = controls?.allowed_types || ['application/pdf'];
 
     const upload = multer({
       storage,
@@ -47,12 +58,15 @@ export const documentUpload = async (req, res, next) => {
       limits: { fileSize: maxSizeBytes }
     }).single('file');
 
-    upload(req, res, function (err) {
+    upload(req, res, async function (err) {
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-        const customErr = new Error(`File too large. Max allowed size is ${controls.max_file_size_mb}MB.`);
+        const errorMsg = `File too large. Max allowed size is ${controls.max_file_size_mb}MB.`;
+        await AlertService.triggerUploadFailure(req.user?.id, req.file?.originalname || 'Unknown File', errorMsg);
+        const customErr = new Error(errorMsg);
         customErr.statusCode = 400;
         return next(customErr);
       } else if (err) {
+        await AlertService.triggerUploadFailure(req.user?.id, req.file?.originalname || 'Unknown File', err.message);
         return next(err);
       }
       next();

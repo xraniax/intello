@@ -19,14 +19,23 @@ router.delete('/users/:id', AdminController.deleteUser);
 
 // File Management
 router.get('/files', AdminController.getAllFiles);
+router.get('/files/:id/download', AdminController.downloadFile);
 router.delete('/files/:id', AdminController.deleteFile);
 
 // System Settings & Maintenance
 router.get('/settings', AdminController.getSettings);
-router.patch('/settings', AdminController.updateSettings);
+router.put('/settings', AdminController.updateSettings);
+router.get('/quota-impact', AdminController.getQuotaImpact);
+router.put('/users/:userId/storage-limit', AdminController.updateStorageLimit);
 router.post('/storage/cleanup', AdminController.cleanupStorage);
 
 // Audit Logs
 router.get('/logs', AdminController.getLogs);
+
+// Incident Alerts
+router.get('/alerts', AdminController.getAlerts);
+router.get('/alerts/stats', AdminController.getAlertStats);
+router.patch('/alerts/:id/resolve', AdminController.resolveAlert);
+router.delete('/alerts/:id', AdminController.deleteAlert);
 
 export default router;

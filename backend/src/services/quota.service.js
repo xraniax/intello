@@ -54,7 +54,11 @@ class QuotaService {
      * Throws an error with a clear message if not allowed.
      */
     static async checkUploadAllowance(userId, incomingSizeBytes) {
-        const stats = await this.getUserStorageStats(userId);
+        const [stats, globalStats, controls] = await Promise.all([
+            this.getUserStorageStats(userId),
+            this.getGlobalStorageStats(),
+            SettingsService.getStorageControls()
+        ]);
 
         // 1. Suspension Check
         if (stats.status === 'SUSPENDED') {
@@ -64,7 +68,16 @@ class QuotaService {
             throw error;
         }
 
-        // 2. Capacity Check
+        // 2. Global Capacity Check
+        const maxClusterBytes = controls.max_cluster_size_bytes || (1024 * 1024 * 1024 * 10); // Default 10GB
+        if (globalStats.totalUsedBytes + incomingSizeBytes > maxClusterBytes) {
+            const error = new Error('Upload rejected: the platform has reached its maximum storage capacity. Please contact an administrator.');
+            error.statusCode = 403;
+            error.code = 'STORAGE_FULL';
+            throw error;
+        }
+
+        // 3. Individual User Quota Check
         const remainingBytes = stats.limitBytes - stats.usedBytes;
         if (incomingSizeBytes > remainingBytes) {
             const incomingMb = (incomingSizeBytes / (1024 * 1024)).toFixed(2);

@@ -1,26 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { adminService } from '@/features/admin/services/AdminService';
-import { File as FileIcon, HardDrive, ShieldCheck, Database, Server, TrendingUp, AlertTriangle } from 'lucide-react';
+import { File as FileIcon, HardDrive, ShieldCheck, Database, Server, TrendingUp, AlertTriangle, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CustomModal from '@/components/ui/CustomModal';
-import StorageSettings from '@/components/Admin/AdminFiles/StorageSettings';
 import FileList from '@/components/Admin/AdminFiles/FileList';
 import Skeleton from '@/components/ui/Skeleton';
+import { formatBytes } from '@/utils/format';
 
-const formatBytes = (bytes) => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
 
 const AdminFiles = () => {
     const [files, setFiles] = useState([]);
     const [settings, setSettings] = useState(null);
     const [stats, setStats] = useState({ total_storage_bytes: 0 });
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('files');
     const [filters, setFilters] = useState({ userId: '', subjectId: '', mimeType: '', minSizeMb: '', sortBy: 'created_at', order: 'desc' });
     
     // Bulk Selection State
@@ -45,11 +37,10 @@ const AdminFiles = () => {
                 adminService.getFiles(filters),
                 adminService.getSettings()
             ]);
-            setFiles(filesRes.data.data);
-            setSettings(settingsRes.data.data.storage);
+            setFiles(filesRes.data?.data || []);
+            setSettings(settingsRes.data?.data?.storage || {});
             setStats({
-                // Ensure we capture total sum strictly from global stats
-                total_storage_bytes: settingsRes.data.data.stats.total_storage_bytes || 0
+                total_storage_bytes: settingsRes.data?.data?.stats?.total_storage_bytes || 0
             });
             // Clear selections when fetching new data
             setSelectedFileIds(new Set());
@@ -57,6 +48,22 @@ const AdminFiles = () => {
             toast.error('Failed to load storage data');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDownload = async (fileId, fileName) => {
+        try {
+            const response = await adminService.downloadFile(fileId);
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', fileName);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            toast.error('Download failed');
         }
     };
 
@@ -108,126 +115,108 @@ const AdminFiles = () => {
         setIsModalOpen(true);
     };
 
-    const handleUpdateSettings = async (newSettings) => {
-        try {
-            await adminService.updateSettings({ storage: newSettings });
-            toast.success('System limits updated');
-            setSettings(newSettings);
-        } catch (err) {
-            toast.error('Failed to update settings');
-        }
-    };
 
-    const totalCapacity = 10 * 1024 * 1024 * 1024; // Visual mock: 10GB total cluster cap if not provided
+
+    const totalCapacity = settings?.max_cluster_size_bytes
+        || (settings?.max_cluster_size_gb ? settings.max_cluster_size_gb * 1073741824 : 10 * 1024 * 1024 * 1024);
     const usedBytes = stats.total_storage_bytes || 0;
     const availableBytes = Math.max(0, totalCapacity - usedBytes);
     const usagePercent = Math.min((usedBytes / totalCapacity) * 100, 100);
 
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-10 animate-in fade-in duration-500">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
-                <div className="group">
-                    <div className="flex items-center gap-2 text-indigo-500 font-bold text-xs uppercase tracking-[0.2em] mb-1">
-                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 anim-pulse"></div>
-                        <span>Admin Console</span>
-                    </div>
-                    <h1 className="text-5xl font-black text-gray-900 tracking-tight lg:tracking-tighter mb-2">
-                        Storage <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600 drop-shadow-sm">Management</span>
-                    </h1>
-                    <p className="text-gray-500 font-medium text-lg mt-2">Audit active uploads, monitor resource limits, and free up space.</p>
-                </div>
-            </div>
+        <div className="relative min-h-[calc(100vh-64px)] p-6 md:p-10 max-w-7xl mx-auto overflow-hidden">
+            {/* Ambient Decorative Orbs */}
+            <div className="ambient-orb ambient-orb-lg ambient-orb-1 top-[-10%] right-[-5%] bg-purple-200/30"></div>
+            <div className="ambient-orb ambient-orb-md ambient-orb-2 bottom-[10%] left-[-5%] bg-indigo-200/20"></div>
 
-            {/* Metrics KPI Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10">
-                <div className="card-minimal flex flex-col justify-between group">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Database className="w-4 h-4 text-indigo-400" />
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest group-hover:text-indigo-400 transition-colors">Total Capacity</span>
+            <div className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                {/* Header */}
+                    <div className="flex justify-between items-start">
+                        <div className="group">
+                            <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-[0.2em] mb-2 text-indigo-500">
+                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 anim-pulse"></div>
+                                <span>Command Center</span>
+                            </div>
+                            <h1 className="text-5xl md:text-6xl font-black tracking-tighter mb-3">
+                                File <span className="text-gradient-hero">Explorer</span>
+                            </h1>
+                            <p className="font-medium text-lg text-gray-500/80 max-w-2xl">
+                                Audit active uploads, manage storage assets, and scan cluster volumes.
+                            </p>
+                        </div>
+                        <button 
+                            onClick={() => fetchData(true)}
+                            className="p-4 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-[1.5rem] transition-all shadow-sm hover:shadow-md border border-transparent hover:border-gray-100 mt-8"
+                            title="Refresh Storage Metrics"
+                        >
+                            <RefreshCw className={`w-6 h-6 ${loading ? 'animate-spin' : ''}`} />
+                        </button>
                     </div>
-                    <span className="text-3xl font-black text-gray-900 truncate">
-                        {loading ? <Skeleton className="w-20 h-8" /> : formatBytes(totalCapacity)}
-                    </span>
-                </div>
-                
-                <div className="card-minimal relative overflow-hidden flex flex-col justify-between group">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                            <Server className="w-4 h-4 text-orange-400" />
-                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest group-hover:text-orange-400 transition-colors">Physical Storage Used</span>
+
+                {/* Metrics Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
+                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-indigo-100/20 group hover:-translate-y-1 transition-all duration-300">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-500">
+                                <Database className="w-5 h-5" />
+                            </div>
+                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest group-hover:text-indigo-400">Total Capacity</span>
+                        </div>
+                        <span className="text-4xl font-black text-gray-900 truncate block">
+                            {loading ? <Skeleton className="w-20 h-10" /> : formatBytes(totalCapacity)}
+                        </span>
+                        <div className="mt-6 h-1 w-8 bg-indigo-100 rounded-full group-hover:w-full transition-all duration-700"></div>
+                    </div>
+                    
+                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-orange-100/20 group hover:-translate-y-1 transition-all duration-300 relative overflow-hidden">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-500">
+                                <Server className="w-5 h-5" />
+                            </div>
+                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest group-hover:text-orange-400">Cluster Usage</span>
+                        </div>
+                        <span className="text-4xl font-black text-gray-900 truncate block z-10 relative">
+                            {loading ? <Skeleton className="w-24 h-10" /> : formatBytes(usedBytes)}
+                        </span>
+                        <div className="absolute bottom-0 left-0 h-1.5 w-full bg-gray-50/50">
+                            <div className="h-full bg-gradient-to-r from-orange-400 to-orange-500 transition-all duration-1500 ease-out shadow-[0_0_8px_rgba(249,115,22,0.3)]" 
+                                 style={{ width: `${usagePercent}%` }}></div>
                         </div>
                     </div>
-                    <span className="text-3xl font-black text-gray-900 truncate z-10 block pb-3">
-                        {loading ? <Skeleton className="w-24 h-8 inline-block" /> : formatBytes(usedBytes)}
-                    </span>
-                    <div className="absolute bottom-0 left-0 h-1.5 w-full bg-gray-50">
-                        <div className="h-full bg-orange-400 transition-all duration-1000" style={{ width: `${usagePercent}%` }}></div>
+
+                    <div className="glass-card p-6 rounded-[2.5rem] border border-white/50 shadow-xl shadow-emerald-100/20 group hover:-translate-y-1 transition-all duration-300">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500">
+                                <ShieldCheck className="w-5 h-5" />
+                            </div>
+                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest group-hover:text-emerald-500">Available</span>
+                        </div>
+                        <span className="text-4xl font-black text-emerald-600 truncate block">
+                            {loading ? <Skeleton className="w-24 h-10" /> : formatBytes(availableBytes)}
+                        </span>
+                        <div className="mt-6 h-1 w-8 bg-emerald-100 rounded-full group-hover:w-full transition-all duration-700"></div>
                     </div>
                 </div>
 
-                <div className="card-minimal flex flex-col justify-between group">
-                    <div className="flex items-center gap-2 mb-2">
-                        <ShieldCheck className="w-4 h-4 text-mint-500" />
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest group-hover:text-mint-500 transition-colors">Available Space</span>
-                    </div>
-                    <span className="text-3xl font-black text-mint-600 truncate">
-                        {loading ? <Skeleton className="w-24 h-8" /> : formatBytes(availableBytes)}
-                    </span>
-                </div>
+            <div className="animate-in slide-in-from-bottom-4 duration-500 relative">
+                <FileList 
+                    files={files} 
+                    onDelete={handleDeleteFile} 
+                    onDownload={handleDownload}
+                    filters={filters}
+                    setFilters={setFilters}
+                    settings={settings}
+                    selectedIds={selectedFileIds}
+                    setSelectedIds={setSelectedFileIds}
+                    onBulkDelete={handleBulkDelete}
+                />
             </div>
-
-            {/* Navigation Tabs */}
-            <div className="flex items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 w-max mb-6 shadow-inner">
-                <button
-                    onClick={() => setActiveTab('files')}
-                    className={`px-8 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'files' ? 'bg-white text-gray-900 shadow-md shadow-gray-200/50' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                    <FileIcon className="w-4 h-4" />
-                    File Explorer
-                </button>
-                <button
-                    onClick={() => setActiveTab('settings')}
-                    className={`px-8 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'settings' ? 'bg-white text-gray-900 shadow-md shadow-gray-200/50' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                    <ShieldCheck className="w-4 h-4" />
-                    System Rules
-                </button>
-            </div>
-
-            {loading ? (
-                <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-20 flex flex-col items-center justify-center animate-pulse">
-                    <div className="w-16 h-16 border-4 border-indigo-50 border-t-indigo-500 rounded-full animate-spin mb-6"></div>
-                    <h3 className="text-xl font-black text-gray-900 mb-2">Scanning Cluster Volumes</h3>
-                    <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Synchronizing metrics...</p>
-                </div>
-            ) : (
-                <div className="animate-in slide-in-from-bottom-4 duration-500 relative">
-                    {activeTab === 'files' ? (
-                        <FileList 
-                            files={files} 
-                            onDelete={handleDeleteFile} 
-                            filters={filters}
-                            setFilters={setFilters}
-                            settings={settings}
-                            selectedIds={selectedFileIds}
-                            setSelectedIds={setSelectedFileIds}
-                            onBulkDelete={handleBulkDelete}
-                        />
-                    ) : (
-                        <StorageSettings 
-                            settings={settings} 
-                            stats={stats}
-                            onUpdate={handleUpdateSettings} 
-                        />
-                    )}
-                </div>
-            )}
 
             <CustomModal
                 isOpen={isModalOpen}
                 onClose={() => !isActionLoading && setIsModalOpen(false)}
                 title={modalConfig.title}
+                showFooter={false}
             >
                 <div className="p-6 text-center">
                     <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-6 mx-auto bg-red-50 text-red-600 border border-red-100">
@@ -254,6 +243,7 @@ const AdminFiles = () => {
                     </div>
                 </div>
             </CustomModal>
+            </div>
         </div>
     );
 };
