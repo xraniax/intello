@@ -82,3 +82,28 @@ def retrieve_chunks_by_topic(
 
     log.info(f"STEP: RETRIEVAL SUCCESS for subject {subject_id} (duration: {time.perf_counter() - start_time:.2f}s, retrieved: {len(chunks)})")
     return chunks
+
+def retrieve_sequential_chunks(
+    session: Session,
+    subject_id: UUID,
+    limit: Optional[int] = None
+) -> List[Chunk]:
+    """
+    Retrieve all chunks for a subject sequentially for full-document analysis (e.g. Map-Reduce).
+    Ordered by creation and ID ascending to reconstruct the document.
+    """
+    normalized_subject_id = subject_id
+    if isinstance(subject_id, str):
+        try:
+            normalized_subject_id = UUID(subject_id)
+        except ValueError:
+            return []
+
+    query = session.query(Chunk).join(Document)\
+        .filter(Document.subject_id == normalized_subject_id)\
+        .order_by(Chunk.created_at.asc(), Chunk.id.asc())
+        
+    if limit:
+        query = query.limit(limit)
+        
+    return query.all()

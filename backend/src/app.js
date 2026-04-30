@@ -12,10 +12,6 @@ dotenv.config();
 
 const app = express();
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-const uploadStoragePath = process.env.PDF_STORAGE_PATH || 'uploads';
-const normalizedUploadPath = path.isAbsolute(uploadStoragePath)
-  ? uploadStoragePath
-  : path.resolve(uploadStoragePath);
 
 // Middlewares
 app.use(cors({
@@ -40,11 +36,6 @@ app.use(passport.session());
 // Apply rate limiter to all api routes
 app.use('/api/', apiLimiter);
 
-// Static files (for uploads)
-app.use('/uploads', express.static(normalizedUploadPath));
-// Backward-compatibility: older records may store absolute container paths.
-app.use('/app/data/uploads', express.static(normalizedUploadPath));
-
 // Routes
 import authRoutes from './routes/auth.routes.js';
 import materialRoutes from './routes/material.routes.js';
@@ -53,9 +44,11 @@ import adminRoutes from './routes/admin.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import examRoutes from './routes/exam.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
+import fileRoutes from './routes/file.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
+app.use('/api/files', fileRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/profile', profileRoutes);

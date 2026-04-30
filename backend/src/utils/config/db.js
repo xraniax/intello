@@ -7,13 +7,15 @@ const { Pool } = pg;
 
 const isTest = process.env.NODE_ENV === 'test';
 
-// Skip real pool creation in test mode to prevent dangling connections
+if (!isTest && !process.env.DATABASE_URL) {
+    console.error('❌ DATABASE_URL is not set. Cannot start without a database connection.');
+    console.error('   Local:   set DATABASE_URL in backend/.env');
+    console.error('   Staging: use docker-compose.staging.yml with --env-file .env.staging');
+    process.exit(1);
+}
+
 const pool = isTest ? { on: () => { } } : new Pool({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT) || 5432,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    connectionString: process.env.DATABASE_URL,
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
@@ -24,9 +26,6 @@ if (!isTest) {
     pool.on('error', (err) => console.error('Unexpected PostgreSQL idle client error:', err.message));
 }
 
-/**
- * Executes a parameterized SQL query.
- */
 export const query = async (text, params) => {
     if (isTest && global.__mockDbQuery) {
         return global.__mockDbQuery(text, params);

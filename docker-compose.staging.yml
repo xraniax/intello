@@ -1,0 +1,23 @@
+# Staging overlay — Neon PostgreSQL instead of local Docker PostgreSQL.
+#
+# Usage (from repo root):
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml --env-file .env.staging up
+#
+# .env.staging must define DATABASE_URL pointing to the Neon instance.
+# All other services (Redis, Ollama, etc.) remain unchanged from docker-compose.yml.
+#
+# The local `db` container still starts (other services health-check against it),
+# but backend / engine / celery_worker will connect to Neon instead.
+
+services:
+  backend:
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+
+  engine:
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+
+  celery_worker:
+    environment:
+      - DATABASE_URL=${DATABASE_URL}

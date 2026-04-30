@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo \"exit:$?\")",
+      "Bash(node --input-type=module)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('c:/Users/ASUS/Documents/GitHub/cognify/engine/services/generation.py'\\).read\\(\\)\\); print\\('generation.py: syntax OK'\\)\")",
+      "Bash(node -e *)",
+      "Bash(xargs grep *)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(\"c:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\.venv\\\\Scripts\\\\python.exe\" -m pip list)",
+      "Bash(OLLAMA_GENERATION_MODEL=test \"c:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\.venv\\\\Scripts\\\\python.exe\" -m unittest discover -s tests -p \"test_summary_prompts.py\" -v)"
+    ]
+  }
+}

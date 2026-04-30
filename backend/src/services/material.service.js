@@ -324,12 +324,16 @@ class MaterialService {
         const typeMap = { summary: 'summary', quiz: 'quiz', flashcards: 'flashcards', mock_exam: 'exam' };
         const materialType = typeMap[taskType] || 'summary';
 
+        // Build GPS so difficulty reaches the engine prompt builder
+        const gps = this._buildGPS(taskType, genOptions);
+
         const enginePayload = {
             subject_id: finalSubjectId,
             material_type: materialType,
             topic: (genOptions || {}).topic,
             language: (genOptions || {}).language || 'en',
             top_k: 20,
+            generation_options: gps,
         };
 
         return engineClient.post('/generate/stream', enginePayload, {

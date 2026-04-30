@@ -2,22 +2,23 @@ import os
 import sys
 import logging
 import time
+import traceback
 from uuid import UUID
 from typing import Optional, Dict, Any, List, Union
+
+# Must come before any local imports so Celery workers find the project root
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from celery_app import celery_app
+from database import SessionLocal
+from services.google_drive import download_file_from_drive
+from services.ingestion import ingest_file
+from services.retrieval import retrieve_chunks_by_topic
+from services.generation import generate_study_material
 from utils.logging import get_job_logger
 
-# Define global logger for top-level tasks and initialization
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-# Ensure project root is in path for Celery workers
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from celery import chain
-from celery_app import celery_app
-import redis
-import json
-import traceback
 
 # DEPRECATED: Standardizing on utils.logging.get_job_logger
 def get_job_logger_deprecated(job_id):
@@ -390,9 +391,14 @@ def task_process_document(
     user_id: str,
     request_id: Optional[str] = None,
 ):
-    """Background celery task for document extraction, chunking, embedding, and DB persistence."""
+    """
+    Background celery task for document extraction, chunking, embedding,
+    and DB persistence.
+    """
+
     task_id = getattr(getattr(self, "request", None), "id", None)
     started_at = time.time()
+
     logger.info(
         "[PIPELINE] task_start request_id=%s task_id=%s drive_file_id=%s filename=%s subject_id=%s",
         request_id,
@@ -403,44 +409,63 @@ def task_process_document(
     )
 
     if not user_id:
-        raise ValueError("Missing user context: user_id is required for ingestion")
+        raise ValueError("Missing user context: user_id is required")
+
     if not subject_id:
-        raise ValueError("Missing subject context: subject_id is required for ingestion")
-    
+        raise ValueError("Missing subject context: subject_id is required")
+
     tmp_path = None
     db = SessionLocal()
+
     try:
-        logger.info(
-            "[PIPELINE] drive_download_begin request_id=%s task_id=%s drive_file_id=%s",
-            request_id,
-            task_id,
-            drive_file_id,
-        )
+        # ---- Drive download ----
         try:
-            download_started = time.time()
-            tmp_path = download_file_from_drive(drive_file_id, request_id=request_id)
-            if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
-                logger.warning("Downloaded file is empty: %s", tmp_path)
+            logger.info(
+                "[PIPELINE] drive_download_begin request_id=%s task_id=%s drive_file_id=%s",
+                request_id,
+                task_id,
+                drive_file_id,
+            )
+
+            started_download = time.time()
+
+            tmp_path = download_file_from_drive(
+                drive_file_id,
+                request_id=request_id,
+            )
+
+            if not tmp_path or not os.path.exists(tmp_path):
+                raise RuntimeError("Downloaded file missing after drive fetch")
+
+            file_size = os.path.getsize(tmp_path)
+
+            if file_size == 0:
+                raise RuntimeError("Downloaded file is empty")
+
             logger.info(
                 "[PIPELINE] drive_download_end request_id=%s task_id=%s tmp_path=%s bytes=%d elapsed_ms=%d",
                 request_id,
                 task_id,
                 tmp_path,
-                os.path.getsize(tmp_path) if tmp_path and os.path.exists(tmp_path) else 0,
-                int((time.time() - download_started) * 1000),
+                file_size,
+                int((time.time() - started_download) * 1000),
             )
-        except Exception as e:
-            logger.error("Drive download error: %s", e)
+
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning("Transient drive error, retrying: %s", e)
             raise self.retry(exc=e, countdown=15)
-            
-        logger.info(
-            "[PIPELINE] ingestion_begin request_id=%s task_id=%s tmp_path=%s",
-            request_id,
-            task_id,
-            tmp_path,
-        )
+
+        # ---- Ingestion ----
         try:
-            ingest_started = time.time()
+            logger.info(
+                "[PIPELINE] ingestion_begin request_id=%s task_id=%s tmp_path=%s",
+                request_id,
+                task_id,
+                tmp_path,
+            )
+
+            started_ingest = time.time()
+
             ingest_result = ingest_file(
                 db,
                 file_path=tmp_path,
@@ -450,6 +475,7 @@ def task_process_document(
                 source_uri=f"https://drive.google.com/file/d/{drive_file_id}/view",
                 request_id=request_id,
             )
+
             logger.info(
                 "[PIPELINE] ingestion_end request_id=%s task_id=%s subject_id=%s document_id=%s chunks=%s elapsed_ms=%d",
                 request_id,
@@ -457,12 +483,17 @@ def task_process_document(
                 ingest_result.get("subject_id"),
                 ingest_result.get("document_id"),
                 ingest_result.get("chunks"),
-                int((time.time() - ingest_started) * 1000),
+                int((time.time() - started_ingest) * 1000),
             )
-        except Exception as e:
+
+        except (ConnectionError, TimeoutError) as e:
             db.rollback()
-            logger.error("Ingestion error for %s: %s", original_filename, e)
+            logger.warning("Transient ingestion error, retrying: %s", e)
             raise self.retry(exc=e, countdown=10)
+
+        except Exception:
+            db.rollback()
+            raise
 
         logger.info(
             "[PIPELINE] task_success request_id=%s task_id=%s filename=%s total_elapsed_ms=%d",
@@ -471,6 +502,7 @@ def task_process_document(
             original_filename,
             int((time.time() - started_at) * 1000),
         )
+
         return {
             "status": "success",
             "subject_id": ingest_result.get("subject_id"),
@@ -480,9 +512,10 @@ def task_process_document(
         }
 
     except Exception as e:
-        logger.error(f"Task crashed for {original_filename}: {e}")
+        logger.error("Task crashed for %s: %s", original_filename, e)
         logger.error(traceback.format_exc())
-        raise self.retry(exc=e, countdown=10)
+        raise
+
     finally:
         logger.info(
             "[PIPELINE] cleanup request_id=%s task_id=%s tmp_path=%s",
@@ -490,18 +523,34 @@ def task_process_document(
             task_id,
             tmp_path,
         )
+
         _safe_remove(tmp_path)
-        db.close()
+
+        try:
+            db.close()
+        except Exception:
+            logger.exception("DB close failed")
 
 
-@celery_app.task(bind=True, max_retries=3)
-def task_generate_material(self, subject_id: str, material_type: str, topic: Optional[str] = None, language: str = "en", top_k: int = 5, user_id: Optional[str] = None):
+            
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    soft_time_limit=1800,
+    time_limit=2100,
+)
+def task_generate_material(self, subject_id: str, material_type: str, topic: Optional[str] = None, language: str = "en", top_k: int = 5, user_id: Optional[str] = None, difficulty: str = "intermediate"):
     """Background celery task for executing Retrieval-Augmented LLM generation."""
-    logger.info("Celery task_generate_material started: subject=%s, type=%s, topic=%s", subject_id, material_type, topic)
+    logger.info("Celery task_generate_material started: subject=%s, type=%s, topic=%s, difficulty=%s", subject_id, material_type, topic, difficulty)
     db = SessionLocal()
     try:
         # 1. Retrieve context chunks
-        chunks = retrieve_chunks_by_topic(db, subject_id, topic, top_k)
+        if material_type == "summary":
+            from services.retrieval import retrieve_sequential_chunks
+            chunks = retrieve_sequential_chunks(db, subject_id)
+        else:
+            chunks = retrieve_chunks_by_topic(db, subject_id, topic, top_k)
+            
         chunk_texts = [c.content for c in chunks if c.content]
         
         logger.info(f"Retrieved {len(chunk_texts)} chunk texts for generation.")
@@ -510,7 +559,7 @@ def task_generate_material(self, subject_id: str, material_type: str, topic: Opt
             raise ValueError("No document chunks found for the given subject or topic.")
             
         # 2. Generate material (this handles its own LLM retries)
-        material = generate_study_material(chunk_texts, material_type, topic, language)
+        material = generate_study_material(chunk_texts, material_type, topic, language, difficulty=difficulty)
         ai_generated_content = _normalize_generation_result(
             material,
             material_type,

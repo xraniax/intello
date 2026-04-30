@@ -23,6 +23,7 @@ OLLAMA_CHAT_TIMEOUT = int(os.getenv("OLLAMA_CHAT_TIMEOUT", "120"))
 OLLAMA_MAX_CONTEXT_CHARS = int(os.getenv("OLLAMA_MAX_CONTEXT_CHARS", "15000"))
 OLLAMA_REQUEST_RETRIES = int(os.getenv("OLLAMA_REQUEST_RETRIES", "4"))
 OLLAMA_REQUEST_RETRY_DELAY_SECONDS = float(os.getenv("OLLAMA_REQUEST_RETRY_DELAY_SECONDS", "2"))
+MAP_MAX_CHUNKS = int(os.getenv("MAP_MAX_CHUNKS", "80"))
 
 
 def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_type: str) -> str:
@@ -228,23 +229,74 @@ def _validate_non_empty_material(material_type: str, parsed: Dict[str, Any]) -> 
         logger.warning("Non-empty validation failed for %s: %s", material_type, e)
     return None
 
+
+def _build_summary_system_prompt() -> str:
+    """Centralized system prompt for summary generation.
+
+    Focuses on writing STYLE and TONE rather than rigid formatting rules.
+    Used by both streaming and async generation paths for consistency.
+    """
+    return (
+        "You are a knowledgeable student explaining material to a classmate. "
+        "Write in a natural, human voice — clear and direct, not formal or robotic. "
+        "Prioritize the most important ideas; not everything deserves equal coverage. "
+        "Never narrate what the document is about (avoid 'This text discusses...', "
+        "'The document covers...', 'In this paper...'). "
+        "Instead, just explain the actual content directly. "
+        "Choose whatever structure fits best — flowing paragraphs, or short bullet "
+        "groups when listing related items — but never force one format throughout. "
+        "Do not use headers, section titles, or bold/italic formatting."
+    )
+
 def build_prompt(
     material_type: str,
     context: str,
     topic: Optional[str],
     language: str,
     student_profile: Optional[Dict[str, Any]] = None,
+    difficulty: str = "intermediate",
 ) -> str:
     """Build a structured prompt for the LLM based on material type."""
     
     json_format_instructions = "Return ONLY valid JSON. Do not include any markdown formatting, pre-amble, or post-amble."
 
     if material_type == "summary":
-        base_instructions = f"Provide a comprehensive summary of the given context in {language}. Format the output in clear paragraphs."
+        lang_phrase = f" Write in {language}." if language and language.lower() != "en" else ""
+
+        # Difficulty-aware depth instructions
+        if difficulty in ("introductory", "beginner", "easy"):
+            depth_instruction = (
+                "Focus ONLY on the 2-3 most important ideas. "
+                "Skip minor details, examples, and edge cases entirely. "
+                "Keep it short and simple — a quick overview someone can read in under a minute."
+            )
+        elif difficulty in ("advanced", "hard"):
+            depth_instruction = (
+                "Cover nearly all the major and supporting ideas from the material. "
+                "Include important details, distinctions, and nuances, but still synthesize — "
+                "do not just restate every sentence. Explain connections between concepts."
+            )
+        else:  # intermediate / default
+            depth_instruction = (
+                "Cover all major concepts but compress the explanations. "
+                "Include enough detail to understand each idea, but skip minor examples "
+                "and tangential points. Aim for a balanced, medium-length summary."
+            )
+
+        base_instructions = (
+            f"Summarize the following material as if you are a student explaining it to a classmate.{lang_phrase}\n"
+            f"{depth_instruction}\n"
+            f"Prioritize the most important ideas — not every detail deserves equal space.\n"
+            f"Write naturally. Choose paragraphs or occasional short bullet groups, whichever fits the content best. "
+            f"Do NOT force everything into one format.\n"
+            f"Never open with phrases like 'This document covers', 'The text discusses', or 'This summary'. "
+            f"Jump straight into the actual content.\n"
+            f"Do NOT use headers, section titles, or bold formatting."
+        )
         prompt = (
-            f"System instructions:\n{base_instructions}\n"
-            f"Context:\n---\n{context}\n---\n\n"
-            f"Generate the summary now:"
+            f"System instructions:\n{base_instructions}\n\n"
+            f"Text to summarize:\n---\n{context}\n---\n\n"
+            f"Summary:"
         )
         return prompt
 
@@ -349,6 +401,61 @@ def build_prompt(
     return prompt
 
 
+def _map_summarize_chunk(chunk_text: str, language: str, timeout: int, retries: int) -> str:
+    """Summarize a single chunk for the MAP stage."""
+    prompt = (
+        f"System instructions:\n"
+        f"You are a highly efficient assistant. Compress the following text into a concise summary in {language}. "
+        f"Extract ALL key facts, concepts, and details without omitting important information. "
+        f"Do not add introductions or conclusions. Return ONLY the summary.\n\n"
+        f"Text to summarize:\n---\n{chunk_text}\n---\n\n"
+        f"Summary:"
+    )
+    
+    payload: Dict[str, Any] = {
+        "model": OLLAMA_GENERATION_MODEL,
+        "prompt": prompt,
+    }
+    
+    for attempt in range(retries):
+        try:
+            generated_text = _stream_ollama_generate(payload, timeout=timeout, material_type="map_summary")
+            if generated_text and generated_text.strip():
+                return generated_text.strip()
+        except Exception as e:
+            if attempt == retries - 1:
+                logger.warning("Map summarization failed: %s", e)
+                return ""
+            time.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
+    return ""
+
+
+def generate_map_summaries(
+    chunks: List[str],
+    language: str = "en",
+    timeout: int = OLLAMA_GENERATION_TIMEOUT,
+    retries: int = OLLAMA_REQUEST_RETRIES,
+) -> List[str]:
+    """MAP stage: summarize each chunk sequentially."""
+    eligible = [c for c in chunks if len(c.strip()) >= 100]
+    if len(eligible) > MAP_MAX_CHUNKS:
+        logger.warning(
+            "MAP stage: capping %d eligible chunks to %d (set MAP_MAX_CHUNKS env to override)",
+            len(eligible),
+            MAP_MAX_CHUNKS,
+        )
+        eligible = eligible[:MAP_MAX_CHUNKS]
+
+    mapped_summaries = []
+    for idx, chunk in enumerate(eligible):
+        logger.info("MAP stage: summarizing chunk %d/%d", idx + 1, len(eligible))
+        summary = _map_summarize_chunk(chunk, language, timeout, retries)
+        if summary:
+            mapped_summaries.append(summary)
+
+    return mapped_summaries
+
+
 def _build_generation_context(chunks: List[str]) -> str:
     """Combine chunk context with a safe max-length cap."""
     max_chars = OLLAMA_MAX_CONTEXT_CHARS
@@ -363,6 +470,7 @@ def generate_study_material_stream(
     material_type: str,
     topic: Optional[str] = None,
     language: str = "en",
+    difficulty: str = "intermediate",
 ) -> Iterator[str]:
     """Stream study material tokens/chunks directly from Ollama.
 
@@ -373,15 +481,23 @@ def generate_study_material_stream(
         yield "[ERROR] Not enough context to generate material."
         return
 
+    if material_type == "summary":
+        yield "*(Analyzing full document across chunks...)*\n\n"
+        mapped_chunks = generate_map_summaries(chunks, language, OLLAMA_GENERATION_TIMEOUT, OLLAMA_REQUEST_RETRIES)
+        if mapped_chunks:
+            chunks = mapped_chunks
+
     context = _build_generation_context(chunks)
-    prompt = build_prompt(material_type, context, topic, language)
+    prompt = build_prompt(material_type, context, topic, language, difficulty=difficulty)
 
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
         "stream": True,
     }
-    if material_type != "summary":
+    if material_type == "summary":
+        payload["system"] = _build_summary_system_prompt()
+    else:
         payload["format"] = "json"
 
     retries = OLLAMA_REQUEST_RETRIES
@@ -446,10 +562,17 @@ def generate_study_material(
     timeout: int = OLLAMA_GENERATION_TIMEOUT,
     retries: int = OLLAMA_REQUEST_RETRIES,
     user_id: Optional[str] = None,
+    difficulty: str = "intermediate",
 ) -> Union[str, Dict[str, Any]]:
     """Combine chunks into context and call Ollama to generate study material."""
     if not chunks:
         return "Not enough context to generate material."
+
+    if material_type == "summary":
+        logger.info("Initiating MAP stage for %d chunks", len(chunks))
+        mapped_chunks = generate_map_summaries(chunks, language, timeout, retries)
+        if mapped_chunks:
+            chunks = mapped_chunks
 
     context = _build_generation_context(chunks)
 
@@ -468,13 +591,16 @@ def generate_study_material(
         topic,
         language,
         student_profile=student_profile,
+        difficulty=difficulty,
     )
 
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
     }
-    if material_type != "summary":
+    if material_type == "summary":
+        payload["system"] = _build_summary_system_prompt()
+    else:
         payload["format"] = "json"
 
     for attempt in range(retries):
