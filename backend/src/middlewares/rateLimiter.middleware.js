@@ -9,10 +9,10 @@ export const apiLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Strict rate limiter for authentication endpoints (10 requests per 10 minutes per IP)
+// Strict rate limiter for authentication endpoints (50 req/10 min in dev, 10/10 min in prod)
 export const authLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
-    max: 10,
+    max: process.env.NODE_ENV === 'production' ? 10 : 50,
     message: { status: 'error', message: 'Too many login attempts, please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,

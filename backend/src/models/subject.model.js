@@ -39,11 +39,11 @@ class Subject {
      */
     static async findAllByUserId(userId) {
         const result = await query(
-            `SELECT s.*, s.last_activity_at AS "lastActivityAt", count(m.id)::int as material_count 
-             FROM subjects s 
-             LEFT JOIN materials m ON s.id = m.subject_id 
-             WHERE s.user_id = $1 
-             GROUP BY s.id 
+            `SELECT s.*, s.last_activity_at AS "lastActivityAt", count(m.id)::int as material_count
+             FROM subjects s
+             LEFT JOIN materials m ON s.id = m.subject_id AND m.deleted_at IS NULL
+             WHERE s.user_id = $1
+             GROUP BY s.id
              ORDER BY s.last_activity_at DESC`,
             [userId]
         );

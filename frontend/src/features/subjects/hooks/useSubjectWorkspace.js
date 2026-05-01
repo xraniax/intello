@@ -29,7 +29,7 @@ export const useSubjectWorkspace = (subjectId) => {
     const loading = mLoading?.loading || sLoading?.loading;
     const isAnyBlocking = mLoading?.blocking || sLoading?.blocking;
 
-    const subject = subjects.find(s => String(s.id) === normalizedId);
+    const subject = subjects.find(s => String(s.id).toLowerCase() === normalizedId.toLowerCase());
 
     const uploads = useMemo(() => (materials || []).filter(m => {
         const mid = m.subject_id || m.subject?.id;
@@ -78,14 +78,16 @@ export const useSubjectWorkspace = (subjectId) => {
         let singleId = null;
         let genOptions = undefined;
 
-        if (typeof idOrOptionsOrEvent === 'string') {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (typeof idOrOptionsOrEvent === 'string' && uuidRegex.test(idOrOptionsOrEvent)) {
             singleId = idOrOptionsOrEvent;
         } else if (idOrOptionsOrEvent && typeof idOrOptionsOrEvent === 'object' && !idOrOptionsOrEvent.nativeEvent) {
             genOptions = idOrOptionsOrEvent;
         }
 
         if (genType === 'mock_exam') {
-            return examGen.handleGenerateExam(genOptions);
+            // Unify: use the same async parallel pipeline as other materials
+            return materialGen.handleGenerateMaterial(genType, singleId, genOptions);
         } else {
             return materialGen.handleGenerateMaterial(genType, singleId, genOptions);
         }
@@ -99,6 +101,8 @@ export const useSubjectWorkspace = (subjectId) => {
     const genResult = materialGen.genResult;
     const setGenResult = materialGen.setGenResult;
     const jobProgress = materialGen.jobProgress;
+    const retryGeneration = materialGen.retryGeneration;
+    const generationStartTime = materialGen.generationStartTime;
 
     // ── Unified API Surface for SubjectDetail.jsx ─────────────────────────────
     return {
@@ -112,5 +116,7 @@ export const useSubjectWorkspace = (subjectId) => {
         genResult, setGenResult,
         jobProgress,
         handleGenerate,
+        retryGeneration,
+        generationStartTime,
     };
 };

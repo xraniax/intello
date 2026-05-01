@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import AnalyticsService from '@/services/AnalyticsService';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -207,7 +208,8 @@ const extractCards = (data) => {
         }
     }
     
-    // 4. Try recursively unpacking wrapper objects ({ result: { ... } }, { data: { ... } })
+    // 4. Try recursively unpacking wrapper objects ({ result: { ... } }, { data: { ... } }, { content: { ... } })
+    if (data.content) return extractCards(data.content);
     if (data.result) return extractCards(data.result);
     if (data.data) return extractCards(data.data);
     
@@ -307,7 +309,7 @@ const CardDot = ({ rating, isCurrent, onClick }) => {
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
-const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
+const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
     const materialId = flashcardsData?.id || flashcardsData?.material_id;
     const metadata = useMaterialStore(s => s.data.materialMetadata[materialId]);
     const expectedCount = metadata?.generation?.expectedCount || 0;
@@ -334,6 +336,7 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
     const [celebrating, setCelebrating] = useState(false);
     const [studyHardOnly, setStudyHardOnly] = useState(false);
     const animating = useRef(false);
+    const lastReviewedAt = useRef({});
 
     // Hard reset all session state when the data source changes
     const prevDataRef = useRef(null);
@@ -441,11 +444,28 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
     const rateCard = useCallback((rating) => {
         setRatings(prev => ({ ...prev, [originalIndex]: rating }));
         if (!muted) playAudio(rating);
-        
+
         if (rating === 'easy') {
             setStreak(prev => prev + 1);
         } else {
             setStreak(0);
+        }
+
+        if (subjectId) {
+            const cardKey = String(originalIndex);
+            const prevTs  = lastReviewedAt.current[cardKey];
+            const now     = Date.now();
+            const daysSinceLast = prevTs ? Math.round((now - prevTs) / 86400000) : null;
+            lastReviewedAt.current[cardKey] = now;
+
+            AnalyticsService.recordFlashcardReview({
+                subjectId,
+                materialId,
+                cardId:       card?.id ?? cardKey,
+                topicName:    card?.topic ?? card?.category ?? null,
+                outcome:      rating === 'easy' ? 'easy' : rating === 'hard' ? 'again' : 'good',
+                daysSinceLast,
+            }).catch(() => {});
         }
 
         // Auto-advance after a brief delay
@@ -460,7 +480,7 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
                 setShowSummary(true);
             }
         }, 400);
-    }, [originalIndex, currentIndex, activeOrder.length, muted]);
+    }, [originalIndex, currentIndex, activeOrder.length, muted, subjectId, materialId, card]);
 
     const goNext = useCallback(() => {
         if (currentIndex >= activeOrder.length - 1 || animating.current) return;
@@ -590,119 +610,65 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
 
     // -----------------------------------------------------------------------
     // Summary Screen
-    // -----------------------------------------------------------------------
     if (showSummary) {
         const allEasy = stats.easy === stats.total;
-        const easyPct = Math.round((stats.easy / stats.total) * 100);
-        const medPct = Math.round((stats.medium / stats.total) * 100);
-        const hardPct = Math.round((stats.hard / stats.total) * 100);
         const hardCards = cards.filter((_, i) => ratings[i] === 'hard');
 
         return (
-            <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`mx-auto ${isExpanded ? 'max-w-3xl py-16' : 'max-w-2xl py-10'} px-6 relative`}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="max-w-2xl mx-auto py-16 px-6"
             >
-                {celebrating && <ConfettiOverlay />}
-                
-                <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-indigo-100/50 border border-gray-100 overflow-hidden">
-                    {/* Header gradient */}
-                    <div className={`h-2 ${allEasy ? 'bg-gradient-to-r from-amber-400 to-yellow-400' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`} />
+                {allEasy && <ConfettiOverlay />}
+                <div className="rounded-[4rem] border-8 border-white bg-white shadow-2xl p-12 text-center relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-4 bg-gradient-to-r from-emerald-400 via-teal-400 to-indigo-500" />
                     
-                    <div className="p-10 text-center">
-                        <motion.div 
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ type: "spring", damping: 12 }}
-                            className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${
-                                allEasy ? 'bg-amber-50' : 'bg-indigo-50'
-                            }`}
-                        >
-                            {allEasy 
-                                ? <Award className="w-12 h-12 text-amber-500" />
-                                : <Brain className="w-12 h-12 text-indigo-500" />
-                            }
-                        </motion.div>
+                    <motion.div
+                        initial={{ rotate: -20, scale: 0 }}
+                        animate={{ rotate: 0, scale: 1 }}
+                        transition={{ type: "spring", damping: 10, stiffness: 200 }}
+                        className="w-32 h-32 bg-emerald-50 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner group-hover:rotate-6 transition-transform"
+                    >
+                        <Award className={cn("w-16 h-16", allEasy ? "text-emerald-500" : "text-indigo-600")} />
+                    </motion.div>
+                    
+                    <h2 className="text-4xl font-black text-indigo-950 mb-3 tracking-tight">Deck Mastery!</h2>
+                    <p className="text-gray-400 font-bold uppercase tracking-[0.2em] text-xs mb-10">
+                        {allEasy ? "Absolute Legend! You've mastered them all." : "Great study session! Your brain is leveling up."}
+                    </p>
 
-                        <h2 className="text-3xl font-black text-gray-900 mb-2">
-                            {allEasy ? 'Perfect Mastery!' : 'Session Complete!'}
-                        </h2>
-                        <p className="text-gray-400 font-medium mb-2">
-                            {allEasy 
-                                ? 'You knew every single card. Outstanding!' 
-                                : 'Great study session. Keep reviewing the tough ones!'}
-                        </p>
-                        <div className="flex items-center justify-center gap-2 text-gray-300 text-sm font-medium mb-8">
-                            <Timer className="w-4 h-4" />
-                            <span>Study time: {formatTime(elapsed)}</span>
+                    <div className="grid grid-cols-3 gap-4 mb-12">
+                        <div className="bg-emerald-50/50 rounded-[2rem] p-6 border-4 border-white shadow-sm transition-transform hover:scale-105">
+                            <div className="text-3xl font-black text-emerald-600 mb-1">{stats.easy}</div>
+                            <div className="text-[9px] font-black text-emerald-300 uppercase tracking-widest">Easy</div>
                         </div>
-
-                        {/* Score Breakdown */}
-                        <div className="grid grid-cols-3 gap-4 mb-8">
-                            <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-100">
-                                <div className="text-3xl font-black text-emerald-600 mb-1">{stats.easy}</div>
-                                <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Know It</div>
-                                <div className="text-xs text-emerald-400 font-bold mt-1">{easyPct}%</div>
-                            </div>
-                            <div className="bg-amber-50 rounded-2xl p-5 border border-amber-100">
-                                <div className="text-3xl font-black text-amber-600 mb-1">{stats.medium}</div>
-                                <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Almost</div>
-                                <div className="text-xs text-amber-400 font-bold mt-1">{medPct}%</div>
-                            </div>
-                            <div className="bg-rose-50 rounded-2xl p-5 border border-rose-100">
-                                <div className="text-3xl font-black text-rose-600 mb-1">{stats.hard}</div>
-                                <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Didn't Know</div>
-                                <div className="text-xs text-rose-400 font-bold mt-1">{hardPct}%</div>
-                            </div>
+                        <div className="bg-amber-50/50 rounded-[2rem] p-6 border-4 border-white shadow-sm transition-transform hover:scale-105">
+                            <div className="text-3xl font-black text-amber-600 mb-1">{stats.medium}</div>
+                            <div className="text-[9px] font-black text-amber-300 uppercase tracking-widest">Okay</div>
                         </div>
-
-                        {/* Difficulty bar */}
-                        <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden flex mb-8">
-                            {stats.easy > 0 && (
-                                <div className="bg-emerald-400 h-full transition-all" style={{ width: `${easyPct}%` }} />
-                            )}
-                            {stats.medium > 0 && (
-                                <div className="bg-amber-400 h-full transition-all" style={{ width: `${medPct}%` }} />
-                            )}
-                            {stats.hard > 0 && (
-                                <div className="bg-rose-400 h-full transition-all" style={{ width: `${hardPct}%` }} />
-                            )}
+                        <div className="bg-rose-50/50 rounded-[2rem] p-6 border-4 border-white shadow-sm transition-transform hover:scale-105">
+                            <div className="text-3xl font-black text-rose-600 mb-1">{stats.hard}</div>
+                            <div className="text-[9px] font-black text-rose-300 uppercase tracking-widest">Hard</div>
                         </div>
+                    </div>
 
-                        {/* Hard cards list */}
-                        {hardCards.length > 0 && (
-                            <div className="mb-8 text-left">
-                                <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                    <Target className="w-3.5 h-3.5" />
-                                    Cards to Review ({hardCards.length})
-                                </h3>
-                                <div className="space-y-2 max-h-48 overflow-y-auto">
-                                    {hardCards.map((c, i) => (
-                                        <div key={i} className="bg-rose-50/50 border border-rose-100 rounded-xl px-4 py-3 text-sm">
-                                            <span className="font-bold text-gray-700">{c.front}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Actions */}
-                        <div className="flex gap-3 justify-center flex-wrap">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex gap-4">
                             <button
                                 onClick={restart}
-                                className="flex items-center gap-2 px-8 py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-lg shadow-gray-200"
+                                className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 hover:scale-105 active:scale-95"
                             >
                                 <RotateCcw className="w-5 h-5" />
-                                Restart Deck
+                                Re-run Session
                             </button>
                             {hardCards.length > 0 && (
                                 <button
                                     onClick={studyHard}
-                                    className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-2xl font-bold hover:from-rose-600 hover:to-pink-600 transition-all shadow-lg shadow-rose-200"
+                                    className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs hover:from-rose-600 transition-all shadow-xl shadow-rose-200 hover:scale-105 active:scale-95"
                                 >
                                     <Zap className="w-5 h-5" />
-                                    Study Hard Cards
+                                    Hard Mode
                                 </button>
                             )}
                         </div>
@@ -752,7 +718,7 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
                                         className="flex items-center gap-1 bg-gradient-to-r from-orange-500 to-rose-500 text-white px-2 py-0.5 rounded-lg shadow-lg shadow-orange-500/30 font-bold text-[11px] tracking-wide"
                                     >
                                         <Flame className="w-3 h-3 animate-pulse" />
-                                        {streak}🔥
+                                        {streak}
                                     </motion.div>
                                 )}
                             </AnimatePresence>
@@ -805,18 +771,18 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
             </div>
 
             {/* ── Segmented Progress bar ── */}
-            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden flex mb-2">
+            <div className="w-full h-4 bg-white rounded-full overflow-hidden flex mb-4 border-2 border-indigo-50 p-1 shadow-inner">
                 {activeOrder.map((origIdx, i) => {
                     const r = ratings[origIdx];
-                    const bgColor = r === 'easy' ? 'bg-emerald-400' 
-                                  : r === 'medium' ? 'bg-amber-400' 
-                                  : r === 'hard' ? 'bg-rose-400' 
-                                  : i <= currentIndex ? 'bg-indigo-200' 
+                    const bgColor = r === 'easy' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.3)]' 
+                                  : r === 'medium' ? 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.3)]' 
+                                  : r === 'hard' ? 'bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.3)]' 
+                                  : i <= currentIndex ? 'bg-indigo-100' 
                                   : 'bg-transparent';
                     return (
                         <div 
                             key={origIdx} 
-                            className={`h-full transition-all duration-300 ${bgColor}`}
+                            className={`h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full ${bgColor}`}
                             style={{ width: `${100 / activeOrder.length}%` }}
                         />
                     );
@@ -881,21 +847,15 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
                     style={{ perspective: "2000px" }}
                 >
                     <motion.div
-                        animate={{ 
-                            rotateY: isRevealed ? 180 : 0,
-                            scale: isRevealed ? [1, 1.01, 1] : [1, 1.01, 1], 
-                            z: isRevealed ? 8 : 0 
-                        }}
-                        whileHover={{ scale: 1.01, y: -2 }}
-                        whileTap={{ scale: 0.98 }}
+                        animate={{ rotateY: isRevealed ? 180 : 0 }}
                         transition={{ 
-                            type: 'spring', 
-                            stiffness: 700, 
-                            damping: 50, 
-                            mass: 0.7
+                            type: "spring", 
+                            stiffness: 260, 
+                            damping: 20,
+                            mass: 1
                         }}
                         style={{ transformStyle: "preserve-3d" }}
-                        className={`relative w-full ${isExpanded ? 'min-h-[580px]' : 'min-h-[480px]'} transition-all duration-300`}
+                        className="w-full h-full relative"
                     >
                         {/* Front Side */}
                         <div
@@ -903,42 +863,42 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
                             style={{ 
                                 backfaceVisibility: "hidden",
                                 WebkitBackfaceVisibility: "hidden",
-                                transform: "translateZ(2px)" // Extra separation
+                                transform: "translateZ(5px)"
                             }}
                             onClick={toggleFlip}
                         >
-                            <div className="h-full w-full relative rounded-[2.5rem] overflow-hidden shadow-2xl bg-white border border-gray-100 cursor-pointer group">
-                                <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/40 via-white to-purple-50/20 pointer-events-none" />
-                                <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 rounded-bl-[10rem] pointer-events-none" />
-                                <div className="absolute inset-0 bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none mix-blend-overlay" />
+                            <div className="h-full w-full relative rounded-[3.5rem] overflow-hidden shadow-[0_30px_60px_-15px_rgba(124,92,252,0.3)] border-8 border-white bg-white cursor-pointer group transition-transform hover:scale-[1.02]">
+                                <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 pointer-events-none" />
+                                <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-100/30 rounded-full blur-3xl pointer-events-none" />
                                 
                                 {/* Header HUD */}
-                                <div className="absolute top-0 left-0 right-0 pt-8 pb-12 flex flex-col items-center z-20 pointer-events-none bg-gradient-to-b from-white via-white/90 to-transparent">
-                                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-sm flex-shrink-0 pointer-events-auto">
-                                        <BrainCircuit className="w-5 h-5 text-indigo-500" />
-                                    </div>
-                                    <span className="inline-block text-[9px] font-black uppercase tracking-widest text-indigo-500 bg-indigo-50/80 px-3 py-1 rounded-full border border-indigo-100/50 flex-shrink-0 pointer-events-auto">Question</span>
+                                <div className="absolute top-0 left-0 right-0 pt-12 flex flex-col items-center z-20 pointer-events-none">
+                                    <motion.div 
+                                        animate={{ y: [0, -5, 0] }}
+                                        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                                        className="w-14 h-14 rounded-[1.5rem] flex items-center justify-center mb-4 shadow-xl bg-gradient-to-br from-indigo-500 to-purple-600"
+                                    >
+                                        <BrainCircuit className="w-8 h-8 text-white" />
+                                    </motion.div>
+                                    <span className="inline-block text-[10px] font-black uppercase tracking-[0.3em] px-5 py-2 rounded-2xl bg-indigo-50 text-indigo-500 border-2 border-white shadow-sm">The Challenge</span>
                                 </div>
 
-                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar">
-                                    <div className="min-h-full w-full flex flex-col items-center justify-center text-center px-10 pt-28 pb-32 relative z-10">
-                                        <h3 className={cn(
-                                            "font-black text-gray-900 leading-tight tracking-tight px-4 transition-all duration-300",
-                                            isExpanded ? 'text-4xl' : 'text-2xl md:text-3xl',
-                                            card?.question?.length > 60 && (isExpanded ? 'text-3xl' : 'text-2xl md:text-2xl'),
-                                            card?.question?.length > 120 && (isExpanded ? 'text-2xl' : 'text-xl md:text-xl'),
-                                            card?.question?.length > 200 && (isExpanded ? 'text-xl' : 'text-lg')
-                                        )}>
-                                            {card?.question}
-                                        </h3>
-                                    </div>
+                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-12">
+                                    <h3 className={cn(
+                                        "font-black leading-tight tracking-tight text-indigo-950 text-center",
+                                        isExpanded ? 'text-4xl' : 'text-3xl',
+                                        card?.question?.length > 80 && (isExpanded ? 'text-3xl' : 'text-2xl'),
+                                        card?.question?.length > 150 && (isExpanded ? 'text-2xl' : 'text-xl')
+                                    )}>
+                                        {card?.question}
+                                    </h3>
                                 </div>
 
                                 {/* Footer HUD */}
-                                <div className="absolute bottom-0 left-0 right-0 pb-10 pt-16 flex justify-center z-20 pointer-events-none bg-gradient-to-t from-white via-white/90 to-transparent">
-                                    <div className="flex items-center justify-center gap-2.5 px-6 py-2.5 bg-gray-50/50 rounded-2xl text-[10px] font-bold uppercase tracking-widest text-gray-400 group-hover:text-indigo-600 group-hover:bg-indigo-50 transition-all border border-transparent group-hover:border-indigo-100 pointer-events-auto shadow-sm backdrop-blur-sm">
-                                        <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
-                                        <span>Press Space or Click to Flip</span>
+                                <div className="absolute bottom-0 left-0 right-0 pb-12 flex justify-center z-20 pointer-events-none">
+                                    <div className="flex items-center gap-3 px-6 py-3 rounded-full bg-indigo-50 text-[10px] font-black uppercase tracking-widest text-indigo-400 border-2 border-white shadow-sm">
+                                        <RefreshCw className="w-4 h-4 animate-spin-slow" />
+                                        Tap to Reveal
                                     </div>
                                 </div>
                             </div>
@@ -950,41 +910,42 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
                             style={{ 
                                 backfaceVisibility: "hidden",
                                 WebkitBackfaceVisibility: "hidden",
-                                transform: "rotateY(180deg) translateZ(2px)" 
+                                transform: "rotateY(180deg) translateZ(5px)" 
                             }}
                             onClick={toggleFlip}
                         >
-                            <div className="h-full w-full relative rounded-[2.5rem] overflow-hidden shadow-2xl bg-white border border-emerald-100 cursor-pointer group">
-                                <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/40 via-white to-teal-50/20 pointer-events-none" />
-                                <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-500/5 rounded-tr-[10rem] pointer-events-none" />
+                            <div className="h-full w-full relative rounded-[3.5rem] overflow-hidden shadow-[0_30px_60px_-15px_rgba(244,63,94,0.3)] border-8 border-white bg-white cursor-pointer group transition-transform hover:scale-[1.02]">
+                                <div className="absolute inset-0 bg-gradient-to-br from-pink-50/50 via-white to-rose-50/50 pointer-events-none" />
+                                <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-pink-100/30 rounded-full blur-3xl pointer-events-none" />
                                 
                                 {/* Header HUD */}
-                                <div className="absolute top-0 left-0 right-0 pt-8 pb-12 flex flex-col items-center z-20 pointer-events-none bg-gradient-to-b from-white via-white/90 to-transparent">
-                                    <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-sm flex-shrink-0 pointer-events-auto">
-                                        <Sparkles className="w-5 h-5 text-emerald-500" />
-                                    </div>
-                                    <span className="inline-block text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50/80 px-3 py-1 rounded-full border border-emerald-100/50 flex-shrink-0 pointer-events-auto">Answer</span>
+                                <div className="absolute top-0 left-0 right-0 pt-12 flex flex-col items-center z-20 pointer-events-none">
+                                    <motion.div 
+                                        animate={{ y: [0, -5, 0] }}
+                                        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+                                        className="w-14 h-14 rounded-[1.5rem] flex items-center justify-center mb-4 shadow-xl bg-gradient-to-br from-pink-500 to-rose-600"
+                                    >
+                                        <Sparkles className="w-8 h-8 text-white" />
+                                    </motion.div>
+                                    <span className="inline-block text-[10px] font-black uppercase tracking-[0.3em] px-5 py-2 rounded-2xl bg-pink-50 text-pink-500 border-2 border-white shadow-sm">Crystal Clear</span>
                                 </div>
 
-                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar">
-                                    <div className="min-h-full w-full flex flex-col items-center justify-center text-center px-10 pt-28 pb-32 relative z-10">
-                                        <p className={cn(
-                                            "font-black text-gray-800 leading-relaxed px-4 transition-all duration-300",
-                                            isExpanded ? 'text-2xl md:text-3xl' : 'text-lg md:text-2xl',
-                                            card?.answer?.length > 100 && (isExpanded ? 'text-xl md:text-2xl' : 'text-base md:text-xl'),
-                                            card?.answer?.length > 220 && (isExpanded ? 'text-lg md:text-xl' : 'text-base md:text-lg'),
-                                            card?.answer?.length > 350 && (isExpanded ? 'text-base' : 'text-sm')
-                                        )}>
-                                            {card?.answer}
-                                        </p>
-                                    </div>
+                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-12">
+                                    <p className={cn(
+                                        "font-black leading-relaxed tracking-tight text-gray-800 text-center",
+                                        isExpanded ? 'text-3xl' : 'text-2xl',
+                                        card?.answer?.length > 120 && (isExpanded ? 'text-2xl' : 'text-xl'),
+                                        card?.answer?.length > 250 && (isExpanded ? 'text-xl' : 'text-lg')
+                                    )}>
+                                        {card?.answer}
+                                    </p>
                                 </div>
 
                                 {/* Footer HUD */}
-                                <div className="absolute bottom-0 left-0 right-0 pb-10 pt-16 flex justify-center z-20 pointer-events-none bg-gradient-to-t from-white via-white/90 to-transparent">
-                                    <div className="flex items-center justify-center gap-2.5 px-6 py-2.5 bg-gray-50/50 rounded-2xl text-[10px] font-bold uppercase tracking-widest text-gray-400 group-hover:text-emerald-600 group-hover:bg-emerald-50 transition-all border border-transparent group-hover:border-emerald-100 pointer-events-auto shadow-sm backdrop-blur-sm">
-                                        <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
-                                        <span>Click to Flip Back</span>
+                                <div className="absolute bottom-0 left-0 right-0 pb-12 flex justify-center z-20 pointer-events-none">
+                                    <div className="flex items-center gap-3 px-6 py-3 rounded-full bg-pink-50 text-[10px] font-black uppercase tracking-widest text-pink-400 border-2 border-white shadow-sm">
+                                        <RefreshCw className="w-4 h-4 animate-spin-slow" />
+                                        Flip Back
                                     </div>
                                 </div>
                             </div>
@@ -1009,25 +970,30 @@ const FlashcardsView = ({ flashcardsData, isExpanded = false }) => {
                 </button>
                 
                 {isRevealed && (
-                    <div className="flex gap-2 flex-grow animate-in slide-in-from-right-4">
+                    <div className="flex gap-4 flex-grow animate-in zoom-in-95 duration-500">
                         {Object.entries(RATINGS).map(([key, cfg]) => {
                             const Icon = cfg.icon;
                             const isSelected = currentRating === key;
                             return (
                                 <motion.button
                                     key={key}
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.97 }}
+                                    whileHover={{ scale: 1.05, y: -5 }}
+                                    whileTap={{ scale: 0.95 }}
                                     onClick={() => rateCard(key)}
-                                    className={`flex-1 flex flex-col items-center justify-center gap-1 py-4 rounded-2xl font-bold text-sm transition-all ${
+                                    className={cn(
+                                        "flex-1 flex flex-col items-center justify-center gap-2 py-6 rounded-[2.5rem] border-4 transition-all shadow-xl font-black uppercase tracking-widest text-[10px]",
                                         isSelected
-                                            ? `bg-gradient-to-r ${cfg.gradient} text-white shadow-lg ${cfg.shadow}`
-                                            : `bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-100`
-                                    }`}
+                                            ? `bg-gradient-to-br ${cfg.gradient} text-white border-white ${cfg.shadow}`
+                                            : `bg-white hover:bg-gray-50 text-gray-400 border-gray-50 hover:border-indigo-100`
+                                    )}
                                 >
-                                    <Icon className="w-5 h-5" />
-                                    <span className="text-xs">{cfg.label}</span>
-                                    <span className="text-[10px] opacity-60">{cfg.key}</span>
+                                    <div className={cn(
+                                        "w-12 h-12 rounded-2xl flex items-center justify-center mb-1 shadow-inner transition-transform",
+                                        isSelected ? "bg-white/20" : "bg-gray-100 group-hover:scale-110"
+                                    )}>
+                                        <Icon className="w-6 h-6" />
+                                    </div>
+                                    {cfg.label}
                                 </motion.button>
                             );
                         })}

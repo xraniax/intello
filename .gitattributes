@@ -1,0 +1,9 @@
+# Auto detect text files and ensure LF line endings for cross-platform consistency
+* text=auto eol=lf
+
+# Force shell scripts to always use LF (critical for Linux containers)
+*.sh text eol=lf
+
+# Windows-specific files that should keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf

@@ -113,15 +113,25 @@ app = FastAPI(
 )
 
 
+def _get_db_display() -> str:
+    """Return a log-safe DB host:port string parsed from DATABASE_URL."""
+    from urllib.parse import urlparse
+    url = os.getenv("DATABASE_URL", "")
+    try:
+        p = urlparse(url)
+        return f"{p.hostname}:{p.port or 5432}"
+    except Exception:
+        return "configured"
+
+
 @app.on_event("startup")
 async def startup_event():
     """Run GPU and Ollama health check on application startup."""
     logger.info("Cognify Engine API starting up...")
     logger.info(
-        "[config] env=%s db=%s:%s redis=%s ollama=%s",
+        "[config] env=%s db=%s redis=%s ollama=%s",
         get_engine_env_source(),
-        os.getenv("DB_HOST", "db"),
-        os.getenv("DB_PORT", "5432"),
+        _get_db_display(),
         os.getenv("REDIS_URL", "redis://redis:6379/0"),
         get_ollama_base_url(),
     )
@@ -997,6 +1007,10 @@ async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
                 status_code=400,
             )
 
+        # Extract difficulty from generation_options (GPS) sent by backend
+        gen_opts = body.generation_options or {}
+        difficulty = gen_opts.get("difficulty", "intermediate")
+
         # Dispatch to celery
         task = task_generate_material.delay(
             str(body.subject_id),
@@ -1005,7 +1019,7 @@ async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
             language,
             body.top_k,
             getattr(body, 'user_id', None),
-            request_options,
+            difficulty,
         )
         
         return {
@@ -1057,7 +1071,11 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
         )
 
     try:
-        chunks = retrieve_chunks_by_topic(db, str(body.subject_id), topic, body.top_k)
+        if material_type == "summary":
+            from .retrieval import retrieve_sequential_chunks
+            chunks = retrieve_sequential_chunks(db, str(body.subject_id))
+        else:
+            chunks = retrieve_chunks_by_topic(db, str(body.subject_id), topic, body.top_k)
         chunk_texts = [c.content for c in chunks if c.content]
     except Exception as e:
         logger.exception("Generation stream retrieval failed")
@@ -1075,13 +1093,17 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
             status_code=404,
         )
 
+    # Extract difficulty from generation_options (GPS) sent by backend
+    gen_opts = body.generation_options or {}
+    difficulty = gen_opts.get("difficulty", "intermediate")
+
     async def generation_async_generator():
         async for piece in generate_study_material_stream(
             chunk_texts,
             material_type,
             topic,
             language,
-            options=request_options,
+            difficulty=difficulty,
         ):
             if piece is None:
                 continue

@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useMaterialStore } from '@/store/useMaterialStore';
 import { MaterialService } from '@/services/MaterialService';
 
+const GENERATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * useMaterialGeneration
  * Owns: standard material streaming, polling fallback, genResult state.
@@ -15,29 +17,43 @@ export const useMaterialGeneration = ({
     setTabs,
     setActiveTabId,
 }) => {
-    const fetchMaterials  = useMaterialStore(s => s.actions.fetchMaterials);
-    const startPolling         = useMaterialStore(s => s.actions.startPolling);
-    const clearAllPolling      = useMaterialStore(s => s.actions.clearAllPolling);
+    const fetchMaterials = useMaterialStore(s => s.actions.fetchMaterials);
+    const startPolling = useMaterialStore(s => s.actions.startPolling);
+    const clearAllPolling = useMaterialStore(s => s.actions.clearAllPolling);
     const setMaterialMetadata = useMaterialStore(s => s.actions.setMaterialMetadata);
     const setExpectedFlashcards = useMaterialStore(s => s.actions.setExpectedFlashcards);
-    const jobProgress     = useMaterialStore(s => s.data.jobProgress);
+    const jobProgress = useMaterialStore(s => s.data.jobProgress);
 
     const [materialGenError, setMaterialGenError] = useState('');
     const [isGeneratingMaterial, setIsGeneratingMaterial] = useState(false);
     const [genResult, setGenResult] = useState('');
-    
+    const [generationStartTime, setGenerationStartTime] = useState(null);
+
     // Enhancement Refs
     const hasRenamedRef = useRef(false);
     const activeMaterialIdRef = useRef(null);
+    const timeoutRef = useRef(null);
+    const lastGenParamsRef = useRef(null);
 
     const streamControllerRef = useRef(null);
     const currentSubjectIdRef = useRef(normalizedId);
     useEffect(() => { currentSubjectIdRef.current = normalizedId; }, [normalizedId]);
 
+    // Cleanup helper — clears timeout and generating state
+    const finishGenerating = useCallback(() => {
+        setIsGeneratingMaterial(false);
+        setGenerationStartTime(null);
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
+    }, []);
+
     useEffect(() => {
         return () => {
             streamControllerRef.current?.abort();
             clearAllPolling();
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -65,9 +81,21 @@ export const useMaterialGeneration = ({
         }
 
         setGenResult('');
+        setIsGeneratingMaterial(true);
+        setGenerationStartTime(Date.now());
         hasRenamedRef.current = false;
         activeMaterialIdRef.current = null;
 
+        // Store params for retry
+        lastGenParamsRef.current = { genType, singleId, genOptions };
+
+        // Set generation timeout
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => {
+            streamControllerRef.current?.abort();
+            setMaterialGenError('Generation timed out after 5 minutes. The AI engine may be overloaded — please try again.');
+            finishGenerating();
+        }, GENERATION_TIMEOUT_MS);
         const isFlashGen = genType === 'flashcards' && genOptions?.count;
         const requestedCount = genOptions?.count;
 
@@ -166,19 +194,19 @@ export const useMaterialGeneration = ({
 
                 fetchMaterials();
                 setActiveTabId('generator');
-                
+
                 streamControllerRef.current?.abort();
                 const controller = new AbortController();
                 streamControllerRef.current = controller;
 
-                setIsGeneratingMaterial(true);
+                // Keep isGeneratingMaterial = true until stream completes
                 MaterialService.stream(
-                    material_id, 
+                    material_id,
                     controller.signal,
-                    chunk => { 
+                    chunk => {
                         setGenResult(prev => {
                             const next = (prev || '') + chunk;
-                            
+
                             // Intelligent Title Derivation
                             if (!hasRenamedRef.current && next.includes('#')) {
                                 const titleMatch = next.match(/#\s+([^\n#]+)/);
@@ -194,13 +222,13 @@ export const useMaterialGeneration = ({
                                 }
                             }
                             return next;
-                        }); 
+                        });
                     },
                     () => {
                         streamControllerRef.current = null;
-                        setIsGeneratingMaterial(false);
+                        finishGenerating();
                         if (String(currentSubjectIdRef.current) !== normalizedId) return;
-                        
+
                         MaterialService.sync(material_id, controller.signal).then(() => {
                             if (String(currentSubjectIdRef.current) !== normalizedId) return;
                             fetchMaterials().then(() => {
@@ -208,9 +236,9 @@ export const useMaterialGeneration = ({
                                     .find(m => String(m.id) === String(material_id));
                                 if (!mat) return;
                                 if (!tabsRef.current.find(t => String(t.id) === String(mat.id))) {
-                                    setTabs(prev => [...prev, { 
+                                    setTabs(prev => [...prev, {
                                         id: mat.id, title: mat.title || mat.type,
-                                        type: mat.type, material: mat, pinned: false 
+                                        type: mat.type, material: mat, pinned: false
                                     }]);
                                 }
                                 setActiveTabId(mat.id);
@@ -218,31 +246,42 @@ export const useMaterialGeneration = ({
                             });
                         });
                     },
-                    () => { 
-                        streamControllerRef.current = null; 
-                        setIsGeneratingMaterial(false); 
-                        startPolling(String(material_id)); 
+                    () => {
+                        streamControllerRef.current = null;
+                        finishGenerating();
+                        startPolling(String(material_id));
                     }
                 );
             } else {
                 const fallback = res.data.data.result || res.data.data.content || '';
                 setGenResult(typeof fallback === 'object' ? JSON.stringify(fallback, null, 2) : String(fallback));
-                setIsGeneratingMaterial(false);
+                finishGenerating();
             }
         } catch (err) {
             setMaterialGenError(err.message || 'Generation failed.');
-            setIsGeneratingMaterial(false);
+            finishGenerating();
         }
-    }, [selectedUploads, subjectId, normalizedId, fetchMaterials, startPolling, tabsRef, setTabs, setActiveTabId]);
+    }, [selectedUploads, subjectId, normalizedId, fetchMaterials, startPolling, tabsRef, setTabs, setActiveTabId, finishGenerating]);
 
-    return { 
-        materialGenError, 
-        setMaterialGenError, 
-        isGeneratingMaterial, 
-        setIsGeneratingMaterial, 
-        genResult, 
-        setGenResult, 
-        jobProgress, 
-        handleGenerateMaterial 
+    // Retry with last-used params
+    const retryGeneration = useCallback(() => {
+        const params = lastGenParamsRef.current;
+        if (params) {
+            setMaterialGenError('');
+            handleGenerateMaterial(params.genType, params.singleId, params.genOptions);
+        }
+    }, [handleGenerateMaterial]);
+
+    return {
+        materialGenError,
+        setMaterialGenError,
+        isGeneratingMaterial,
+        setIsGeneratingMaterial,
+        genResult,
+        setGenResult,
+        jobProgress,
+        handleGenerateMaterial,
+        retryGeneration,
+        generationStartTime,
     };
 };

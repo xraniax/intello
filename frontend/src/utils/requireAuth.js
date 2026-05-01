@@ -16,7 +16,7 @@ export const requireAuth = (action) => {
     const user = useAuthStore.getState().data.user;
 
     if (!user) {
-        toast('Please login to continue', { icon: '🔒', duration: 3000 });
+        toast('Please login to continue', { duration: 3000 });
         const uiActions = useUIStore.getState().actions;
         uiActions.setPendingAction(action);
         uiActions.setModal('authPrompt');

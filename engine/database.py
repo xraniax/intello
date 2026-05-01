@@ -7,20 +7,22 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
 
+_raw_url = os.getenv("DATABASE_URL")
+if not _raw_url:
+    raise RuntimeError(
+        "DATABASE_URL is not set. Cannot start without a database connection.\n"
+        "  Local:   set DATABASE_URL in engine/.env.docker\n"
+        "  Staging: use docker-compose.staging.yml with --env-file .env.staging"
+    )
 
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
-DB_HOST = os.getenv("DB_HOST", "db")
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "elearning")
-
-
-DATABASE_URL = (
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
-
+# SQLAlchemy with psycopg2 requires the postgresql+psycopg2:// scheme.
+if _raw_url.startswith("postgres://"):
+    DATABASE_URL = _raw_url.replace("postgres://", "postgresql+psycopg2://", 1)
+elif _raw_url.startswith("postgresql://"):
+    DATABASE_URL = _raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+else:
+    DATABASE_URL = _raw_url
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-

@@ -43,8 +43,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        // Handle 401 Unauthorized errors (expired or invalid token)
-        if (error.response?.status === 401) {
+        // Handle 401 Unauthorized errors (expired or invalid token).
+        // Skip for auth endpoints — a 401 there means wrong credentials, not an expired session.
+        const isAuthEndpoint = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register');
+        if (error.response?.status === 401 && !isAuthEndpoint) {
             handleAuthFailure();
         }
 

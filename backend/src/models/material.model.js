@@ -146,13 +146,17 @@ class Material {
      */
     static async findByIds(ids, userId) {
         if (!ids || ids.length === 0) return [];
+        // Guard: only pass valid UUID strings to ANY($1) to prevent 'malformed array literal' errors
+        const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const validIds = ids.filter(id => typeof id === 'string' && UUID_PATTERN.test(id));
+        if (validIds.length === 0) return [];
         const result = await query(
             `SELECT m.*, f.path as file_path 
             FROM materials m 
             LEFT JOIN files f ON f.material_id = m.id 
             WHERE m.id = ANY($1) AND m.user_id = $2 AND m.deleted_at IS NULL
             ORDER BY m.created_at DESC`,
-            [ids, userId]
+            [validIds, userId]
         );
         return result.rows;
     }
@@ -185,10 +189,33 @@ class Material {
      */
     static async restore(id, userId) {
         const result = await query(
-            'UPDATE materials SET deleted_at = NULL WHERE id = $1 AND user_id = $2 RETURNING *', 
+            'UPDATE materials SET deleted_at = NULL WHERE id = $1 AND user_id = $2 RETURNING *',
             [id, userId]
         );
         return result.rowCount > 0;
+    }
+
+    /**
+     * Permanently hard-delete a single material (must already be soft-deleted).
+     */
+    static async permanentDelete(id, userId) {
+        const result = await query(
+            'DELETE FROM materials WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL RETURNING *',
+            [id, userId]
+        );
+        return result.rowCount > 0;
+    }
+
+    /**
+     * Permanently hard-delete all soft-deleted materials for a user.
+     * Returns the list of deleted rows so callers can clean up associated files.
+     */
+    static async emptyTrash(userId) {
+        const result = await query(
+            'DELETE FROM materials WHERE user_id = $1 AND deleted_at IS NOT NULL RETURNING id',
+            [userId]
+        );
+        return result.rows; // [{ id }, ...]
     }
 
     /**

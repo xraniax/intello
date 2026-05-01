@@ -60,6 +60,7 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - COGNIFY_UPLOADS_DIR=/app/data/uploads
     volumes:
       - ./engine:/app
       - ./data/uploads:/app/data/uploads

@@ -110,7 +110,7 @@ class MaterialController {
             throw new Error('materialIds and taskType are required');
         }
 
-        const result = await MaterialService.generateWithContext(req.user.id, materialIds, taskType, subjectId, genOptions);
+        const result = await MaterialService.generateWithContext(req.user.id, subjectId, materialIds, taskType, genOptions);
         res.status(200).json({ status: 'success', data: result });
     });
 
@@ -216,12 +216,29 @@ class MaterialController {
         });
     });
 
+    static permanentDelete = asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        await MaterialService.permanentDeleteMaterial(id, req.user.id);
+        res.status(200).json({
+            status: 'success',
+            message: 'Document permanently deleted'
+        });
+    });
+
+    static emptyTrash = asyncHandler(async (req, res) => {
+        const count = await MaterialService.emptyTrash(req.user.id);
+        res.status(200).json({
+            status: 'success',
+            message: `${count} item${count !== 1 ? 's' : ''} permanently deleted`
+        });
+    });
+
     static update = asyncHandler(async (req, res) => {
         const { id } = req.params;
         const updates = req.body;
-        
+
         const updated = await MaterialService.updateMaterial(req.user.id, id, updates);
-        
+
         res.status(200).json({
             status: 'success',
             data: updated

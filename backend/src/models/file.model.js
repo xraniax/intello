@@ -94,6 +94,14 @@ class File {
     }
 
     /**
+     * Find all files belonging to a user.
+     */
+    static async findByUserId(userId) {
+        const result = await query('SELECT * FROM files WHERE user_id = $1', [userId]);
+        return result.rows;
+    }
+
+    /**
      * Get total storage usage for a user.
      * Excludes files linked to FAILED materials.
      */

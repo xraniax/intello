@@ -1,12 +1,31 @@
 import asyncHandler from '../utils/asyncHandler.js';
+import MaterialService from '../services/material.service.js';
 import ExamService from '../services/exam.service.js';
 
 class ExamController {
     static generate = asyncHandler(async (req, res) => {
-        const exam = await ExamService.generateExam(req.user.id, req.body);
-        res.status(201).json({
+        // Unify with the high-performance async path
+        const { subject_id, materialIds, numberOfQuestions, difficulty, types, title, timeLimit } = req.body;
+        
+        const genOptions = {
+            count: numberOfQuestions,
+            difficulty,
+            examTypes: types,
+            title,
+            timeLimit
+        };
+
+        const result = await MaterialService.generateWithContext(
+            req.user.id, 
+            subject_id, 
+            materialIds || [], 
+            'mock_exam', 
+            genOptions
+        );
+
+        res.status(202).json({
             status: 'success',
-            data: exam,
+            data: result,
         });
     });
 

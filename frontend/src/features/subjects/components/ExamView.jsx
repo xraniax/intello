@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Clock3, FileText, Flag, RefreshCw, Save, Trophy, FileDown } from 'lucide-react';
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 import { MaterialService } from '@/services/MaterialService';
+import AnalyticsService from '@/services/AnalyticsService';
+
+function cn(...inputs) {
+    return twMerge(clsx(inputs));
+}
 
 const formatTime = (seconds) => {
     const safe = Math.max(0, Number(seconds) || 0);
@@ -26,16 +33,16 @@ const QuestionRenderer = ({
                 onChange={(e) => onTextChange(question, e.target.value)}
                 disabled={readOnly}
                 placeholder="Write your answer clearly and concisely..."
-                className="w-full min-h-[140px] rounded-2xl border border-gray-200 p-4 text-sm md:text-base text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-50"
+                className="w-full min-h-[160px] rounded-[2rem] border-4 border-indigo-50 bg-indigo-50/20 p-6 text-base text-gray-700 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-indigo-200"
             />
         );
     }
     if (question.type === 'fill_blank') {
         const count = Math.max(1, question.blankAnswers?.length || 1);
         return (
-            <div className="space-y-3">
-                <p className="text-xs font-semibold text-gray-500">
-                    Fill each blank in order.
+            <div className="space-y-4">
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-2">
+                    Fill the Blanks
                 </p>
                 {Array.from({ length: count }).map((_, idx) => (
                     <input
@@ -44,7 +51,7 @@ const QuestionRenderer = ({
                         disabled={readOnly}
                         onChange={(e) => onBlankChange(question, idx, e.target.value)}
                         placeholder={`Blank ${idx + 1}`}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-50"
+                        className="w-full rounded-2xl border-4 border-indigo-50 px-5 py-4 text-sm font-bold text-gray-700 focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all"
                     />
                 ))}
             </div>
@@ -54,20 +61,20 @@ const QuestionRenderer = ({
         const pairs = question.pairs || [];
         const options = question.rightOptions || [];
         return (
-            <div className="space-y-3">
-                <p className="text-xs font-semibold text-gray-500">
-                    Match each item on the left with one option.
+            <div className="space-y-4">
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-2">
+                    Perfect Match
                 </p>
                 {pairs.map((pair, idx) => (
-                    <div key={`${question.id}-pair-${idx}`} className="grid grid-cols-1 md:grid-cols-2 gap-2 items-center">
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700">
+                    <div key={`${question.id}-pair-${idx}`} className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                        <div className="rounded-2xl border-4 border-white bg-indigo-50/50 px-5 py-4 text-sm font-black text-indigo-700 shadow-sm">
                             {pair.left}
                         </div>
                         <select
                             value={answer.matchAnswers?.[pair.left] || ''}
                             disabled={readOnly}
                             onChange={(e) => onMatchChange(question, pair.left, e.target.value)}
-                            className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-50"
+                            className="rounded-2xl border-4 border-indigo-50 px-5 py-4 text-sm font-bold text-gray-700 bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all"
                         >
                             <option value="">Select match...</option>
                             {options.map((opt) => (
@@ -80,28 +87,38 @@ const QuestionRenderer = ({
         );
     }
     return (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {question.options.map((option, idx) => {
                 const checked = answer.selectedAnswers.includes(idx);
                 const isSingle = question.type === 'single_choice';
                 return (
                     <label
                         key={`${question.id}-opt-${idx}`}
-                        className={`flex items-start gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${
+                        className={cn(
+                            "group relative flex items-center gap-4 p-6 rounded-[2rem] border-4 transition-all cursor-pointer overflow-hidden",
                             checked
-                                ? 'border-indigo-300 bg-indigo-50/60 shadow-sm'
-                                : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/30'
-                        }`}
+                                ? 'border-indigo-600 bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-[1.02]'
+                                : 'border-white bg-white hover:border-indigo-100 hover:scale-[1.01] shadow-sm hover:shadow-md'
+                        )}
                     >
+                        <div className={cn(
+                            "w-8 h-8 rounded-xl flex items-center justify-center border-2 transition-all",
+                            checked ? "bg-white border-white" : "bg-indigo-50 border-indigo-100 group-hover:border-indigo-200"
+                        )}>
+                            {checked && <div className="w-3 h-3 rounded-full bg-indigo-600 animate-in zoom-in" />}
+                        </div>
+                        <span className={cn(
+                            "text-base font-black tracking-tight",
+                            checked ? "text-white" : "text-gray-900"
+                        )}>{option}</span>
                         <input
                             type={isSingle ? 'radio' : 'checkbox'}
                             name={`question-${question.id}`}
                             checked={checked}
                             disabled={readOnly}
                             onChange={() => onChoiceChange(question, idx)}
-                            className="mt-0.5 accent-indigo-600"
+                            className="absolute opacity-0"
                         />
-                        <span className="text-sm md:text-base text-gray-700 font-medium">{option}</span>
                     </label>
                 );
             })}
@@ -207,14 +224,18 @@ const extractExamData = (data) => {
     // Direct array?
     if (Array.isArray(data)) return { questions: data };
 
-    // Deep nesting
+    // 4. Try recursively unpacking wrapper objects
+    if (data.content) return extractExamData(data.content);
     if (data.result) return extractExamData(data.result);
+    if (data.data) return extractExamData(data.data);
     
     return null;
 };
 
-const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
+const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpanded = false }) => {
     const examData = extractExamData(rawExamData);
+    // Always prefer the explicitly passed DB UUID prop (propExamId) over the internal JSON id
+    const examId = propExamId || examData?.id;
     const [exam, setExam] = useState(null);
     const [answers, setAnswers] = useState({});
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -248,7 +269,8 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
             setRemainingSeconds(Math.max(0, Math.floor(Number(examData.timeLimit) * 60)));
         }
 
-        MaterialService.getAttempt(examData.id).then((res) => {
+        if (!examId) return;
+        MaterialService.getAttempt(examId).then((res) => {
             const attempt = res?.data?.data;
             if (!attempt) return;
             const mappedAnswers = {};
@@ -266,7 +288,7 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
         }).catch(() => {
             // handle error if needed
         });
-    }, [examData?.id, examData]);
+    }, [examId]);
 
     const serializeAnswers = useCallback(() => {
         if (!exam?.questions) return [];
@@ -280,11 +302,11 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
     }, [answers, exam]);
 
     const saveAttempt = useCallback(async () => {
-        if (!exam?.id || result) return;
+        if (!examId || result) return;
         try {
             setIsSavingAttempt(true);
             const res = await MaterialService.saveAttempt({
-                examId: exam.id,
+                examId: examId,
                 currentIndex,
                 answers: serializeAnswers(),
                 flagged,
@@ -296,15 +318,15 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
         } finally {
             setIsSavingAttempt(false);
         }
-    }, [currentIndex, exam, flagged, result, serializeAnswers, startedAt]);
+    }, [currentIndex, examId, flagged, result, serializeAnswers, startedAt]);
 
     const submitExam = useCallback(async () => {
-        if (!exam?.id || isSubmitting || result) return;
+        if (!examId || !exam?.questions || isSubmitting || result) return;
         setError('');
         setIsSubmitting(true);
         try {
             const payload = {
-                examId: exam.id,
+                examId: examId,
                 answers: exam.questions.map((q) => ({
                     questionId: q.id,
                     selectedAnswers: Array.isArray(answers[q.id]?.selectedAnswers) ? answers[q.id].selectedAnswers : [],
@@ -316,13 +338,25 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
                 submittedAt: new Date().toISOString(),
             };
             const res = await MaterialService.submitExam(payload);
-            setResult(res?.data?.data || null);
+            const examResult = res?.data?.data || null;
+            setResult(examResult);
+
+            if (subjectId && examResult) {
+                AnalyticsService.recordExamAttempt({
+                    subjectId,
+                    materialId: examId,
+                    score:           examResult.score   ?? 0,
+                    maxScore:        examResult.total   ?? exam.questions.length,
+                    durationSeconds: startedAt ? Math.round((Date.now() - startedAt.getTime()) / 1000) : null,
+                    startedAt:       startedAt?.toISOString(),
+                }).catch(() => {});
+            }
         } catch (err) {
             setError(err.message || 'Failed to submit exam. Please retry.');
         } finally {
             setIsSubmitting(false);
         }
-    }, [answers, exam, isSubmitting, result, startedAt]);
+    }, [answers, exam, examId, isSubmitting, result, startedAt, subjectId]);
 
     useEffect(() => {
         if (remainingSeconds == null || result) return undefined;
@@ -443,66 +477,108 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
         <div className={`mx-auto ${isExpanded ? 'max-w-7xl py-10' : 'max-w-6xl py-6'} px-4 md:px-6`}>
             {/* Screen View */}
             <div className="print:hidden">
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="p-5 md:p-6 border-b border-gray-100 bg-gradient-to-r from-indigo-50/40 via-white to-amber-50/30">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <h2 className="text-xl md:text-2xl font-black text-gray-900">{exam.title || 'Mock Exam'}</h2>
-                            <p className="text-xs md:text-sm text-gray-500 font-semibold mt-1">
-                                Progress: Q{currentIndex + 1}/{total}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className="px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs font-bold text-gray-600 flex items-center gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                                {answeredCount}/{total} Answered
-                            </div>
-                            {remainingSeconds != null && (
-                                <div className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 ${
-                                    remainingSeconds <= 60 ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-white text-gray-700 border-gray-200'
-                                }`}>
-                                    <Clock3 className="w-4 h-4" />
-                                    {formatTime(remainingSeconds)}
+                <div className="relative mb-10 group">
+                    <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-[3rem] blur-2xl opacity-10 group-hover:opacity-20 transition-opacity" />
+                    <div className="relative rounded-[3rem] border-8 border-white bg-white shadow-2xl p-8 overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+                        
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center border-2 border-white shadow-sm">
+                                        <FileText className="w-5 h-5 text-indigo-600" />
+                                    </div>
+                                    <span className="text-indigo-400 text-[10px] font-black uppercase tracking-[0.3em]">Knowledge Arena</span>
                                 </div>
-                            )}
-
-                            <button
-                                onClick={handleDownload}
-                                className="group btn-download-pdf flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-xl border border-indigo-100 hover:border-indigo-600 transition-all duration-300 text-xs font-bold active:scale-95"
-                            >
-                                <FileDown className="w-3.5 h-3.5 group-hover:bounce transition-transform duration-300" />
-                                <span className="hidden sm:inline">Download PDF</span>
-                            </button>
+                                <h1 className="text-2xl md:text-3xl font-black text-indigo-950 tracking-tight leading-tight">
+                                    {exam.title || 'Mock Exam'}
+                                </h1>
+                                <div className="flex items-center gap-4 mt-3">
+                                    <div className="flex items-center gap-2 text-gray-400 text-[10px] font-black uppercase tracking-widest">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                        {answeredCount}/{total} Complete
+                                    </div>
+                                    {remainingSeconds != null && (
+                                        <div className={cn(
+                                            "flex items-center gap-2 text-[10px] font-black uppercase tracking-widest",
+                                            remainingSeconds <= 60 ? "text-rose-500 animate-pulse" : "text-amber-500"
+                                        )}>
+                                            <Clock3 className="w-3.5 h-3.5" />
+                                            {formatTime(remainingSeconds)}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={handleDownload}
+                                    className="group flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 text-indigo-600 rounded-[1.5rem] border-4 border-indigo-50 transition-all font-black uppercase tracking-widest text-[10px] shadow-sm hover:scale-105"
+                                >
+                                    <FileDown className="w-4 h-4" />
+                                    PDF
+                                </button>
+                                <button
+                                    onClick={submitExam}
+                                    disabled={isSubmitting || !!result}
+                                    className="px-8 py-4 bg-indigo-600 text-white rounded-[1.5rem] font-black uppercase tracking-widest text-[10px] shadow-xl shadow-indigo-100 hover:scale-105 active:scale-95 disabled:opacity-50 transition-all"
+                                >
+                                    {isSubmitting ? 'Architecting...' : result ? 'Submitted' : 'Final Submit'}
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div className="mt-4 h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <motion.div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${progressPct}%` }}
-                            transition={{ duration: 0.35 }}
-                        />
+
+                        <div className="mt-6 h-4 rounded-full bg-indigo-50/50 p-1 border-2 border-indigo-50 shadow-inner">
+                            <motion.div
+                                className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full shadow-[0_0_15px_rgba(124,92,252,0.4)]"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${progressPct}%` }}
+                                transition={{ type: "spring", damping: 12 }}
+                            />
+                        </div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-[1fr_240px] min-h-[520px]">
-                    <div className="p-5 md:p-6">
+                <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-8">
+                    <div className="space-y-6">
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={currentQuestion.id}
-                                initial={{ opacity: 0, x: 16 }}
+                                initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -16 }}
-                                transition={{ duration: 0.2 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                className="bg-white rounded-[3rem] border-8 border-white shadow-2xl p-10 relative overflow-hidden"
                             >
-                                <div className="mb-5">
-                                    <div className="text-[11px] uppercase tracking-widest font-black text-indigo-500 mb-2">
-                                        {currentQuestion.type.replace('_', ' ')} • {currentQuestion.difficulty} • {currentQuestion.topic}
+                                <div className="absolute top-0 right-0 p-8 flex items-center gap-2">
+                                    <button
+                                        onClick={() => toggleFlag(currentQuestion.id)}
+                                        className={cn(
+                                            "w-12 h-12 rounded-2xl flex items-center justify-center transition-all border-4",
+                                            flagged[currentQuestion.id] 
+                                                ? "bg-amber-100 border-amber-200 text-amber-600" 
+                                                : "bg-gray-50 border-white text-gray-300 hover:text-amber-400 hover:bg-amber-50"
+                                        )}
+                                    >
+                                        <Flag className={cn("w-5 h-5", flagged[currentQuestion.id] && "fill-current")} />
+                                    </button>
+                                </div>
+
+                                <div className="mb-10">
+                                    <div className="text-[10px] uppercase font-black tracking-[0.3em] text-indigo-400 mb-4 flex items-center gap-2">
+                                        <span className="bg-indigo-50 px-3 py-1 rounded-lg">Question {currentIndex + 1}</span>
+                                        <span className="w-1 h-1 rounded-full bg-indigo-200" />
+                                        <span>{currentQuestion.type.replace('_', ' ')}</span>
+                                        <span className="w-1 h-1 rounded-full bg-indigo-200" />
+                                        <span className={cn(
+                                            "px-3 py-1 rounded-lg",
+                                            currentQuestion.difficulty === 'Hard' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'
+                                        )}>{currentQuestion.difficulty}</span>
                                     </div>
-                                    <h3 className="text-lg md:text-2xl font-black text-gray-900 leading-relaxed">
+                                    <h3 className="text-3xl font-black text-indigo-950 leading-tight">
                                         {currentQuestion.question}
                                     </h3>
                                 </div>
+
                                 <QuestionRenderer
                                     question={currentQuestion}
                                     answer={selected}
@@ -514,145 +590,134 @@ const ExamView = ({ examData: rawExamData, isExpanded = false }) => {
                                 />
 
                                 {result && questionResult && (
-                                    <div className={`mt-5 p-4 rounded-2xl border ${
-                                        questionResult.isCorrect ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'
-                                    }`}>
-                                        <p className="text-sm font-bold text-gray-800">
-                                            {questionResult.isCorrect ? 'Correct answer.' : questionResult.isAlmost ? 'Almost correct.' : 'Incorrect.'}
-                                        </p>
-                                        {!questionResult.isCorrect && currentQuestion.type !== 'short_answer' && (
-                                            <p className="text-xs text-gray-600 mt-1">
-                                                Correct options: {questionResult.correctAnswers.map((idx) => currentQuestion.options[idx]).join(', ')}
+                                    <motion.div 
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        className={cn(
+                                            "mt-10 p-8 rounded-[2rem] border-4",
+                                            questionResult.isCorrect 
+                                                ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
+                                                : 'bg-rose-50 border-rose-100 text-rose-800'
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-3 mb-3">
+                                            {questionResult.isCorrect ? <CheckCircle2 className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+                                            <p className="text-lg font-black tracking-tight">
+                                                {questionResult.isCorrect ? 'Absolute Mastery!' : questionResult.isAlmost ? 'Close! Keep Pushing.' : 'Tough One! Watch Out.'}
                                             </p>
-                                        )}
-                                        {!questionResult.isCorrect && ['short_answer', 'problem', 'scenario'].includes(currentQuestion.type) && (
-                                            <p className="text-xs text-gray-600 mt-1">
-                                                Suggested answers: {(questionResult.acceptedAnswers || []).join(' / ')}
-                                            </p>
-                                        )}
-                                        {!questionResult.isCorrect && currentQuestion.type === 'fill_blank' && (
-                                            <p className="text-xs text-gray-600 mt-1">
-                                                Correct blanks: {(questionResult.blankAnswers || []).join(' | ')}
-                                            </p>
-                                        )}
-                                        {!questionResult.isCorrect && currentQuestion.type === 'matching' && (
-                                            <p className="text-xs text-gray-600 mt-1">
-                                                Correct matches: {(questionResult.pairs || []).map((pair) => `${pair.left} -> ${pair.right}`).join(' • ')}
-                                            </p>
-                                        )}
-                                        {questionResult.explanation && (
-                                            <p className="text-xs text-gray-600 mt-2">{questionResult.explanation}</p>
-                                        )}
-                                    </div>
+                                        </div>
+                                        
+                                        <div className="space-y-4 text-sm font-bold opacity-80">
+                                            {!questionResult.isCorrect && currentQuestion.type !== 'short_answer' && (
+                                                <p>Correct Path: <span className="underline decoration-wavy underline-offset-4">{questionResult.correctAnswers.map((idx) => currentQuestion.options[idx]).join(', ')}</span></p>
+                                            )}
+                                            {questionResult.explanation && (
+                                                <div className="bg-white/50 p-4 rounded-xl border-2 border-white/40 italic">
+                                                    {questionResult.explanation}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </motion.div>
                                 )}
                             </motion.div>
                         </AnimatePresence>
 
-                        <div className="mt-6 flex flex-wrap items-center gap-2">
-                            <button
-                                onClick={() => jumpTo(currentIndex - 1)}
-                                disabled={currentIndex === 0}
-                                className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold text-gray-600 disabled:opacity-40"
-                            >
-                                Previous
-                            </button>
-                            <button
-                                onClick={() => jumpTo(currentIndex + 1)}
-                                disabled={currentIndex >= total - 1}
-                                className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold text-gray-600 disabled:opacity-40"
-                            >
-                                Next
-                            </button>
-                            <button
-                                onClick={() => toggleFlag(currentQuestion.id)}
-                                className={`px-4 py-2 rounded-xl text-sm font-bold border flex items-center gap-2 ${
-                                    flagged[currentQuestion.id] ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-white text-gray-600 border-gray-200'
-                                }`}
-                            >
-                                <Flag className="w-4 h-4" />
-                                {flagged[currentQuestion.id] ? 'Flagged' : 'Flag'}
-                            </button>
-                            <button
-                                onClick={submitExam}
-                                disabled={isSubmitting || !!result}
-                                className="ml-auto px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-black disabled:opacity-50"
-                            >
-                                {isSubmitting ? 'Submitting...' : result ? 'Submitted' : 'Submit Exam'}
-                            </button>
-                            <button
-                                onClick={saveAttempt}
-                                disabled={!!result || isSavingAttempt}
-                                className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold text-gray-600 disabled:opacity-50 flex items-center gap-2"
-                            >
-                                <Save className="w-4 h-4" />
-                                {isSavingAttempt ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                                onClick={resetAttempt}
-                                className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold text-gray-600 flex items-center gap-2"
-                            >
-                                <RefreshCw className="w-4 h-4" />
-                                Restart
-                            </button>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={() => jumpTo(currentIndex - 1)}
+                                    disabled={currentIndex === 0}
+                                    className="px-8 py-4 rounded-[1.5rem] bg-white border-4 border-indigo-50 text-indigo-400 font-black uppercase tracking-widest text-[10px] hover:bg-indigo-50 transition-all disabled:opacity-30"
+                                >
+                                    Previous
+                                </button>
+                                <button
+                                    onClick={() => jumpTo(currentIndex + 1)}
+                                    disabled={currentIndex >= total - 1}
+                                    className="px-8 py-4 rounded-[1.5rem] bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-30"
+                                >
+                                    Next Challenge
+                                </button>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={saveAttempt}
+                                    disabled={!!result || isSavingAttempt}
+                                    className="w-14 h-14 rounded-2xl bg-white border-4 border-indigo-50 flex items-center justify-center text-indigo-400 hover:bg-indigo-50 transition-all disabled:opacity-50"
+                                    title="Save Progress"
+                                >
+                                    <Save className={cn("w-6 h-6", isSavingAttempt && "animate-pulse")} />
+                                </button>
+                                <button
+                                    onClick={resetAttempt}
+                                    className="w-14 h-14 rounded-2xl bg-white border-4 border-rose-50 flex items-center justify-center text-rose-300 hover:bg-rose-50 transition-all"
+                                    title="Restart Arena"
+                                >
+                                    <RefreshCw className="w-6 h-6" />
+                                </button>
+                            </div>
                         </div>
-                        {lastSavedAt && !result && (
-                            <div className="mt-2 text-[11px] text-gray-400 font-semibold">
-                                Saved at {new Date(lastSavedAt).toLocaleTimeString()}
-                            </div>
-                        )}
-                        {error && (
-                            <div className="mt-3 text-xs font-bold text-rose-600 flex items-center gap-1">
-                                <AlertTriangle className="w-4 h-4" />
-                                {error}
-                            </div>
-                        )}
+                    </div>
+
+                    <aside className="space-y-8">
                         {result && (
-                            <div className="mt-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
-                                <div className="flex items-center gap-2 text-emerald-700 font-black">
-                                    <Trophy className="w-4 h-4" />
-                                    Score: {result.score}/{result.total}
+                            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-[3rem] p-8 text-center text-white shadow-2xl relative overflow-hidden group">
+                                <div className="absolute top-0 left-0 w-full h-full bg-white/10 -translate-y-full group-hover:translate-y-full transition-transform duration-1000 pointer-events-none" />
+                                <Trophy className="w-16 h-16 mx-auto mb-4 text-amber-300 drop-shadow-[0_0_15px_rgba(252,211,77,0.5)]" />
+                                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1">Final Score</div>
+                                <div className="text-6xl font-black mb-2 tracking-tighter">{result.score}<span className="text-2xl text-white/40">/{result.total}</span></div>
+                                <div className="text-xs font-bold bg-white/10 px-4 py-2 rounded-full inline-block backdrop-blur-sm">
+                                    {Math.round((result.score/result.total)*100)}% Mastery
                                 </div>
                             </div>
                         )}
-                    </div>
 
-                    <aside className="border-t xl:border-t-0 xl:border-l border-gray-100 p-4 md:p-5 bg-gray-50/50">
-                        <div className="text-[11px] uppercase tracking-widest font-black text-gray-500 mb-3">Navigator</div>
-                        <div className="grid grid-cols-5 xl:grid-cols-4 gap-2">
-                            {exam.questions.map((q, idx) => {
-                                const qAnswer = answers[q.id] || { selectedAnswers: [], answerText: '', blankAnswers: [], matchAnswers: {} };
-                                const isAnswered = ['short_answer', 'problem', 'scenario'].includes(q.type)
-                                    ? !!String(qAnswer.answerText || '').trim()
-                                    : q.type === 'fill_blank'
-                                        ? (qAnswer.blankAnswers || []).some((ans) => !!String(ans || '').trim())
-                                        : q.type === 'matching'
-                                            ? Object.keys(qAnswer.matchAnswers || {}).length > 0
-                                            : qAnswer.selectedAnswers.length > 0;
-                                const isFlagged = !!flagged[q.id];
-                                const isActive = idx === currentIndex;
-                                const evaluation = summaryByQuestion[q.id];
-                                const base = evaluation
-                                    ? (evaluation.isCorrect ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-amber-100 text-amber-700 border-amber-300')
-                                    : isFlagged
-                                        ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
-                                        : isAnswered
-                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                            : 'bg-gray-100 text-gray-500 border-gray-200';
-                                return (
-                                    <button
-                                        key={q.id}
-                                        onClick={() => jumpTo(idx)}
-                                        className={`h-9 rounded-lg border text-xs font-black transition-all ${base} ${isActive ? 'ring-2 ring-indigo-400' : ''}`}
-                                    >
-                                        {idx + 1}
-                                    </button>
-                                );
-                            })}
+                        <div className="bg-white rounded-[3rem] border-8 border-white shadow-xl p-8">
+                            <div className="text-[10px] uppercase font-black tracking-[0.3em] text-indigo-300 mb-6 flex items-center gap-2">
+                                <RefreshCw className="w-4 h-4" />
+                                Navigator
+                            </div>
+                            <div className="grid grid-cols-4 sm:grid-cols-5 xl:grid-cols-4 gap-3">
+                                {exam.questions.map((q, idx) => {
+                                    const qAnswer = answers[q.id] || { selectedAnswers: [], answerText: '', blankAnswers: [], matchAnswers: {} };
+                                    const isAnswered = ['short_answer', 'problem', 'scenario'].includes(q.type)
+                                        ? !!String(qAnswer.answerText || '').trim()
+                                        : q.type === 'fill_blank'
+                                            ? (qAnswer.blankAnswers || []).some((ans) => !!String(ans || '').trim())
+                                            : q.type === 'matching'
+                                                ? Object.keys(qAnswer.matchAnswers || {}).length > 0
+                                                : qAnswer.selectedAnswers.length > 0;
+                                    const isFlagged = !!flagged[q.id];
+                                    const isActive = idx === currentIndex;
+                                    const evaluation = summaryByQuestion[q.id];
+                                    
+                                    return (
+                                        <button
+                                            key={q.id}
+                                            onClick={() => jumpTo(idx)}
+                                            className={cn(
+                                                "aspect-square rounded-2xl border-4 font-black transition-all text-xs",
+                                                isActive ? "scale-110 shadow-lg ring-4 ring-indigo-100" : "hover:scale-105",
+                                                evaluation
+                                                    ? (evaluation.isCorrect ? 'bg-emerald-500 border-emerald-400 text-white' : 'bg-rose-500 border-rose-400 text-white')
+                                                    : isFlagged
+                                                        ? 'bg-amber-100 border-amber-200 text-amber-600'
+                                                        : isAnswered
+                                                            ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                                                            : 'bg-gray-50 border-white text-gray-300'
+                                            )}
+                                        >
+                                            {idx + 1}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
                     </aside>
                 </div>
             </div>
-            </div>
+
 
             {/* Printable View */}
             <PrintableExam exam={exam} />

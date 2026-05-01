@@ -12,7 +12,7 @@ const FloatingActionButton = ({ onClick, icon: Icon = Plus, label = "Add" }) => 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onClick}
-                className="md:hidden fixed bottom-24 right-6 w-14 h-14 bg-gradient-to-tr from-purple-600 to-indigo-600 text-white rounded-2xl shadow-xl shadow-purple-200/50 flex items-center justify-center z-40 border border-white/20"
+                className="md:hidden fixed bottom-24 right-6 w-14 h-14 text-white rounded-2xl shadow-xl flex items-center justify-center z-40 border-none btn-vibrant"
                 aria-label={label}
             >
                 <Icon className="w-6 h-6" />

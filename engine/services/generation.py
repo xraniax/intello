@@ -26,6 +26,7 @@ OLLAMA_CHAT_TIMEOUT = int(os.getenv("OLLAMA_CHAT_TIMEOUT", "120"))
 OLLAMA_MAX_CONTEXT_CHARS = int(os.getenv("OLLAMA_MAX_CONTEXT_CHARS", "15000"))
 OLLAMA_REQUEST_RETRIES = int(os.getenv("OLLAMA_REQUEST_RETRIES", "4"))
 OLLAMA_REQUEST_RETRY_DELAY_SECONDS = float(os.getenv("OLLAMA_REQUEST_RETRY_DELAY_SECONDS", "2"))
+MAP_MAX_CHUNKS = int(os.getenv("MAP_MAX_CHUNKS", "80"))
 
 
 def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_type: str) -> str:
@@ -256,7 +257,6 @@ def _validate_mode_specific_constraints(material_type: str, parsed: Dict[str, An
         for idx, q in enumerate(questions, start=1):
             if str(q.get("answer_space") or "").strip() == "":
                 raise ValueError(f"Exam question {idx} must include non-empty answer_space")
-        # Ensure answer sheet can be matched deterministically.
         ids = {int(a.get("question_id")) for a in answer_sheet if a.get("question_id") is not None}
         expected = set(range(1, len(questions) + 1))
         if ids != expected:
@@ -316,6 +316,21 @@ def build_student_quiz_view(quiz_payload: Dict[str, Any]) -> Dict[str, Any]:
         safe_questions.append(safe_item)
     return {"type": "quiz", "questions": safe_questions}
 
+
+def _build_summary_system_prompt() -> str:
+    """Centralized system prompt for summary generation."""
+    return (
+        "You are a knowledgeable student explaining material to a classmate. "
+        "Write in a natural, human voice — clear and direct, not formal or robotic. "
+        "Prioritize the most important ideas; not everything deserves equal coverage. "
+        "Never narrate what the document is about (avoid 'This text discusses...', "
+        "'The document covers...', 'In this paper...'). "
+        "Instead, just explain the actual content directly. "
+        "Choose whatever structure fits best — flowing paragraphs, or short bullet "
+        "groups when listing related items — but never force one format throughout. "
+        "Do not use headers, section titles, or bold/italic formatting."
+    )
+
 def build_prompt(
     material_type: str,
     context: str,
@@ -324,17 +339,49 @@ def build_prompt(
     count: Optional[int] = None,
     difficulty_override: Optional[str] = None,
     student_profile: Optional[Dict[str, Any]] = None,
+    difficulty: str = "intermediate",
 ) -> str:
     """Build a structured prompt for the LLM based on material type."""
     
     json_format_instructions = "Return ONLY valid JSON. Do not include any markdown formatting, pre-amble, or post-amble."
 
     if material_type == "summary":
-        base_instructions = f"Provide a comprehensive summary of the given context in {language}. Format the output in clear paragraphs."
+        lang_phrase = f" Write in {language}." if language and language.lower() != "en" else ""
+
+        # Difficulty-aware depth instructions
+        if difficulty in ("introductory", "beginner", "easy"):
+            depth_instruction = (
+                "Focus ONLY on the 2-3 most important ideas. "
+                "Skip minor details, examples, and edge cases entirely. "
+                "Keep it short and simple — a quick overview someone can read in under a minute."
+            )
+        elif difficulty in ("advanced", "hard"):
+            depth_instruction = (
+                "Cover nearly all the major and supporting ideas from the material. "
+                "Include important details, distinctions, and nuances, but still synthesize — "
+                "do not just restate every sentence. Explain connections between concepts."
+            )
+        else:  # intermediate / default
+            depth_instruction = (
+                "Cover all major concepts but compress the explanations. "
+                "Include enough detail to understand each idea, but skip minor examples "
+                "and tangential points. Aim for a balanced, medium-length summary."
+            )
+
+        base_instructions = (
+            f"Summarize the following material as if you are a student explaining it to a classmate.{lang_phrase}\n"
+            f"{depth_instruction}\n"
+            f"Prioritize the most important ideas — not every detail deserves equal space.\n"
+            f"Write naturally. Choose paragraphs or occasional short bullet groups, whichever fits the content best. "
+            f"Do NOT force everything into one format.\n"
+            f"Never open with phrases like 'This document covers', 'The text discusses', or 'This summary'. "
+            f"Jump straight into the actual content.\n"
+            f"Do NOT use headers, section titles, or bold formatting."
+        )
         prompt = (
-            f"System instructions:\n{base_instructions}\n"
-            f"Context:\n---\n{context}\n---\n\n"
-            f"Generate the summary now:"
+            f"System instructions:\n{base_instructions}\n\n"
+            f"Text to summarize:\n---\n{context}\n---\n\n"
+            f"Summary:"
         )
         return prompt
 
@@ -381,15 +428,18 @@ def build_prompt(
             )
         json_structure = {
             "type": "quiz",
-            "questions": [
-                {
-                    "id": 1,
-                    "question": "Question text?",
-                    "options": ["A", "B", "C", "D"],
-                    "correct_answer": "A",
-                    "explanation": "Why A is correct"
-                }
-            ]
+            "content": {
+                "questions": [
+                    {
+                        "id": 1,
+                        "question": "Question text?",
+                        "options": ["A", "B", "C", "D"],
+                        "correct_answer": "A",
+                        "explanation": "Why A is correct"
+                    }
+                ]
+            },
+            "metadata": {"difficulty": difficulty, "count": 5, "version": "v1"}
         }
         base_instructions += (
             f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
@@ -406,9 +456,12 @@ def build_prompt(
             base_instructions += f" Adapt the complexity to {str(difficulty_override).strip()} level."
         json_structure = {
             "type": "flashcards",
-            "cards": [
-                {"front": "Question/Term", "back": "Answer/Definition"}
-            ]
+            "content": {
+                "cards": [
+                    {"front": "Question/Term", "back": "Answer/Definition"}
+                ]
+            },
+            "metadata": {"difficulty": "intermediate", "count": 5, "version": "v1"}
         }
         base_instructions += f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
 
@@ -422,12 +475,15 @@ def build_prompt(
         )
         json_structure = {
             "type": "exam",
-            "questions": [
-                {"question": "Question text?", "answer_space": "__________"}
-            ],
-            "answer_sheet": [
-                {"question_id": 1, "answer": "The answer", "explanation": "Explanation"}
-            ]
+            "content": {
+                "questions": [
+                    {"id": 1, "question": "Question text?", "answer_space": "__________"}
+                ],
+                "answer_sheet": [
+                    {"question_id": 1, "answer": "The answer", "explanation": "Explanation"}
+                ]
+            },
+            "metadata": {"difficulty": "intermediate", "count": 5, "version": "v1"}
         }
         base_instructions += (
             f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
@@ -446,6 +502,61 @@ def build_prompt(
     return prompt
 
 
+def _map_summarize_chunk(chunk_text: str, language: str, timeout: int, retries: int) -> str:
+    """Summarize a single chunk for the MAP stage."""
+    prompt = (
+        f"System instructions:\n"
+        f"You are a highly efficient assistant. Compress the following text into a concise summary in {language}. "
+        f"Extract ALL key facts, concepts, and details without omitting important information. "
+        f"Do not add introductions or conclusions. Return ONLY the summary.\n\n"
+        f"Text to summarize:\n---\n{chunk_text}\n---\n\n"
+        f"Summary:"
+    )
+    
+    payload: Dict[str, Any] = {
+        "model": OLLAMA_GENERATION_MODEL,
+        "prompt": prompt,
+    }
+    
+    for attempt in range(retries):
+        try:
+            generated_text = _stream_ollama_generate(payload, timeout=timeout, material_type="map_summary")
+            if generated_text and generated_text.strip():
+                return generated_text.strip()
+        except Exception as e:
+            if attempt == retries - 1:
+                logger.warning("Map summarization failed: %s", e)
+                return ""
+            time.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
+    return ""
+
+
+def generate_map_summaries(
+    chunks: List[str],
+    language: str = "en",
+    timeout: int = OLLAMA_GENERATION_TIMEOUT,
+    retries: int = OLLAMA_REQUEST_RETRIES,
+) -> List[str]:
+    """MAP stage: summarize each chunk sequentially."""
+    eligible = [c for c in chunks if len(c.strip()) >= 100]
+    if len(eligible) > MAP_MAX_CHUNKS:
+        logger.warning(
+            "MAP stage: capping %d eligible chunks to %d (set MAP_MAX_CHUNKS env to override)",
+            len(eligible),
+            MAP_MAX_CHUNKS,
+        )
+        eligible = eligible[:MAP_MAX_CHUNKS]
+
+    mapped_summaries = []
+    for idx, chunk in enumerate(eligible):
+        logger.info("MAP stage: summarizing chunk %d/%d", idx + 1, len(eligible))
+        summary = _map_summarize_chunk(chunk, language, timeout, retries)
+        if summary:
+            mapped_summaries.append(summary)
+
+    return mapped_summaries
+
+
 def _build_generation_context(chunks: List[str]) -> str:
     """Combine chunk context with a safe max-length cap."""
     max_chars = OLLAMA_MAX_CONTEXT_CHARS
@@ -460,7 +571,7 @@ async def generate_study_material_stream(
     material_type: str,
     topic: Optional[str] = None,
     language: str = "en",
-    options: Optional[Dict[str, Any]] = None,
+    difficulty: str = "intermediate",
 ) -> AsyncIterator[str]:
     """Stream study material tokens/chunks directly from Ollama.
 
@@ -471,30 +582,23 @@ async def generate_study_material_stream(
         yield "[ERROR] Not enough context to generate material."
         return
 
-    request_options = options if isinstance(options, dict) else {}
-    raw_count = request_options.get("count")
-    count = raw_count if isinstance(raw_count, int) and raw_count > 0 else None
-    raw_difficulty = request_options.get("difficulty")
-    difficulty_override = str(raw_difficulty).strip() if raw_difficulty is not None else None
-    if difficulty_override == "":
-        difficulty_override = None
+    if material_type == "summary":
+        yield "*(Analyzing full document across chunks...)*\n\n"
+        mapped_chunks = generate_map_summaries(chunks, language, OLLAMA_GENERATION_TIMEOUT, OLLAMA_REQUEST_RETRIES)
+        if mapped_chunks:
+            chunks = mapped_chunks
 
     context = _build_generation_context(chunks)
-    prompt = build_prompt(
-        material_type,
-        context,
-        topic,
-        language,
-        count=count,
-        difficulty_override=difficulty_override,
-    )
+    prompt = build_prompt(material_type, context, topic, language, difficulty=difficulty)
 
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
         "stream": True,
     }
-    if material_type != "summary":
+    if material_type == "summary":
+        payload["system"] = _build_summary_system_prompt()
+    else:
         payload["format"] = "json"
 
     retries = OLLAMA_REQUEST_RETRIES
@@ -550,6 +654,7 @@ async def generate_study_material_stream(
             yield f"[ERROR] {e}"
             return
 
+
 def generate_study_material(
     chunks: List[str],
     material_type: str,
@@ -559,13 +664,18 @@ def generate_study_material(
     retries: int = OLLAMA_REQUEST_RETRIES,
     user_id: Optional[str] = None,
     count: Optional[int] = None,
-    difficulty: Optional[str] = None,
+    difficulty: str = "intermediate",
 ) -> Union[str, Dict[str, Any]]:
     """Combine chunks into context and call Ollama to generate study material."""
     if not chunks:
         return "Not enough context to generate material."
 
-    # Combine chunks, limit to MAX_CHARS to prevent context overflow
+    if material_type == "summary":
+        logger.info("Initiating MAP stage for %d chunks", len(chunks))
+        mapped_chunks = generate_map_summaries(chunks, language, timeout, retries)
+        if mapped_chunks:
+            chunks = mapped_chunks
+
     context = _build_generation_context(chunks)
 
     student_profile: Optional[Dict[str, Any]] = None
@@ -585,15 +695,16 @@ def generate_study_material(
         count=count,
         difficulty_override=difficulty,
         student_profile=student_profile,
+        difficulty=difficulty,
     )
 
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
-        # NEW: streaming is now handled explicitly in _stream_ollama_generate.
-        # For structured types, request JSON mode so the concatenated stream is valid JSON.
     }
-    if material_type != "summary":
+    if material_type == "summary":
+        payload["system"] = _build_summary_system_prompt()
+    else:
         payload["format"] = "json"
 
     for attempt in range(retries):
@@ -610,7 +721,6 @@ def generate_study_material(
             req_ended = time.perf_counter()
 
             if not generated_text.strip():
-                # Empty output guard: retry if possible, otherwise fail clearly.
                 if attempt < retries - 1:
                     logger.info(
                         "LLM generation empty output material_type=%s attempt=%d/%d -> retrying",
@@ -623,25 +733,23 @@ def generate_study_material(
 
             duration_ms = int((req_ended - req_started) * 1000)
             logger.info(
-                "LLM generation done material_type=%s status_code=%s duration_ms=%s response_chars=%d",
+                "LLM generation done material_type=%s duration_ms=%s response_chars=%d",
                 material_type,
-                200,
                 duration_ms,
                 len(generated_text),
             )
-            
+
             if material_type == "summary":
                 return generated_text
-            
-            # Parsing/validation layer
+
             try:
-                # Clean up potential markdown / fenced JSON
-                parsed_json = json.loads(_extract_json_payload(generated_text))
-                
-                # Structural validation
+                cleaned = _strip_markdown_fences(generated_text)
+                parsed_json = json.loads(cleaned)
+
+
                 from .schemas import ExamOutput, QuizOutput, FlashcardsOutput
                 from pydantic import ValidationError
-                
+
                 try:
                     if material_type == "quiz":
                         parsed_json = QuizOutput(**parsed_json).model_dump()
@@ -652,7 +760,6 @@ def generate_study_material(
 
                     _validate_mode_specific_constraints(material_type, parsed_json)
 
-                    # Detect structurally valid but empty payloads
                     empty_warning = _validate_non_empty_material(material_type, parsed_json)
                     if empty_warning:
                         logger.info(
@@ -670,13 +777,13 @@ def generate_study_material(
                         }
                 except ValidationError as ve:
                     logger.error(
-                        "LLM generation structural validation failed material_type=%s error=%s", 
+                        "LLM generation structural validation failed material_type=%s error=%s",
                         material_type,
                         ve,
                     )
                     if attempt == retries - 1:
                         return {"error": "Invalid structure from LLM", "raw": generated_text, "details": str(ve)}
-                    continue # Retry on validation error
+                    continue
 
                 return parsed_json
             except json.JSONDecodeError as e:
@@ -688,12 +795,9 @@ def generate_study_material(
                 )
                 if attempt < retries - 1:
                     continue
-                if attempt == retries - 1:
-                    # Fallback or re-raise
-                    return {"error": "Invalid JSON format from LLM", "raw": generated_text}
-                
+                return {"error": "Invalid JSON format from LLM", "raw": generated_text}
+
         except ValueError as e:
-            # Typically empty output or unreconstructable stream; retry if allowed.
             logger.info(
                 "Ollama streaming produced no usable output material_type=%s attempt=%d/%d error=%s",
                 material_type,
@@ -706,7 +810,7 @@ def generate_study_material(
             continue
         except Timeout:
             logger.warning(
-                "Ollama generation request timed out material_type=%s attempt=%d/%d", 
+                "Ollama generation request timed out material_type=%s attempt=%d/%d",
                 material_type,
                 attempt + 1,
                 retries,
@@ -715,7 +819,7 @@ def generate_study_material(
                 raise
         except RequestException as err:
             logger.warning(
-                "Ollama generation request failed material_type=%s attempt=%d/%d error=%s", 
+                "Ollama generation request failed material_type=%s attempt=%d/%d error=%s",
                 material_type,
                 attempt + 1,
                 retries,
@@ -846,6 +950,7 @@ def generate_single_quiz_question(
 
     raise RuntimeError(f"Single quiz generation failed: {last_error}")
 
+
 def generate_chat_response(
     context: str,
     question: str,
@@ -877,7 +982,7 @@ def generate_chat_response(
                     continue
                 raise RuntimeError("Empty chat output from Ollama")
             return text
-            
+
         except ValueError as e:
             logger.info("Ollama chat streaming produced no usable output attempt=%d/%d error=%s", attempt + 1, retries, e)
             if attempt == retries - 1:
@@ -899,9 +1004,7 @@ def evaluate_quiz(
     submissions: List[Dict[str, Any]],
     answer_key: Optional[Dict[Union[str, int], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """
-    Compare user answers with correct answers and return color-coded results.
-    """
+    """Compare user answers with correct answers and return color-coded results."""
     results = []
     question_map: Dict[int, Dict[str, Any]] = {}
     for q in questions or []:

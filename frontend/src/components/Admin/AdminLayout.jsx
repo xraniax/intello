@@ -164,10 +164,6 @@ const AdminLayout = ({ children }) => {
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Signed in as</p>
                                     <p className="text-xs font-bold text-gray-900 truncate tracking-tight">{user?.email}</p>
                                 </div>
-                                <Link to="/dashboard" className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 w-full text-left transition-colors">
-                                    <LayoutDashboard className="w-3.5 h-3.5" /> Back to App
-                                </Link>
-                                <div className="h-px bg-gray-100 my-1"></div>
                                 <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 w-full text-left transition-colors">
                                     <LogOut className="w-3.5 h-3.5" /> Sign Out
                                 </button>

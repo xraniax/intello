@@ -1,26 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2, Lock, Layers, BrainCircuit, ChevronDown, Edit2 } from 'lucide-react';
+import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2, Lock, Layers, BrainCircuit, ChevronDown, Edit2, Upload } from 'lucide-react';
 import { PROCESSING, normalizeStatus } from '@/constants/statusConstants';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { requireAuth } from '@/utils/requireAuth';
 import { useAuthStore } from '@/store/useAuthStore';
 
-const SectionHeader = ({ label, count, isOpen, onToggle, colorClass = 'text-gray-400', badgeClass = 'bg-gray-100 text-gray-500' }) => (
+const SectionHeader = ({ label, count, isOpen, onToggle, styleObj = {} }) => (
     <button
         onClick={onToggle}
-        className="flex items-center justify-between w-full mb-3 px-1 text-xs font-black uppercase tracking-widest group"
+        className="flex items-center justify-between w-full mb-3 px-2 py-1 text-[10px] font-black uppercase tracking-[0.2em] group transition-all"
     >
         <div className="flex items-center gap-2">
             <motion.div
                 animate={{ rotate: isOpen ? 0 : -90 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.2, type: 'spring', stiffness: 300 }}
             >
-                <ChevronDown className={`w-3.5 h-3.5 ${colorClass} group-hover:opacity-80 transition-opacity`} />
+                <ChevronDown className="w-4 h-4 group-hover:opacity-80 transition-opacity" style={{ color: styleObj.iconColor || 'var(--c-primary)' }} />
             </motion.div>
-            <span className={colorClass}>{label}</span>
+            <span style={{ color: styleObj.textColor || 'var(--c-text-muted)' }}>{label}</span>
         </div>
-        <span className={`${badgeClass} py-0.5 px-2 rounded-full`}>{count}</span>
+        <span className="py-1 px-2.5 rounded-full text-[10px] font-black border" style={{ background: styleObj.badgeBg || 'var(--c-surface-alt)', color: styleObj.badgeColor || 'var(--c-text-muted)', borderColor: 'rgba(0,0,0,0.05)' }}>{count}</span>
     </button>
 );
 
@@ -38,11 +38,11 @@ const FilePanel = ({
     const user = useAuthStore((state) => state.data.user);
     const [uploadsOpen, setUploadsOpen] = useState(() => {
         const saved = localStorage.getItem('cognify_panel_uploads_open');
-        return saved !== null ? JSON.parse(saved) : false;
+        return saved !== null ? JSON.parse(saved) : true;
     });
     const [generatedOpen, setGeneratedOpen] = useState(() => {
         const saved = localStorage.getItem('cognify_panel_generated_open');
-        return saved !== null ? JSON.parse(saved) : false;
+        return saved !== null ? JSON.parse(saved) : true;
     });
 
     useEffect(() => {
@@ -89,38 +89,37 @@ const FilePanel = ({
     const generated = materials.filter(m => m.type !== 'upload');
 
     return (
-        <div className="panel-inner h-full flex flex-col">
+        <div className="panel-inner h-full flex flex-col" style={{ background: 'var(--c-canvas)' }}>
             {/* Panel Header */}
-            <div className="panel-header flex-shrink-0 glass-panel sticky top-0 z-10 transition-all border-b border-gray-100/50 shadow-sm">
+            <div className="panel-header flex-shrink-0 px-6 py-5 bg-white/80 backdrop-blur-md sticky top-0 z-10 transition-all border-b-2 border-indigo-50 shadow-sm">
                 <div className="flex items-center justify-between w-full">
-                    <span className="panel-title font-black uppercase tracking-[0.1em] text-gray-900">Subject Materials</span>
+                    <span className="panel-title font-black uppercase tracking-[0.2em] text-[10px] text-gray-400">Subject Materials</span>
+                    <button
+                        onClick={onCollapse}
+                        className="p-2 rounded-2xl transition-all hover:bg-indigo-50 text-indigo-400 hover:text-indigo-600 hover:scale-110 active:scale-90"
+                        title="Hide panel"
+                    >
+                        <PanelLeftClose className="w-5 h-5" />
+                    </button>
                 </div>
-
-                <button
-                    onClick={onCollapse}
-                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                    title="Hide panel"
-                >
-                    <PanelLeftClose className="w-4 h-4" />
-                </button>
             </div>
 
             {/* Quick Upload Action */}
-            <div className="px-4 py-4 border-b border-gray-100 bg-gray-50/30">
+            <div className="px-5 py-5 border-b-2 border-indigo-50/50 bg-indigo-50/20">
                 <button
-                    className="w-full py-4 px-4 bg-white border-2 border-dashed border-indigo-100 rounded-2xl flex flex-col items-center justify-center gap-1 group hover:border-indigo-400 hover:bg-indigo-50/50 transition-all duration-300 shadow-sm hover:shadow-md"
+                    className="w-full py-6 px-4 bg-white border-4 border-white rounded-[2rem] flex flex-col items-center justify-center gap-1 group transition-all duration-300 shadow-sm hover:shadow-xl hover:shadow-purple-900/5 hover:-translate-y-1 active:scale-95"
                     onClick={() => requireAuth(onOpenUpload)}
                 >
-                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center group-hover:scale-110 transition-transform">
-                        {(isPublic && !user) ? <Lock className="w-5 h-5 text-indigo-400" /> : <Sparkles className="w-5 h-5 text-indigo-500" />}
+                    <div className="w-14 h-14 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform bg-gradient-to-br from-purple-100 to-indigo-100 text-purple-600 shadow-inner">
+                        {(isPublic && !user) ? <Lock className="w-6 h-6" /> : <Upload className="w-6 h-6" />}
                     </div>
-                    <span className="text-xs font-black text-indigo-600 uppercase tracking-widest mt-1">Grow Your Space</span>
-                    <span className="text-[10px] text-gray-400 font-medium">Add PDF or Text Source</span>
+                    <span className="text-xs font-black uppercase tracking-[0.2em] mt-3 bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Upload Source</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 opacity-60">Add PDF or Text Content</span>
                 </button>
             </div>
 
             {/* Document List (Scrollable Area) */}
-            <div className="panel-body flex-1 overflow-y-auto min-h-0 pt-2 space-y-2">
+            <div className="panel-body flex-1 overflow-y-auto min-h-0 pt-4 space-y-2">
 
                 {/* Uploads Section */}
                 <div className="file-list px-4 pt-2">
@@ -129,8 +128,6 @@ const FilePanel = ({
                         count={uploads.length}
                         isOpen={uploadsOpen}
                         onToggle={() => setUploadsOpen(o => !o)}
-                        colorClass="text-gray-400"
-                        badgeClass="bg-gray-100 text-gray-500"
                     />
 
                     <AnimatePresence initial={false}>
@@ -144,8 +141,8 @@ const FilePanel = ({
                                 style={{ overflow: 'hidden' }}
                             >
                                 {uploads.length === 0 ? (
-                                    <div className="text-center p-4 border border-dashed border-gray-200 rounded-xl bg-gray-50/50 mb-2">
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">No Source Files</p>
+                                    <div className="text-center p-4 border border-dashed rounded-xl mb-2" style={{ borderColor: 'var(--c-border)', background: 'var(--c-surface-alt)' }}>
+                                        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--c-text-muted)' }}>No Source Files</p>
                                     </div>
                                 ) : (
                                     <AnimatePresence initial={false}>
@@ -160,18 +157,22 @@ const FilePanel = ({
                                                     initial={{ opacity: 0, y: 10 }}
                                                     animate={{ opacity: 1, y: 0, transition: { delay: index * 0.05 } }}
                                                     exit={{ opacity: 0, height: 0 }}
-                                                    className={`group relative bg-white border rounded-2xl p-4 transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 ${isNew
-                                                        ? 'border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.3)] ring-1 ring-indigo-400'
+                                                    className={`group relative p-5 transition-all duration-300 cursor-pointer mb-4 flex items-start gap-4 rounded-[2rem] border-4 ${isNew
+                                                        ? 'border-purple-400 shadow-lg shadow-purple-200'
                                                         : isSelected
-                                                            ? 'border-indigo-500 bg-indigo-50/30 ring-2 ring-indigo-500/10'
+                                                            ? 'border-purple-500 bg-purple-50 shadow-lg shadow-purple-900/5'
                                                             : isProcessing
-                                                                ? 'border-indigo-200 bg-indigo-50/10 cursor-wait opacity-80'
-                                                                : 'border-gray-100 hover:border-indigo-200 hover:shadow-md'
+                                                                ? 'cursor-wait opacity-80 border-transparent bg-gray-50'
+                                                                : 'border-white bg-white hover:border-purple-200 hover:shadow-xl hover:shadow-purple-900/5 hover:-translate-y-1'
                                                         }`}
                                                     onClick={() => !isProcessing && window.dispatchEvent(new CustomEvent('open-material', { detail: { id: m.id, type: m.type } }))}
                                                 >
                                                     <div
-                                                        className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${isSelected ? 'bg-indigo-500 text-white shadow-md shadow-indigo-200' : 'bg-gray-100 hover:bg-indigo-100 text-gray-500 hover:text-indigo-500'}`}
+                                                        className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10`}
+                                                        style={{
+                                                            background: isSelected ? 'var(--c-primary)' : 'var(--c-surface-alt)',
+                                                            color: isSelected ? 'white' : 'var(--c-text-muted)'
+                                                        }}
                                                         onClick={(e) => { e.stopPropagation(); !isProcessing && toggleSelection(m.id); }}
                                                         title={isSelected ? "Deselect for Generation" : "Select for Generation"}
                                                     >
@@ -187,28 +188,30 @@ const FilePanel = ({
                                                                     onBlur={commitRename}
                                                                     onKeyDown={handleKeyDown}
                                                                     onClick={e => e.stopPropagation()}
-                                                                    className="text-sm font-bold text-gray-900 border-b-2 border-indigo-400 focus:outline-none bg-transparent w-full"
+                                                                    className="text-sm font-bold border-b-2 focus:outline-none bg-transparent w-full"
+                                                                    style={{ color: 'var(--c-text)', borderColor: 'var(--c-primary)' }}
                                                                 />
                                                             ) : (
-                                                                <h4 className={`text-sm font-bold truncate ${isSelected ? 'text-indigo-900' : 'text-gray-700'}`}>{m.title}</h4>
+                                                                <h4 className={`text-sm font-bold truncate`} style={{ color: isSelected ? 'var(--c-primary)' : 'var(--c-text)' }}>{m.title}</h4>
                                                             )}
-                                                            <div className="flex items-center gap-2">
-                                                                {isNew && <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-indigo-500 text-white animate-pulse">New</span>}
+                                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                                {isNew && <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-white animate-pulse" style={{ background: 'var(--c-primary)' }}>New</span>}
                                                                 <StatusBadge status={m.status} />
                                                             </div>
                                                         </div>
-                                                        <p className="text-[9px] text-indigo-400 uppercase font-black tracking-widest mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <p className="text-[9px] uppercase font-black tracking-widest mt-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--c-primary)' }}>
                                                             Opens in Document Tab
                                                         </p>
                                                         <div className="flex items-center gap-2 mt-1">
-                                                            <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                                            <span className="text-[10px] font-medium flex items-center gap-1" style={{ color: 'var(--c-text-muted)' }}>
                                                                 {new Date(m.created_at).toLocaleDateString()}
                                                             </span>
                                                             <div className="flex gap-2 transition-all ml-auto">
                                                                 {!isProcessing && (
                                                                     <button
                                                                         onClick={(e) => { e.stopPropagation(); requireAuth(() => onGenerate(m.id)); }}
-                                                                        className="p-1.5 text-indigo-500 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                                        className="p-1.5 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                                        style={{ color: 'var(--c-primary)' }}
                                                                         title={(isPublic && !user) ? 'Login required' : 'Generate Insight'}
                                                                     >
                                                                         {(isPublic && !user) ? <Lock className="w-3.5 h-3.5 opacity-50" /> : <Sparkles className="w-3.5 h-3.5" />}
@@ -216,14 +219,16 @@ const FilePanel = ({
                                                                 )}
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); requireAuth(() => onDelete(m.id, m.title)); }}
-                                                                    className={`p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                                    className={`p-1.5 hover:text-red-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                                    style={{ color: 'var(--c-text-muted)' }}
                                                                     title={(isPublic && !user) ? 'Login required' : 'Delete'}
                                                                 >
                                                                     {(isPublic && !user) ? <Lock className="w-3.5 h-3.5 opacity-50" /> : <Trash2 className="w-3.5 h-3.5" />}
                                                                 </button>
                                                                 <button
                                                                     onClick={(e) => { requireAuth(() => startRename(e, m)); }}
-                                                                    className={`p-1.5 text-gray-400 hover:text-indigo-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                                    className={`p-1.5 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                                    style={{ color: 'var(--c-text-muted)' }}
                                                                     title={(isPublic && !user) ? 'Login required' : 'Rename'}
                                                                 >
                                                                     {(isPublic && !user) ? <Lock className="w-3.5 h-3.5 opacity-50" /> : <Edit2 className="w-3.5 h-3.5" />}
@@ -242,14 +247,18 @@ const FilePanel = ({
                 </div>
 
                 {/* Generated Materials Section */}
-                <div className="file-list px-4 pb-6">
+                <div className="file-list px-4 pb-6 mt-4">
                     <SectionHeader
                         label="Generated Materials"
                         count={generated.length}
                         isOpen={generatedOpen}
                         onToggle={() => setGeneratedOpen(o => !o)}
-                        colorClass="text-purple-400"
-                        badgeClass="bg-purple-50 text-purple-500"
+                        styleObj={{
+                            iconColor: 'var(--c-accent)',
+                            textColor: 'var(--c-accent)',
+                            badgeBg: 'var(--c-accent-light)',
+                            badgeColor: 'var(--c-accent)'
+                        }}
                     />
 
                     <AnimatePresence initial={false}>
@@ -263,9 +272,9 @@ const FilePanel = ({
                                 style={{ overflow: 'hidden' }}
                             >
                                 {generated.length === 0 ? (
-                                    <div className="text-center p-6 border border-dashed border-purple-100 rounded-xl bg-purple-50/30 mb-2">
-                                        <Sparkles className="w-6 h-6 text-purple-300 mx-auto mb-2" />
-                                        <p className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">No AI Insights Yet</p>
+                                    <div className="text-center p-6 border border-dashed rounded-[1.25rem] mb-2" style={{ borderColor: 'rgba(6, 182, 212, 0.2)', background: 'var(--c-accent-light)' }}>
+                                        <Sparkles className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--c-accent)' }} />
+                                        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--c-accent)' }}>No AI Insights Yet</p>
                                     </div>
                                 ) : (
                                     <AnimatePresence initial={false}>
@@ -274,13 +283,13 @@ const FilePanel = ({
                                             const isNew = m.created_at && (Date.now() - new Date(m.created_at).getTime() < 15000);
 
                                             const TYPE_CONFIG = {
-                                                'summary': { icon: FileText, bg: 'bg-indigo-50/40', border: 'border-indigo-100', iconBg: 'bg-indigo-100', iconText: 'text-indigo-600', text: 'text-indigo-900', hoverBorder: 'hover:border-indigo-300', shadow: 'hover:shadow-indigo-100/50' },
-                                                'quiz': { icon: CheckCircle2, bg: 'bg-emerald-50/40', border: 'border-emerald-100', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', text: 'text-emerald-900', hoverBorder: 'hover:border-emerald-300', shadow: 'hover:shadow-emerald-100/50' },
-                                                'flashcards': { icon: Layers, bg: 'bg-purple-50/40', border: 'border-purple-100', iconBg: 'bg-purple-100', iconText: 'text-purple-600', text: 'text-purple-900', hoverBorder: 'hover:border-purple-300', shadow: 'hover:shadow-purple-100/50' },
-                                                'exam': { icon: BrainCircuit, bg: 'bg-amber-50/40', border: 'border-amber-100', iconBg: 'bg-amber-100', iconText: 'text-amber-600', text: 'text-amber-900', hoverBorder: 'hover:border-amber-300', shadow: 'hover:shadow-amber-100/50' },
+                                                'summary': { icon: FileText, color: 'var(--c-accent)', bg: 'var(--c-accent-light)', borderColor: 'rgba(6, 182, 212, 0.2)' },
+                                                'quiz': { icon: CheckCircle2, color: 'var(--c-success)', bg: 'var(--c-success-light)', borderColor: 'rgba(34, 197, 94, 0.2)' },
+                                                'flashcards': { icon: Layers, color: 'var(--c-primary)', bg: 'var(--c-primary-light)', borderColor: 'rgba(124, 92, 252, 0.2)' },
+                                                'exam': { icon: BrainCircuit, color: 'var(--c-warning)', bg: 'var(--c-warning-light)', borderColor: 'rgba(245, 158, 11, 0.2)' },
                                             };
 
-                                            const config = TYPE_CONFIG[m.type] || { icon: Sparkles, bg: 'bg-gray-50/40', border: 'border-gray-100', iconBg: 'bg-gray-100', iconText: 'text-gray-600', text: 'text-gray-900', hoverBorder: 'hover:border-gray-300', shadow: 'hover:shadow-gray-100/50' };
+                                            const config = TYPE_CONFIG[m.type] || { icon: Sparkles, color: 'var(--c-text-secondary)', bg: 'var(--c-surface-alt)', borderColor: 'var(--c-border)' };
                                             const Icon = config.icon;
 
                                             return (
@@ -289,10 +298,15 @@ const FilePanel = ({
                                                     initial={{ opacity: 0, y: 10 }}
                                                     animate={{ opacity: 1, y: 0, transition: { delay: index * 0.05 } }}
                                                     exit={{ opacity: 0, height: 0 }}
-                                                    className={`group relative border transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 rounded-2xl p-4 ${config.bg} ${config.border} ${config.hoverBorder} hover:shadow-md ${config.shadow} ${isNew ? 'shadow-[0_0_15px_rgba(168,85,247,0.3)] ring-1 ring-purple-400' : ''}`}
+                                                    className={`group relative border transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 rounded-[1.25rem] p-4 hover:shadow-md ${isNew ? 'ring-1' : ''}`}
+                                                    style={{ 
+                                                        background: 'var(--c-surface)', 
+                                                        borderColor: isNew ? config.color : config.borderColor,
+                                                        boxShadow: isNew ? `0 0 15px ${config.borderColor}` : 'var(--shadow-sm)'
+                                                    }}
                                                     onClick={() => !isProcessing && window.dispatchEvent(new CustomEvent('open-material', { detail: { id: m.id, type: m.type } }))}
                                                 >
-                                                    <div className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${config.iconBg} ${config.iconText}`}>
+                                                    <div className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all`} style={{ background: config.bg, color: config.color }}>
                                                         <Icon className="w-4 h-4" />
                                                     </div>
                                                     <div className="min-w-0 flex-grow">
@@ -305,37 +319,40 @@ const FilePanel = ({
                                                                     onBlur={commitRename}
                                                                     onKeyDown={handleKeyDown}
                                                                     onClick={e => e.stopPropagation()}
-                                                                    className={`text-sm font-bold border-b-2 focus:outline-none bg-transparent w-full ${config.text} ${config.hoverBorder}`}
+                                                                    className={`text-sm font-bold border-b-2 focus:outline-none bg-transparent w-full`}
+                                                                    style={{ color: 'var(--c-text)', borderColor: config.color }}
                                                                 />
                                                             ) : (
-                                                                <h4 className={`text-sm font-bold truncate capitalize ${config.text}`}>
+                                                                <h4 className={`text-sm font-bold truncate capitalize`} style={{ color: 'var(--c-text)' }}>
                                                                     {m.title || m.type.replace('_', ' ')}
                                                                 </h4>
                                                             )}
                                                             <div className="flex items-center gap-2">
-                                                                {isNew && <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-purple-500 text-white animate-pulse">New</span>}
+                                                                {isNew && <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-white animate-pulse" style={{ background: config.color }}>New</span>}
                                                                 <StatusBadge status={m.status} />
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center justify-between mt-1">
-                                                            <p className={`text-[9px] uppercase font-black tracking-widest opacity-0 group-hover:opacity-100 transition-opacity ${config.iconText}`}>
+                                                            <p className={`text-[9px] uppercase font-black tracking-widest opacity-0 group-hover:opacity-100 transition-opacity`} style={{ color: config.color }}>
                                                                 Open {m.type.replace('_', ' ')}
                                                             </p>
-                                                            <span className="text-[10px] opacity-40 font-medium whitespace-nowrap">
+                                                            <span className="text-[10px] opacity-40 font-medium whitespace-nowrap" style={{ color: 'var(--c-text-muted)' }}>
                                                                 {new Date(m.created_at).toLocaleDateString()}
                                                             </span>
                                                         </div>
                                                         <div className="flex gap-2 transition-all ml-auto mt-2 justify-end">
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); requireAuth(() => onDelete(m.id, m.title)); }}
-                                                                className={`p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                                className={`p-1.5 hover:text-red-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                                style={{ color: 'var(--c-text-muted)' }}
                                                                 title={(isPublic && !user) ? 'Login required' : 'Delete'}
                                                             >
                                                                 {(isPublic && !user) ? <Lock className="w-3.5 h-3.5 opacity-50" /> : <Trash2 className="w-3.5 h-3.5" />}
                                                             </button>
                                                             <button
                                                                 onClick={(e) => { requireAuth(() => startRename(e, m)); }}
-                                                                className={`p-1.5 text-gray-400 hover:text-purple-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                                className={`p-1.5 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}
+                                                                style={{ color: 'var(--c-text-muted)' }}
                                                                 title={(isPublic && !user) ? 'Login required' : 'Rename'}
                                                             >
                                                                 {(isPublic && !user) ? <Lock className="w-3.5 h-3.5 opacity-50" /> : <Edit2 className="w-3.5 h-3.5" />}
@@ -354,10 +371,11 @@ const FilePanel = ({
             </div>
 
             {/* System Trash Shortcut - Fixed at bottom */}
-            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
+            <div className="px-4 py-3 border-t flex-shrink-0" style={{ borderColor: 'var(--c-border-soft)', background: 'var(--c-surface-alt)' }}>
                 <button
                     onClick={() => window.location.href = '/trash'}
-                    className="w-full py-3 px-4 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 hover:text-red-500 hover:bg-red-50/50 rounded-xl transition-all duration-300 group"
+                    className="w-full py-3 px-4 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] hover:text-red-500 hover:bg-red-50/50 rounded-xl transition-all duration-300 group"
+                    style={{ color: 'var(--c-text-muted)' }}
                 >
                     <Trash2 className="w-3.5 h-3.5 group-hover:animate-bounce transition-colors" />
                     <span>View System Trash</span>

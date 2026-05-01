@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useCallback } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
+import { resetAuthFailureGuard } from '../utils/authFailureHandler';
 
 const AuthContext = createContext();
 
@@ -26,7 +27,9 @@ export const AuthProvider = ({ children }) => {
 
     const loginWithToken = useCallback(async (token) => {
         localStorage.setItem('token', token);
-        return await loadUser();
+        const user = await loadUser();
+        resetAuthFailureGuard();
+        return user;
     }, [loadUser]);
 
     const value = useMemo(() => ({

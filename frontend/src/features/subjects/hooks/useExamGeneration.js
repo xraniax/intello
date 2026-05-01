@@ -1,5 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useMaterialStore } from '@/store/useMaterialStore';
 import { MaterialService } from '@/services/MaterialService';
+
+const EXAM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
  * useExamGeneration
@@ -12,12 +15,27 @@ export const useExamGeneration = ({
     setTabs,
     setActiveTabId,
 }) => {
+    const fetchMaterials = useMaterialStore(s => s.actions.fetchMaterials);
     const [isGeneratingExam, setIsGeneratingExam] = useState(false);
     const [examGenError, setExamGenError] = useState('');
+    const timeoutRef = useRef(null);
+
+    useEffect(() => {
+        return () => {
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        };
+    }, []);
 
     const handleGenerateExam = useCallback(async (genOptions = {}) => {
         setExamGenError('');
         setIsGeneratingExam(true);
+
+        // Set timeout guard
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => {
+            setExamGenError('Exam generation timed out after 5 minutes. The AI engine may be overloaded — please try again.');
+            setIsGeneratingExam(false);
+        }, EXAM_TIMEOUT_MS);
 
         try {
             const topics = (genOptions?.topics || subject?.name || '')
@@ -42,6 +60,9 @@ export const useExamGeneration = ({
             const examRes = await MaterialService.generateExam(payload);
             const exam = examRes?.data?.data;
             
+            // Refresh sidebar to show the new material (if persisted)
+            fetchMaterials();
+            
             if (!exam) {
                 throw new Error('Failed to generate exam. Empty response.');
             }
@@ -63,6 +84,10 @@ export const useExamGeneration = ({
             setExamGenError(err.message || 'Exam generation failed.');
         } finally {
             setIsGeneratingExam(false);
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+            }
         }
     }, [normalizedId, subject, setTabs, setActiveTabId]);
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import Navbar from '../../components/Navbar';
+import Navbar from '../../layouts/Navbar';
 import { vi } from 'vitest';
 
 // Mock Zustand useAuthStore

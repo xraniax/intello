@@ -1,22 +1,11 @@
 import os
-import psycopg2
+import sys
 
-DB_HOST = os.getenv("DB_HOST", "db")
-DB_PORT = os.getenv("DB_PORT", 5432)
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from database import engine
 
 try:
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-    )
-    print("✅ Connected to database!")
-    conn.close()
+    with engine.connect() as conn:
+        print("✅ Connected to database!")
 except Exception as e:
-    print("❌ Connection failed:", e)
-    
+    print("❌ Connection failed:", e)

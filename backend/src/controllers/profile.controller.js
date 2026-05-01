@@ -1,5 +1,7 @@
 import asyncHandler from '../utils/asyncHandler.js';
+import fs from 'fs';
 import User from '../models/user.model.js';
+import File from '../models/file.model.js';
 import { query } from '../utils/config/db.js';
 import QuotaService from '../services/quota.service.js';
 
@@ -119,6 +121,7 @@ class ProfileController {
             }
         });
     });
+
 }
 
 export default ProfileController;

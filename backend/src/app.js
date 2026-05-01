@@ -12,10 +12,6 @@ dotenv.config();
 
 const app = express();
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-const uploadStoragePath = process.env.PDF_STORAGE_PATH || 'uploads';
-const normalizedUploadPath = path.isAbsolute(uploadStoragePath)
-  ? uploadStoragePath
-  : path.resolve(uploadStoragePath);
 
 // Middlewares
 app.use(cors({
@@ -26,24 +22,19 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'cognify-secret',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: false, // Set to true if using https
-        maxAge: 10 * 60 * 1000 // 10 minutes session for OAuth flow
-    }
+  secret: process.env.SESSION_SECRET || 'cognify-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true if using https
+    maxAge: 10 * 60 * 1000 // 10 minutes session for OAuth flow
+  }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
 
 // Apply rate limiter to all api routes
 app.use('/api/', apiLimiter);
-
-// Static files (for uploads)
-app.use('/uploads', express.static(normalizedUploadPath));
-// Backward-compatibility: older records may store absolute container paths.
-app.use('/app/data/uploads', express.static(normalizedUploadPath));
 
 // Routes
 import authRoutes from './routes/auth.routes.js';
@@ -53,14 +44,18 @@ import adminRoutes from './routes/admin.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import examRoutes from './routes/exam.routes.js';
 import quizRoutes from './routes/quiz.routes.js';
+import analyticsRoutes from './routes/analytics.routes.js';
+import fileRoutes from './routes/file.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
+app.use('/api/files', fileRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/quiz', quizRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Cognify Backend API', version: '1.0.0', endpoints: { auth: '/api/auth', materials: '/api/materials', subjects: '/api/subjects', health: '/health' } });

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import AnalyticsService from '@/services/AnalyticsService';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -79,8 +80,12 @@ const mapQuestion = (q) => {
     const question = q.question || q.text || q.title || q.front || '';
     const options = q.options || q.choices || q.answers || [];
 
+    // Support multi-property mapping for correct answers
+    // 1. Value-based: correct_answer, answer, correctAnswer
+    // 2. Index-based: correctAnswers (array of indices), correctIndex
     let correctAnswer = q.correct_answer || q.answer || q.correctAnswer || '';
 
+    // If we have correctAnswers as an array of indices, map to the option value
     if (Array.isArray(q.correctAnswers) && q.correctAnswers.length > 0 && options.length > 0) {
         const idx = parseInt(q.correctAnswers[0], 10);
         if (!isNaN(idx) && options[idx]) {
@@ -102,6 +107,7 @@ const mapQuestion = (q) => {
 const extractQuizQuestions = (data) => {
     if (!data) return [];
 
+    // 0. String handling
     if (typeof data === 'string') {
         try {
             const parsed = JSON.parse(data);
@@ -118,6 +124,7 @@ const extractQuizQuestions = (data) => {
 
     if (Array.isArray(data)) return data.map(mapQuestion);
 
+    // 2. Contains standard properties
     const arrayField =
         data.questions ||
         data.quiz ||
@@ -138,6 +145,7 @@ const extractQuizQuestions = (data) => {
 
     if (data.result) return extractQuizQuestions(data.result);
     if (data.data) return extractQuizQuestions(data.data);
+    if (data.content) return extractQuizQuestions(data.content);
 
     return [];
 };
@@ -599,8 +607,8 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
 // ---------------------------------------------------------------------------
 // Static mode — all questions from quizData prop
 // ---------------------------------------------------------------------------
-const StaticQuizView = ({ questions, isExpanded }) => {
-    const storageKey = `cognify_quiz_state_${questions.length > 0 ? questions[0]?.question?.replace(/\s+/g, '').substring(0, 30) : 'default'}`;
+const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizDataId }) => {
+    const storageKey = `cognify_quiz_state_${quizDataId || (questions.length > 0 ? questions[0]?.question?.replace(/\s+/g, '').substring(0, 30) : 'default')}`;
 
     const initialSaved = (() => {
         try {
@@ -622,6 +630,10 @@ const StaticQuizView = ({ questions, isExpanded }) => {
     const [streak, setStreak] = useState(initialSaved.streak ?? 0);
     const [muted, setMuted] = useState(initialSaved.muted ?? false);
 
+    const responsesRef = useRef([]);
+    const startedAtRef = useRef(new Date().toISOString());
+
+    // Persist state
     useEffect(() => {
         if (questions.length > 0) {
             localStorage.setItem(storageKey, JSON.stringify({
@@ -639,6 +651,7 @@ const StaticQuizView = ({ questions, isExpanded }) => {
 
     const handleSubmit = useCallback(() => {
         if (selectedOption === null || isSubmitted) return;
+
         const isCorrect = selectedOption === currentQuestion.correct_answer;
         if (isCorrect) {
             setScore(prev => prev + 1);
@@ -648,6 +661,11 @@ const StaticQuizView = ({ questions, isExpanded }) => {
             setStreak(0);
             if (!muted) playTone('wrong');
         }
+        responsesRef.current.push({
+            questionId: currentQuestion.id,
+            isCorrect,
+            difficulty: currentQuestion.difficulty ?? 'medium',
+        });
         setIsSubmitted(true);
     }, [selectedOption, isSubmitted, currentQuestion, muted]);
 
@@ -658,8 +676,17 @@ const StaticQuizView = ({ questions, isExpanded }) => {
             setIsSubmitted(false);
         } else {
             setShowResults(true);
+            if (subjectId && responsesRef.current.length > 0) {
+                AnalyticsService.recordQuizAttempt({
+                    subjectId,
+                    materialId: materialId ?? quizData?.id,
+                    responses: responsesRef.current,
+                    startedAt: startedAtRef.current,
+                    completedAt: new Date().toISOString(),
+                }).catch(() => {});
+            }
         }
-    }, [currentQuestionIndex, questions.length]);
+    }, [currentQuestionIndex, questions.length, subjectId, materialId, quizData?.id]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -691,6 +718,8 @@ const StaticQuizView = ({ questions, isExpanded }) => {
         setScore(0);
         setStreak(0);
         setShowResults(false);
+        responsesRef.current = [];
+        startedAtRef.current = new Date().toISOString();
     };
 
     if (showResults) {
@@ -733,11 +762,17 @@ const StaticQuizView = ({ questions, isExpanded }) => {
                     </button>
                 ) : (
                     <button
-                        onClick={handleNext}
-                        className="px-6 sm:px-10 py-4 sm:py-5 rounded-xl sm:rounded-2xl bg-indigo-600 text-white font-black hover:bg-indigo-700 transition-all flex items-center gap-2 sm:gap-3 shadow-xl shadow-indigo-100 hover:-translate-y-1 text-sm sm:text-base"
+                        onClick={handleSubmit}
+                        disabled={selectedOption === null}
+                        className="group relative px-12 py-6 rounded-[2.5rem] font-black uppercase tracking-widest text-xs transition-all duration-300 flex items-center gap-4 active:scale-95 disabled:opacity-30 disabled:grayscale disabled:scale-95"
+                        style={{
+                            background: 'linear-gradient(135deg, #7C5CFC, #F43F5E)',
+                            color: 'white',
+                            boxShadow: '0 20px 40px -10px rgba(124,92,252,0.4)'
+                        }}
                     >
-                        {currentQuestionIndex < questions.length - 1 ? 'Next Question' : 'View Summary'}
-                        <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <Flame className={cn("w-6 h-6", selectedOption !== null && "animate-pulse")} />
+                        Submit Answer
                     </button>
                 )}
             </div>

@@ -1,10 +1,10 @@
 import React from 'react';
 
 const Skeleton = ({ className, variant = 'rect', width, height }) => {
-    const baseClass = "bg-gray-100/50 anim-skeleton rounded-lg overflow-hidden relative";
+    const baseClass = "anim-skeleton overflow-hidden relative";
     
     const variantClasses = {
-        rect: "rounded-lg",
+        rect: "rounded-[1.25rem]",
         circle: "rounded-full",
         text: "rounded h-4 w-full"
     };
@@ -12,6 +12,7 @@ const Skeleton = ({ className, variant = 'rect', width, height }) => {
     const style = {
         width: width || '100%',
         height: height || (variant === 'text' ? '1rem' : '100%'),
+        background: 'var(--c-surface-alt)'
     };
 
     return (
@@ -19,7 +20,10 @@ const Skeleton = ({ className, variant = 'rect', width, height }) => {
             className={`${baseClass} ${variantClasses[variant]} ${className || ''}`}
             style={style}
         >
-            <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent anim-shimmer" style={{ animationDuration: '1.5s' }}></div>
+            <div className="absolute inset-0 -translate-x-full anim-shimmer" style={{ 
+                animationDuration: '1.5s',
+                background: 'linear-gradient(to right, transparent, var(--c-surface), transparent)'
+            }}></div>
         </div>
     );
 };

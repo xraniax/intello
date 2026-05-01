@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, RefreshCw, AlertCircle, Clock } from 'lucide-react';
-import { COMPLETED, PROCESSING, FAILED, SUCCESS, FAILURE, normalizeStatus } from '@/constants/statusConstants';
+import { COMPLETED, PROCESSING, FAILED, SUCCESS, FAILURE, PENDING_JOB, normalizeStatus } from '@/constants/statusConstants';
 
 const StatusBadge = ({ status }) => {
     const normalized = normalizeStatus(status);
@@ -17,6 +17,7 @@ const StatusBadge = ({ status }) => {
                     tooltip: 'AI processing is complete. Your material is ready.'
                 };
             case PROCESSING:
+            case PENDING_JOB:
                 return {
                     label: 'Processing',
                     icon: <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />,

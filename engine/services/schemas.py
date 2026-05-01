@@ -47,14 +47,26 @@ class RetrieveRequest(BaseModel):
     topic: Optional[str] = None
     top_k: int = Field(default=5, ge=1, le=50)
 
+class QuestionTypePreference(BaseModel):
+    type: Literal["mcq", "fill_blank", "matching", "essay"]
+    count: Optional[int] = None
+    percentage: Optional[int] = None
+    id_range: Optional[List[int]] = None
+
+class GenerationPolicy(BaseModel):
+    version: str = "1.1"
+    total_count: int = Field(default=10, ge=1, le=50)
+    difficulty: Literal["introductory", "intermediate", "advanced"]
+    distribution: List[QuestionTypePreference]
+
 class GenerateRequest(BaseModel):
     subject_id: Optional[UUID] = None
     topic: Optional[str] = None
     material_type: Literal["summary", "quiz", "flashcards", "exam"]
-    top_k: int = Field(default=5, ge=1, le=50)
+    top_k: int = Field(default=20, ge=1, le=50)
     language: str = Field(default="en")
     user_id: Optional[str] = None
-    options: Optional[dict] = None
+    generation_options: Optional[dict] = None
 
 class ChatRequest(BaseModel):
     subject_id: UUID
@@ -67,6 +79,8 @@ class ChatRequest(BaseModel):
 # --- Structured Output Models ---
 
 class ExamQuestion(BaseModel):
+    id: int
+    type: Literal["single_choice", "multiple_select", "short_answer", "fill_blank", "matching", "problem", "scenario", "mcq", "essay"] = "single_choice"
     question: str
     answer_space: str = "__________"
 
@@ -75,10 +89,20 @@ class ExamAnswerSheetItem(BaseModel):
     answer: str
     explanation: str
 
-class ExamOutput(BaseModel):
-    type: Literal["exam"] = "exam"
+class GenerationMetadata(BaseModel):
+    difficulty: str
+    count: Optional[int] = None
+    telemetry: Optional[dict] = None
+    version: str = "v1"
+
+class ExamContent(BaseModel):
     questions: List[ExamQuestion]
     answer_sheet: List[ExamAnswerSheetItem]
+
+class ExamOutput(BaseModel):
+    type: Literal["exam"] = "exam"
+    content: ExamContent
+    metadata: GenerationMetadata
 
 class QuizQuestion(BaseModel):
     id: int
@@ -87,17 +111,38 @@ class QuizQuestion(BaseModel):
     correct_answer: str
     explanation: str
 
+class QuizContent(BaseModel):
+    questions: List[QuizQuestion]
+
 class QuizOutput(BaseModel):
     type: Literal["quiz"] = "quiz"
-    questions: List[QuizQuestion]
+    content: QuizContent
+    metadata: GenerationMetadata
 
 class Flashcard(BaseModel):
     front: str
     back: str
 
+class FlashcardsContent(BaseModel):
+    cards: List[Flashcard]
+
 class FlashcardsOutput(BaseModel):
     type: Literal["flashcards"] = "flashcards"
-    cards: List[Flashcard]
+    content: FlashcardsContent
+    metadata: GenerationMetadata
+
+class SummarySection(BaseModel):
+    heading: str
+    body: str
+
+class SummaryContent(BaseModel):
+    title: str
+    sections: List[SummarySection]
+
+class SummaryOutput(BaseModel):
+    type: Literal["summary"] = "summary"
+    content: SummaryContent
+    metadata: GenerationMetadata
 
 # --- Evaluation Models ---
 

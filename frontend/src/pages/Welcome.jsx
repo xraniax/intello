@@ -1,121 +1,298 @@
 import React from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Brain, Sparkles, BookOpen, Layers, ArrowRight, BookMarked } from 'lucide-react';
+import { Sparkles, Layers, Brain, BookMarked, ArrowRight, Zap, Star, GraduationCap } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { staggerContainer, staggerItemBouncy, heroSlideUp, bounceUp, popIn } from '@/utils/motion';
+
+// ── Feature cards data ──────────────────────────────────────
+const FEATURES = [
+    {
+        icon: Layers,
+        label: 'Curated Workspaces',
+        body: 'Organize materials by subject. Every quiz, flashcard deck, and summary lives exactly where you expect it.',
+        grad: 'var(--grad-ocean)',
+        light: 'var(--c-primary-ultra)',
+        textColor: 'var(--c-primary)',
+        shadow: 'var(--shadow-primary)',
+    },
+    {
+        icon: Brain,
+        label: 'Contextual AI Tutor',
+        body: 'Ask anything and get answers grounded strictly in your own documents — zero hallucinations from generic training data.',
+        grad: 'var(--grad-candy)',
+        light: 'var(--c-rose-light)',
+        textColor: 'var(--c-rose)',
+        shadow: 'var(--shadow-rose)',
+    },
+    {
+        icon: Zap,
+        label: 'Active Generation',
+        body: 'Turn passive PDFs into quizzes, flashcard decks, and structured summaries in seconds with one click.',
+        grad: 'var(--grad-cool)',
+        light: 'var(--c-teal-light)',
+        textColor: 'var(--c-teal)',
+        shadow: 'var(--shadow-teal)',
+    },
+];
+
+// ── Floating decoration orbs ────────────────────────────────
+const Orb = ({ style, delay = 0, size = 80, opacity = 0.12 }) => (
+    <motion.div
+        className="absolute rounded-full pointer-events-none"
+        style={{ width: size, height: size, ...style }}
+        animate={{ y: [0, -18, 0], x: [0, 8, 0] }}
+        transition={{ duration: 5 + delay, repeat: Infinity, ease: 'easeInOut', delay }}
+    />
+);
 
 const Welcome = () => {
     const user = useAuthStore((state) => state.data.user);
-
-    if (user) {
-        return <Navigate to="/dashboard" replace />;
-    }
+    if (user) return <Navigate to="/dashboard" replace />;
 
     return (
-        <div className="min-h-[calc(100vh-80px)] flex flex-col bg-[#FFF8F0]/30 animate-in fade-in duration-700">
-            {/* Hero Section */}
-            <main className="flex-1 flex flex-col items-center justify-center text-center px-6 pt-16 pb-24 relative overflow-hidden">
-                {/* Decorative background elements */}
-                <div className="absolute top-1/4 -left-32 w-96 h-96 bg-purple-200/40 rounded-full blur-3xl mix-blend-multiply opacity-50 animate-blob"></div>
-                <div className="absolute top-1/4 -right-32 w-96 h-96 bg-indigo-200/40 rounded-full blur-3xl mix-blend-multiply opacity-50 animate-blob animation-delay-2000"></div>
-                <div className="absolute -bottom-32 left-1/2 -translate-x-1/2 w-96 h-96 bg-mint-200/40 rounded-full blur-3xl mix-blend-multiply opacity-50 animate-blob animation-delay-4000"></div>
+        <div
+            className="flex flex-col"
+            style={{ background: 'var(--c-canvas)' }}
+        >
+            {/* ── Hero ── */}
+            <main className="relative flex flex-col items-center text-center px-6 pt-20 md:pt-28 pb-16 min-h-[calc(100vh-58px)]">
 
-                <div className="relative z-10 max-w-4xl mx-auto space-y-8 flex flex-col items-center">
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="inline-flex items-center justify-center p-2 bg-purple-50 rounded-2xl border border-purple-100/50 mb-4 shadow-sm"
-                    >
-                        <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-xl shadow-sm text-purple-600 font-bold text-xs uppercase tracking-widest">
+                {/* Background orbs — contained so they don't scroll-overflow */}
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <Orb style={{ background: 'var(--grad-primary)', top: '10%', left: '5%' }} size={120} delay={0} />
+                    <Orb style={{ background: 'var(--grad-candy)', top: '15%', right: '8%' }} size={80} delay={1.5} />
+                    <Orb style={{ background: 'var(--grad-cool)', bottom: '20%', left: '12%' }} size={60} delay={2.5} />
+                    <Orb style={{ background: 'var(--grad-warm)', bottom: '25%', right: '6%' }} size={100} delay={1} />
+                </div>
+
+                <div className="relative z-10 max-w-3xl mx-auto flex flex-col items-center gap-6">
+
+                    {/* Eyebrow badge */}
+                    <motion.div {...popIn} transition={{ delay: 0 }}>
+                        <motion.div
+                            className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full text-[12px] font-bold tracking-wider"
+                            style={{
+                                background: 'white',
+                                color: 'var(--c-primary)',
+                                border: '1px solid var(--c-border-strong)',
+                                boxShadow: 'var(--shadow-xs)',
+                            }}
+                            whileHover={{ scale: 1.02 }}
+                        >
                             <Sparkles className="w-3.5 h-3.5" />
-                            <span>AI-Powered E-Learning</span>
-                        </div>
+                            AI-powered learning — made delightful
+                        </motion.div>
                     </motion.div>
 
-                    <motion.h1
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="text-6xl md:text-8xl font-black text-gray-900 tracking-tighter leading-[1.1]"
-                    >
-                        Cultivate Your <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600 drop-shadow-sm">
-                            Cognitive Garden
-                        </span>
-                    </motion.h1>
+                    {/* Headline */}
+                    <motion.div {...heroSlideUp} transition={{ delay: 0.08 }} className="flex flex-col gap-2">
+                        <h1
+                            className="text-[3.5rem] sm:text-[4.5rem] font-black leading-[1.02] tracking-tight"
+                            style={{ color: 'var(--c-text)', letterSpacing: '-0.04em' }}
+                        >
+                            Study smarter.{' '}
+                            <span className="text-gradient-hero">
+                                Learn faster.
+                            </span>
+                        </h1>
+                        <h2
+                            className="text-[3.5rem] sm:text-[4.5rem] font-black leading-[1.02] tracking-tight text-display"
+                            style={{ color: 'var(--c-primary)', letterSpacing: '-0.04em', WebkitTextFillColor: 'initial', background: 'none' }}
+                        >
+                            Remember more.
+                        </h2>
+                    </motion.div>
 
+                    {/* Subheading */}
                     <motion.p
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="text-xl md:text-2xl text-gray-500 font-medium max-w-2xl leading-relaxed"
+                        {...heroSlideUp}
+                        transition={{ delay: 0.14 }}
+                        className="text-lg leading-relaxed max-w-xl font-medium"
+                        style={{ color: 'var(--c-text-secondary)' }}
                     >
-                        Transform scattered documents and lecture notes into active, intelligent study spaces. Experience retrieval-augmented tutoring tailored exactly to your curriculum.
+                        Upload your notes, lecture slides, and PDFs. Cognify builds personalized
+                        quizzes, flashcards, and an AI tutor that knows exactly what you're studying.
                     </motion.p>
 
+                    {/* CTA */}
                     <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3 }}
-                        className="flex flex-col sm:flex-row items-center gap-4 pt-8 w-full sm:w-auto"
+                        {...heroSlideUp}
+                        transition={{ delay: 0.20 }}
+                        className="flex flex-col sm:flex-row items-center gap-4 pt-4"
                     >
+                        <motion.div whileTap={{ scale: 0.94 }}>
+                            <Link
+                                to="/register"
+                                className="btn btn-lg btn-solid flex items-center gap-2.5 group"
+                                style={{ padding: '0 32px' }}
+                            >
+                                <Zap className="w-5 h-5 opacity-90" />
+                                Start learning for free
+                                <motion.span
+                                    className="inline-block"
+                                    animate={{ x: [0, 3, 0] }}
+                                    transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                                >
+                                    <ArrowRight className="w-5 h-5 opacity-90" />
+                                </motion.span>
+                            </Link>
+                        </motion.div>
                         <Link
-                            to="/dashboard"
-                            className="btn-vibrant w-full sm:w-auto px-10 py-5 text-lg flex items-center justify-center gap-3 group relative overflow-hidden"
+                            to="/login"
+                            className="btn btn-lg btn-outline"
+                            style={{ padding: '0 32px' }}
                         >
-                            <span className="relative z-10 font-bold flex items-center gap-2">
-                                {user ? 'Go to Workspace' : 'Start Exploring'}
-                                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                            </span>
+                            Log in
                         </Link>
+                    </motion.div>
 
-                        {!user && (
-                            <div className="flex items-center gap-4 w-full sm:w-auto justify-center">
-                                <Link
-                                    to="/login"
-                                    className="px-8 py-5 text-gray-500 hover:text-gray-900 font-bold text-lg hover:bg-gray-50 rounded-2xl transition-all"
-                                >
-                                    Log In
-                                </Link>
-                                <span className="text-xs font-black text-gray-300 uppercase tracking-widest">or</span>
-                                <Link
-                                    to="/dashboard"
-                                    className="text-sm font-bold text-indigo-500 hover:text-indigo-600 underline underline-offset-4 decoration-2"
-                                >
-                                    Try without account
-                                </Link>
-                            </div>
-                        )}
+                    {/* Trust line */}
+                    <motion.div
+                        {...heroSlideUp}
+                        transition={{ delay: 0.26 }}
+                        className="flex items-center gap-2 text-[12px]"
+                        style={{ color: 'var(--c-text-placeholder)' }}
+                    >
+                        <div className="flex items-center gap-0.5">
+                            {[1,2,3,4,5].map(i => (
+                                <Star key={i} className="w-3 h-3 fill-current" style={{ color: 'var(--c-amber)' }} />
+                            ))}
+                        </div>
+                        <span>Free to start · No credit card needed</span>
                     </motion.div>
                 </div>
             </main>
 
-            {/* Features Row */}
-            <div className="border-t border-purple-100/30 bg-white/50 backdrop-blur-md py-16">
-                <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-                    <div className="space-y-4 p-6">
-                        <div className="w-14 h-14 mx-auto bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center shadow-inner">
-                            <Layers className="w-7 h-7" />
-                        </div>
-                        <h3 className="text-xl font-black text-gray-900">Curated Workspaces</h3>
-                        <p className="text-gray-500 font-medium">Organize your materials by subject and instantly locate relevant concepts without cognitive overload.</p>
-                    </div>
-                    <div className="space-y-4 p-6">
-                        <div className="w-14 h-14 mx-auto bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
-                            <Brain className="w-7 h-7" />
-                        </div>
-                        <h3 className="text-xl font-black text-gray-900">Contextual AI Tutor</h3>
-                        <p className="text-gray-500 font-medium">Ask questions and receive answers strictly grounded in your uploaded documents and notes.</p>
-                    </div>
-                    <div className="space-y-4 p-6">
-                        <div className="w-14 h-14 mx-auto bg-mint-50 text-mint-700 rounded-2xl flex items-center justify-center shadow-inner">
-                            <BookMarked className="w-7 h-7" />
-                        </div>
-                        <h3 className="text-xl font-black text-gray-900">Active Generation</h3>
-                        <p className="text-gray-500 font-medium">Automatically transform passive PDFs into interactive quizzes and intelligent summaries.</p>
-                    </div>
+            {/* ── Feature cards ── */}
+            <section
+                className="py-16 px-6"
+                style={{ borderTop: '1px solid var(--c-border-soft)', background: 'var(--c-surface)' }}
+            >
+                <div className="max-w-5xl mx-auto">
+                    {/* Section label */}
+                    <motion.div
+                        {...bounceUp}
+                        initial={{ opacity: 0, y: 16 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+                        className="text-center mb-12"
+                    >
+                        <p
+                            className="text-[12px] font-bold tracking-widest uppercase mb-3"
+                            style={{ color: 'var(--c-primary)' }}
+                        >
+                            Everything you need
+                        </p>
+                        <h2
+                            className="text-3xl font-black font-serif"
+                            style={{ color: 'var(--c-text)', letterSpacing: '-0.02em' }}
+                        >
+                            Built for serious learners
+                        </h2>
+                    </motion.div>
+
+                    <motion.div
+                        variants={staggerContainer}
+                        initial="initial"
+                        whileInView="animate"
+                        viewport={{ once: true, amount: 0.2 }}
+                        className="grid grid-cols-1 md:grid-cols-3 gap-6"
+                    >
+                        {FEATURES.map(({ icon: Icon, label, body, grad, light, textColor, shadow }) => (
+                            <motion.div
+                                key={label}
+                                variants={staggerItemBouncy}
+                                className="flex flex-col gap-5 p-8 rounded-[32px] transition-all group bg-white"
+                                style={{
+                                    border: '1px solid var(--c-border-strong)',
+                                    boxShadow: 'var(--shadow-xs)',
+                                }}
+                                whileHover={{
+                                    scale: 1.03,
+                                    y: -8,
+                                    boxShadow: `0 24px 40px rgba(0,0,0,0.08)`,
+                                    borderColor: 'rgba(0,0,0,0.12)',
+                                    transition: { type: 'spring', damping: 20, stiffness: 300 }
+                                }}
+                            >
+                                {/* Icon */}
+                                <motion.div
+                                    className="w-16 h-16 rounded-[20px] flex items-center justify-center relative overflow-hidden"
+                                    style={{ background: light, color: textColor }}
+                                    whileHover={{ scale: 1.15, rotate: [0, -10, 10, -5, 0] }}
+                                    transition={{ duration: 0.5, type: 'spring' }}
+                                >
+                                    <div className="absolute inset-0 opacity-10" style={{ background: grad }} />
+                                    <Icon className="w-8 h-8 relative z-10" strokeWidth={2.5} />
+                                </motion.div>
+
+                                <div>
+                                    <p
+                                        className="text-[18px] font-bold mb-2 tracking-tight"
+                                        style={{ color: 'var(--c-text)' }}
+                                    >
+                                        {label}
+                                    </p>
+                                    <p className="text-[14px] leading-relaxed font-medium" style={{ color: 'var(--c-text-secondary)' }}>
+                                        {body}
+                                    </p>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </motion.div>
                 </div>
-            </div>
+            </section>
+
+            {/* ── Bottom CTA ── */}
+            <section
+                className="py-20 px-6"
+                style={{ borderTop: '1px solid var(--c-border-strong)', background: 'var(--c-canvas)' }}
+            >
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+                    className="max-w-3xl mx-auto relative rounded-[32px] overflow-hidden px-10 py-12 text-center bg-white hover-lift"
+                    style={{ border: '1px solid var(--c-border-strong)', boxShadow: 'var(--shadow-sm)' }}
+                >
+                    {/* Decorative orbs */}
+                    <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none" style={{ background: 'var(--c-primary-light)', opacity: 0.5 }} />
+                    <div className="absolute -bottom-4 -left-4 w-24 h-24 rounded-full pointer-events-none" style={{ background: 'var(--c-coral-light)', opacity: 0.5 }} />
+
+                    <div className="relative z-10">
+                        <motion.div
+                            className="w-16 h-16 rounded-[20px] flex items-center justify-center mx-auto mb-6"
+                            style={{ background: 'var(--c-surface-alt)', border: '1px solid var(--c-border-soft)' }}
+                            animate={{ rotate: [0, 8, -8, 0], scale: [1, 1.05, 1.05, 1] }}
+                            whileHover={{ scale: 1.15, rotate: 360, transition: { duration: 0.6 } }}
+                            transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                        >
+                            <GraduationCap className="w-8 h-8" style={{ color: 'var(--c-primary)' }} />
+                        </motion.div>
+                        <h3
+                            className="text-[32px] font-black mb-3 font-serif"
+                            style={{ color: 'var(--c-text)', letterSpacing: '-0.02em' }}
+                        >
+                            Ready to level up?
+                        </h3>
+                        <p className="text-[15px] font-medium mb-8 max-w-md mx-auto" style={{ color: 'var(--c-text-secondary)' }}>
+                            Join students turning passive study sessions into active learning journeys.
+                        </p>
+                        <motion.div whileTap={{ scale: 0.94 }} className="inline-block">
+                            <Link
+                                to="/register"
+                                className="btn btn-lg btn-solid flex items-center gap-2.5 px-8"
+                            >
+                                <Sparkles className="w-4 h-4 opacity-90" />
+                                Create free account
+                            </Link>
+                        </motion.div>
+                    </div>
+                </motion.div>
+            </section>
         </div>
     );
 };

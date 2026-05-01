@@ -4,7 +4,10 @@ import Material from '../models/material.model.js';
 import { COMPLETED } from '../constants/status.enum.js';
 import { query } from '../utils/config/db.js';
 
-const EXAM_ENGINE_SUBJECT_ID = '00000000-0000-0000-0000-000000000000';
+const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://ollama_gpu:11434').replace(/\/$/, '');
+const OLLAMA_MODEL = process.env.OLLAMA_GENERATION_MODEL || 'qwen2.5:7b-instruct';
+const OLLAMA_GENERATE_URL = `${OLLAMA_BASE_URL}/api/generate`;
+const ENGINE_URL = (process.env.ENGINE_URL || 'http://engine:8000').replace(/\/$/, '');
 
 const EXAM_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
 const EXAM_CACHE_LIMIT = 500;
@@ -417,7 +420,7 @@ const askModel = async (systemInstruction, userPrompt) => {
             top_k: 1,
             language: 'en',
         },
-        { timeout: 180000 }
+        { timeout: 300000 }
     );
     return response?.data?.result || response?.data?.response || '';
 };
@@ -458,7 +461,7 @@ class ExamService {
                 subject_id: payload.subject_id,
                 topic: fallbackTopic,
                 top_k: 3,
-            }, { timeout: 10000 });
+            }, { timeout: 300000 });
             
             if (retrieveRes.data?.chunks) {
                 context = retrieveRes.data.chunks.map(c => c.content).join('\n\n').substring(0, 2500);
@@ -540,6 +543,7 @@ class ExamService {
 
         examCache.set(examId, {
             userId,
+            subjectId: payload.subject_id,
             createdAtMs: Date.now(),
             startedAt: createdAt.toISOString(),
             exam: {
@@ -583,7 +587,7 @@ class ExamService {
     static async submitExam(userId, payload) {
         cleanupCache();
         cleanupAttemptCache();
-        const record = examCache.get(payload.examId);
+        const record = await this._getExamRecord(userId, payload.examId);
         if (!record || record.userId !== userId) {
             const err = new Error('Exam not found or expired. Generate a new exam and try again.');
             err.statusCode = 404;
@@ -623,28 +627,18 @@ class ExamService {
                     isCorrect = false;
                 } else {
                     try {
-                        const evalRes = await engineClient.post('/evaluate-quiz', {
-                            questions: [
-                                {
-                                    id: 1,
-                                    question: question.question,
-                                    options: null,
-                                    correct_answer: referenceAnswer,
-                                    explanation: question.explanation || 'Refer to context.'
-                                }
-                            ],
-                            submissions: [
-                                {
-                                    question_id: 1,
-                                    user_answer: userInput
-                                }
-                            ]
-                        }, { timeout: 10000 });
-
-                        const resultItem = evalRes?.data?.results?.[0];
-                        isCorrect = resultItem?.status === 'correct';
-                        isAlmost = false;
-                        aiExplanation = resultItem?.explanation || null;
+                        const engineUrl = process.env.ENGINE_URL || 'http://engine:8000';
+                        const evalRes = await axios.post(`${engineUrl}/evaluate-answer`, {
+                            question: question.question,
+                            correct_answer: referenceAnswer,
+                            user_answer: userInput
+                        }, { timeout: 300000 });
+                        
+                        const evalData = evalRes.data;
+                        // Use a threshold for correctness if the AI is too conservative with the boolean
+                        isCorrect = evalData.is_correct || (evalData.score >= 0.85);
+                        isAlmost = evalData.is_almost || (evalData.score >= 0.5 && evalData.score < 0.85);
+                        aiExplanation = evalData.explanation;
                     } catch (err) {
                         console.error('[ExamService] Semantic evaluation failed, falling back to string match:', err.message);
                         // FALLBACK: Simple string match
@@ -698,6 +692,26 @@ class ExamService {
 
         const details = await Promise.all(detailsPromises);
         const score = details.filter((d) => d.isCorrect).length;
+
+        // Persist attempt to analytics — non-blocking so grading is never delayed
+        if (record.subjectId) {
+            const durationSeconds = Math.floor(
+                (Date.now() - new Date(record.startedAt).getTime()) / 1000
+            );
+            import('./analytics.service.js').then(({ default: AnalyticsService }) =>
+                AnalyticsService.recordExamAttempt(userId, {
+                    materialId: payload.examId,
+                    subjectId: record.subjectId,
+                    score,
+                    maxScore: record.exam.questions.length,
+                    durationSeconds,
+                    startedAt: record.startedAt,
+                    details,
+                    examQuestions: record.exam.questions,
+                })
+            ).catch((err) => console.error('[ExamService] Analytics recording failed:', err.message));
+        }
+
         return {
             score,
             total: record.exam.questions.length,
@@ -705,10 +719,10 @@ class ExamService {
         };
     }
 
-    static saveAttempt(userId, payload) {
+    static async saveAttempt(userId, payload) {
         cleanupCache();
         cleanupAttemptCache();
-        const record = examCache.get(payload.examId);
+        const record = await this._getExamRecord(userId, payload.examId);
         if (!record || record.userId !== userId) {
             const err = new Error('Exam not found or expired. Generate a new exam and try again.');
             err.statusCode = 404;
@@ -730,10 +744,10 @@ class ExamService {
         return { saved: true, updatedAt: attemptCache.get(key).updatedAt };
     }
 
-    static getAttempt(userId, examId) {
+    static async getAttempt(userId, examId) {
         cleanupCache();
         cleanupAttemptCache();
-        const record = examCache.get(examId);
+        const record = await this._getExamRecord(userId, examId);
         if (!record || record.userId !== userId) {
             const err = new Error('Exam not found or expired. Generate a new exam and try again.');
             err.statusCode = 404;
@@ -748,6 +762,48 @@ class ExamService {
             startedAt: record.startedAt,
             updatedAt: null,
         };
+    }
+
+    static async _getExamRecord(userId, examId) {
+        let record = examCache.get(examId);
+        if (record && record.userId === userId) return record;
+
+        try {
+            const dbRes = await query('SELECT id, subject_id, title, type, ai_generated_content, created_at FROM materials WHERE id = $1 AND user_id = $2', [examId, userId]);
+            if (dbRes.rows.length === 0) return null;
+            
+            const mat = dbRes.rows[0];
+            if (mat.type !== 'exam' && mat.type !== 'mock_exam') return null;
+
+            let contentObj;
+            try {
+                contentObj = typeof mat.ai_generated_content === 'string' ? JSON.parse(mat.ai_generated_content) : mat.ai_generated_content;
+            } catch(e) {
+                return null;
+            }
+            
+            let questions = contentObj?.questions || contentObj?.items || contentObj || [];
+            if (contentObj?.result && contentObj?.result?.questions) questions = contentObj.result.questions;
+            if (!Array.isArray(questions)) questions = Object.values(questions);
+
+            record = {
+                userId,
+                subjectId: mat.subject_id,
+                createdAtMs: new Date(mat.created_at).getTime(),
+                startedAt: new Date(mat.created_at).toISOString(),
+                exam: {
+                    id: mat.id,
+                    title: mat.title || 'Mock Exam',
+                    questions: questions,
+                    timeLimit: contentObj?.timeLimit || null
+                }
+            };
+            examCache.set(examId, record);
+            return record;
+        } catch (dbErr) {
+            console.error('[ExamService] DB fetch failed in _getExamRecord', dbErr.message);
+            return null;
+        }
     }
 }
 

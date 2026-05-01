@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { authService } from '@/features/auth/services/AuthService';
+import { profileService } from '@/features/user/services/ProfileService';
 import { useUIStore } from './useUIStore';
 import toast from 'react-hot-toast';
 
-export const useAuthStore = create((set, get) => ({
+export const useAuthStore = create((set) => ({
     data: {
         user: null,
         isInitialized: false
@@ -114,6 +115,7 @@ export const useAuthStore = create((set, get) => ({
                 error: null,
                 data: { ...state.data, user: null, isInitialized: true }
             }));
-        }
+        },
+
     }
 }));
