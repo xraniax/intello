@@ -199,22 +199,22 @@ class MaterialService {
                         const contentStr = result.content ? (typeof result.content === 'object' ? JSON.stringify(result.content) : result.content) : null;
                         const aiContentStr = result.ai_generated_content ? (typeof result.ai_generated_content === 'string' ? result.ai_generated_content : JSON.stringify(result.ai_generated_content)) : null;
 
+                        const nowIso = new Date().toISOString();
                         if (result.content && result.ai_generated_content) {
                             await query(
                                 'UPDATE materials SET content = $2, ai_generated_content = $3, status = $4, completed_at = $5, processed_at = $6 WHERE id = $1 AND user_id = $7',
-                                [materialId, contentStr, aiContentStr, COMPLETED, updateData.completed_at, updateData.processed_at, userId]
+                                [materialId, contentStr, aiContentStr, COMPLETED, nowIso, nowIso, userId]
                             );
                         } else if (result.content) {
                             await query(
                                 'UPDATE materials SET content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
-                                [materialId, contentStr, COMPLETED, updateData.completed_at, updateData.processed_at, userId]
+                                [materialId, contentStr, COMPLETED, nowIso, nowIso, userId]
                             );
                         } else if (result.ai_generated_content) {
                             await query(
                                 'UPDATE materials SET ai_generated_content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
-                                [materialId, aiContentStr, COMPLETED, updateData.completed_at, updateData.processed_at, userId]
+                                [materialId, aiContentStr, COMPLETED, nowIso, nowIso, userId]
                             );
-                        }
                         }
 
                         await Material.updateAIResult(
