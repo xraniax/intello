@@ -987,7 +987,7 @@ async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
     """Generate study materials using LLM based on retrieved context via Celery."""
     logger.info("Generate request (async): subject=%s, type=%s, topic=%s", body.subject_id, body.material_type, body.topic)
     try:
-        request_options = body.options if isinstance(body.options, dict) else {}
+        request_options = body.generation_options if isinstance(body.generation_options, dict) else {}
         topic = body.topic or request_options.get("topic")
         language = body.language or request_options.get("language") or "en"
 
@@ -1050,7 +1050,7 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
         body.topic,
     )
 
-    request_options = body.options if isinstance(body.options, dict) else {}
+    request_options = body.generation_options if isinstance(body.generation_options, dict) else {}
     topic = body.topic or request_options.get("topic")
     language = body.language or request_options.get("language") or "en"
 
