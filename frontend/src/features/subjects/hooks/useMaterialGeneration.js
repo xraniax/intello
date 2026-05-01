@@ -173,12 +173,11 @@ export const useMaterialGeneration = ({
             }
 
             streamControllerRef.current = null;
-            setIsGeneratingMaterial(false);
+            finishGenerating();
             return;
         } catch (streamErr) {
             console.warn('[MaterialGen] Streaming path failed, falling back to async job flow:', streamErr?.message || streamErr);
             streamControllerRef.current = null;
-            setIsGeneratingMaterial(false);
         }
 
         try {

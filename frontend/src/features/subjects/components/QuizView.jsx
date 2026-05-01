@@ -788,6 +788,7 @@ const QuizView = ({
     quizData = null,     // static mode data (ignored in adaptive mode)
     isExpanded = false,
     subjectId = null,    // required for adaptive mode
+    materialId = null,
     topic = null,
     language = 'en'
 }) => {
@@ -824,7 +825,7 @@ const QuizView = ({
         );
     }
 
-    return <StaticQuizView questions={questions} isExpanded={isExpanded} />;
+    return <StaticQuizView questions={questions} isExpanded={isExpanded} subjectId={subjectId} materialId={materialId} quizDataId={quizData?.id} />;
 };
 
 export default QuizView;
