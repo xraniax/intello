@@ -67,8 +67,8 @@ def _fetch_chunk_texts(
 ) -> List[str]:
     from .retrieval import retrieve_chunks_by_topic
 
-    chunks = retrieve_chunks_by_topic(db, subject_id, topic, int(top_k))
-    texts = [c.content for c in chunks if c.content]
+    chunks_with_scores = retrieve_chunks_by_topic(db, subject_id, topic, int(top_k))
+    texts = [c.content for c, _ in chunks_with_scores if c.content]
     if not texts:
         raise ValueError("No retrieval context found for this subject/topic.")
     return texts

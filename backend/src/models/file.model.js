@@ -115,6 +115,39 @@ class File {
     }
 
     /**
+     * Get total count of files for pagination.
+     */
+    static async getTotalCount(filters = {}) {
+        let sql = 'SELECT COUNT(*)::int as count FROM files f WHERE 1=1';
+        const params = [];
+        let idx = 1;
+
+        if (filters.userId) {
+            sql += ` AND f.user_id::text ILIKE '%' || $${idx} || '%'`;
+            params.push(filters.userId);
+            idx++;
+        }
+        if (filters.subjectId) {
+            sql += ` AND f.subject_id::text ILIKE '%' || $${idx} || '%'`;
+            params.push(filters.subjectId);
+            idx++;
+        }
+        if (filters.minSizeMb) {
+            sql += ` AND f.size_bytes >= $${idx}`;
+            params.push(filters.minSizeMb * 1024 * 1024);
+            idx++;
+        }
+        if (filters.mimeType) {
+            sql += ` AND f.mime_type = $${idx}`;
+            params.push(filters.mimeType);
+            idx++;
+        }
+
+        const result = await query(sql, params);
+        return result.rows[0].count;
+    }
+
+    /**
      * Get total storage usage for a user.
      * Excludes files linked to FAILED materials.
      */

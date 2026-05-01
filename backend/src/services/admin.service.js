@@ -12,10 +12,14 @@ import { normalizeStatus } from '../constants/status.enum.js';
 
 class AdminService {
     /**
-     * Get all users with stats
+     * Get all users with stats (paginated)
      */
     static async getAllUsers(filters = {}) {
-        return await User.findAll(filters);
+        const [users, total] = await Promise.all([
+            User.findAll(filters),
+            User.getTotalCount()
+        ]);
+        return { users, total };
     }
 
     /**
@@ -104,10 +108,14 @@ class AdminService {
     }
 
     /**
-     * Get all files for management
+     * Get all files for management (paginated)
      */
     static async getAllFiles(filters = {}) {
-        return await File.findAll(filters);
+        const [files, total] = await Promise.all([
+            File.findAll(filters),
+            File.getTotalCount(filters)
+        ]);
+        return { files, total };
     }
 
     /**
@@ -230,10 +238,14 @@ class AdminService {
     }
 
     /**
-     * Get audit logs for the admin panel
+     * Get audit logs for the admin panel (paginated)
      */
     static async getAdminLogs(filters = {}) {
-        return await Log.findAll(filters);
+        const [logs, total] = await Promise.all([
+            Log.findAll(filters),
+            Log.getTotalCount(filters)
+        ]);
+        return { logs, total };
     }
 
     /**

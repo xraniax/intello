@@ -90,20 +90,41 @@ class Material {
     }
 
     /**
+     * Get count of all non-deleted materials for a user
+     */
+    static async getCountByUserId(userId) {
+        const result = await query(
+            `SELECT COUNT(*)::int as count 
+             FROM materials 
+             WHERE user_id = $1 AND deleted_at IS NULL`,
+            [userId]
+        );
+        return result.rows[0].count;
+    }
+
+    /**
      * Get all materials for a specific user with subject info
      */
-    static async findByUserId(userId) {
-        const result = await query(
-            `SELECT m.*, s.name as subject_name,
+    static async findByUserId(userId, pagination = null) {
+        let sql = `
+            SELECT m.*, s.name as subject_name,
             f.path as file_path,
             json_build_object('id', s.id, 'name', s.name) as subject
             FROM materials m
             LEFT JOIN subjects s ON m.subject_id = s.id
             LEFT JOIN files f ON f.material_id = m.id
             WHERE m.user_id = $1 AND m.deleted_at IS NULL
-            ORDER BY m.created_at DESC`,
-            [userId]
-        );
+            ORDER BY m.created_at DESC
+        `;
+        const params = [userId];
+
+        if (pagination) {
+            const { limit, offset } = pagination;
+            sql += ` LIMIT $2 OFFSET $3`;
+            params.push(limit, offset);
+        }
+
+        const result = await query(sql, params);
         return result.rows;
     }
 
@@ -219,21 +240,42 @@ class Material {
     }
 
     /**
+     * Get count of deleted materials for a user
+     */
+    static async getDeletedCount(userId) {
+        const result = await query(
+            `SELECT COUNT(*)::int as count 
+             FROM materials 
+             WHERE user_id = $1 AND deleted_at IS NOT NULL`,
+            [userId]
+        );
+        return result.rows[0].count;
+    }
+
+    /**
      * Find all deleted materials for the user (Trash View).
      * Includes computed expires_at based on trash TTL.
      */
-    static async findDeleted(userId, ttlDays = 30) {
+    static async findDeleted(userId, ttlDays = 30, pagination = null) {
         const days = String(Math.max(1, parseInt(ttlDays, 10)));
-        const result = await query(
-            `SELECT m.*, s.name as subject_name, f.path as file_path,
+        let sql = `
+            SELECT m.*, s.name as subject_name, f.path as file_path,
              (m.deleted_at + ($2 || ' days')::interval) AS expires_at
              FROM materials m
              LEFT JOIN subjects s ON m.subject_id = s.id
              LEFT JOIN files f ON f.material_id = m.id
              WHERE m.user_id = $1 AND m.deleted_at IS NOT NULL
-             ORDER BY m.deleted_at DESC`,
-            [userId, days]
-        );
+             ORDER BY m.deleted_at DESC
+        `;
+        const params = [userId, days];
+
+        if (pagination) {
+            const { limit, offset } = pagination;
+            sql += ` LIMIT $3 OFFSET $4`;
+            params.push(limit, offset);
+        }
+
+        const result = await query(sql, params);
         return result.rows;
     }
 

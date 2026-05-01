@@ -122,8 +122,18 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                 });
             }
 
-            await uploadMaterial(payload);
-            if (onSuccess) onSuccess();
+            const material = await uploadMaterial(payload);
+            
+            if (material?.quota_warning) {
+                const toast = (await import('react-hot-toast')).default;
+                toast('Storage almost full (90%+). Consider organizing your subjects.', {
+                    icon: '⚠️',
+                    duration: 6000,
+                    style: { background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A', fontWeight: '800', fontSize: '12px' }
+                });
+            }
+
+            if (onSuccess) onSuccess(material);
         } catch (err) {
             if (err.fieldErrors) {
                 setValidationErrors(err.fieldErrors);

@@ -29,9 +29,16 @@ class SubjectService {
     }
 
     /**
-     * Get all subjects for a user
+     * Get all subjects for a user (paginated)
      */
-    static async getAllSubjects(userId) {
+    static async getAllSubjects(userId, pagination = null) {
+        if (pagination) {
+            const [subjects, total] = await Promise.all([
+                Subject.findAllByUserId(userId, pagination),
+                Subject.getCountByUserId(userId)
+            ]);
+            return { subjects, total };
+        }
         return await Subject.findAllByUserId(userId);
     }
 

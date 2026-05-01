@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from models import Chunk
 
 logger = logging.getLogger("engine-bulk-insert")
 
@@ -135,11 +136,6 @@ def _fallback_orm_insert(session: Session, document_id: int, chunks_batch: List[
     
     Much slower than COPY but compatible with all databases.
     """
-    try:
-        from models import Chunk
-    except ImportError:
-        from ..models import Chunk
-    
     logger.info(f"Using ORM fallback for {len(chunks_batch)} chunks...")
     
     for chunk in chunks_batch:

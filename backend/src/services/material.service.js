@@ -39,7 +39,7 @@ class MaterialService {
      */
     static async processDocument(userId, file, title, content, type, subjectId = null) {
         const incomingSizeBytes = file ? file.size : Buffer.byteLength(content || '', 'utf8');
-        await QuotaService.checkUploadAllowance(userId, incomingSizeBytes);
+        const allowance = await QuotaService.checkUploadAllowance(userId, incomingSizeBytes);
 
         const baseTitle = title || (file ? file.originalname : 'Untitled Material');
         const normalizedTitle = baseTitle.trim();
@@ -119,7 +119,9 @@ class MaterialService {
             const { job_id } = aiResponse.data;
             await Material.updateStatus(documentRecord.id, userId, PROCESSING, job_id);
 
-            return await Material.findById(documentRecord.id, userId);
+            const resultDoc = await Material.findById(documentRecord.id, userId);
+            if (resultDoc) resultDoc.quota_warning = allowance.warning;
+            return resultDoc;
         } catch (error) {
             console.error(`[MaterialService] Failed to trigger AI job: ${error.message}`, { ...opContext, materialId: documentRecord?.id });
             if (documentRecord) {
@@ -247,9 +249,16 @@ class MaterialService {
         return material;
     }
 
-    static async getUserHistory(userId) {
+    static async getUserHistory(userId, pagination = null) {
         // Trigger background sync when history is requested
         this.syncDriveFiles(userId).catch(err => console.error('[MaterialService] Silent Drive sync failed:', err.message));
+        if (pagination) {
+            const [history, total] = await Promise.all([
+                Material.findByUserId(userId, pagination),
+                Material.getCountByUserId(userId)
+            ]);
+            return { history, total };
+        }
         return await Material.findByUserId(userId);
     }
 
@@ -439,6 +448,11 @@ class MaterialService {
         const materialType = TASK_TYPE_TO_MATERIAL_TYPE[taskType] || 'summary';
         const gps = this._buildGPS(taskType, genOptions);
 
+        const chunks = sourceDocuments
+            .filter(d => normalizeStatus(d.status) === 'COMPLETED')
+            .map(d => d.content)
+            .filter(c => c && typeof c === 'string' && c.trim() !== '');
+
         const displayType = materialType.charAt(0).toUpperCase() + materialType.slice(1);
         const subject = await Subject.findById(finalSubjectId, userId);
         const subjectName = subject ? subject.name : 'Unknown Subject';
@@ -563,9 +577,16 @@ class MaterialService {
         return await Material.delete(materialId, userId);
     }
 
-    static async getTrash(userId) {
+    static async getTrash(userId, pagination = null) {
         const settings = await SettingsService.getStorageControls();
         const ttlDays = settings.trash_ttl_days || 30;
+        if (pagination) {
+            const [trash, total] = await Promise.all([
+                Material.findDeleted(userId, ttlDays, pagination),
+                Material.getDeletedCount(userId)
+            ]);
+            return { trash, total };
+        }
         return await Material.findDeleted(userId, ttlDays);
     }
 
@@ -601,6 +622,53 @@ class MaterialService {
 
         console.info(`[TrashPurge] Purged ${deleted} material(s) expired after ${ttlDays} days`);
         return deleted;
+    }
+
+    /**
+     * Unified Chat: Validates subject ownership and forwards the request
+     * to the Python engine's structured chat endpoint.
+     */
+    static async chat(userId, subjectId, question, history = []) {
+        // 1. Security: Validate that the subject exists and belongs to the user
+        const subject = await Subject.findById(subjectId, userId);
+        if (!subject) {
+            const error = new Error('Subject not found or access denied');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        try {
+            // 2. Prepare payload for the Engine's unified /chat endpoint
+            const payload = {
+                subject_id: subjectId,
+                question: question,
+                conversation_history: history,
+                top_k: 8,
+                language: 'en',
+            };
+
+            const options = { timeout: 300000 }; // 5-minute timeout for LLM generation
+            const engineResponse = await engineClient.post('/chat', payload, options);
+            const result = engineResponse.data;
+
+            // 3. Update subject activity
+            await Subject.touch(subjectId, userId);
+
+            // 4. Audit Log (chat_history table)
+            // Fire and forget
+            query(
+                "INSERT INTO chat_history (user_id, subject_id, type, query, response) VALUES ($1, $2, $3, $4, $5)",
+                [userId, subjectId, 'unified', question, result.answer || 'No response']
+            ).catch(err => console.error('[MaterialService] Failed to log unified chat:', err.message));
+
+            return result;
+        } catch (error) {
+            console.error('[MaterialService] Unified Chat Error:', error.message);
+            const isTimeout = error.code === 'ECONNABORTED';
+            const enhancedError = new Error(isTimeout ? 'AI engine timed out.' : 'AI engine is currently unavailable.');
+            enhancedError.statusCode = 503;
+            throw enhancedError;
+        }
     }
 }
 

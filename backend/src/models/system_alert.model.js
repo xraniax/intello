@@ -11,8 +11,24 @@ class SystemAlert {
         return result.rows[0];
     }
 
+    static async getTotalCount(filters = {}) {
+        const { isResolved } = filters;
+        let sql = 'SELECT COUNT(*)::int as count FROM system_alerts WHERE 1=1';
+        const params = [];
+        let idx = 1;
+
+        if (isResolved !== undefined) {
+            sql += ` AND is_resolved = $${idx}`;
+            params.push(isResolved);
+            idx++;
+        }
+
+        const result = await query(sql, params);
+        return result.rows[0].count;
+    }
+
     static async findAll(filters = {}) {
-        const { isResolved, limit = 50 } = filters;
+        const { isResolved, page = 1, limit = 50 } = filters;
         let sql = 'SELECT a.*, u.name as user_name FROM system_alerts a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1';
         const params = [];
         let idx = 1;
@@ -23,8 +39,9 @@ class SystemAlert {
             idx++;
         }
 
-        sql += ` ORDER BY a.created_at DESC LIMIT $${idx}`;
-        params.push(limit);
+        const offset = (Math.max(1, page) - 1) * limit;
+        sql += ` ORDER BY a.created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`;
+        params.push(limit, offset);
 
         const result = await query(sql, params);
         return result.rows;

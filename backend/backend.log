@@ -1,0 +1,25 @@
+
+> @cognify/backend@1.0.0 dev
+> npm run migrate && npm run dev:server
+
+
+> @cognify/backend@1.0.0 migrate
+> node scripts/migrate.js
+
+[dotenv@17.3.1] injecting env (22) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+[migrate] Using migrations dir: /home/rania/cognify/db/migrations
+getaddrinfo EAI_AGAIN db
+npm error Lifecycle script `migrate` failed with error:
+npm error code 1
+npm error path /home/rania/cognify/backend
+npm error workspace @cognify/backend@1.0.0
+npm error location /home/rania/cognify/backend
+npm error command failed
+npm error command sh -c node scripts/migrate.js
+npm error Lifecycle script `dev` failed with error:
+npm error code 1
+npm error path /home/rania/cognify/backend
+npm error workspace @cognify/backend@1.0.0
+npm error location /home/rania/cognify/backend
+npm error command failed
+npm error command sh -c npm run migrate && npm run dev:server

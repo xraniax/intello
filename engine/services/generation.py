@@ -896,6 +896,224 @@ def generate_chat_response(
 
     raise RuntimeError("All chat retry attempts failed")
 
+
+async def condense_question(
+    question: str,
+    history: List[Dict[str, str]],
+    language: str = "en",
+    timeout: int = 15,
+) -> str:
+    """
+    Rephrase a follow-up question into a standalone version that captures
+    the necessary context from previous turns. Essential for accurate retrieval.
+    """
+    if not history:
+        return question
+
+    # Cap history to avoid context bloat
+    history_lines = []
+    for msg in history[-6:]:
+        role = str(msg.get("role", "user")).capitalize()
+        content = str(msg.get("content", "")).strip()
+        if content:
+            history_lines.append(f"{role}: {content}")
+    history_block = "\n".join(history_lines)
+
+    prompt = (
+        f"Given the following conversation and a follow-up question, rephrase the "
+        f"follow-up question to be a standalone question in {language}.\n\n"
+        f"Chat History:\n{history_block}\n\n"
+        f"Follow-up Question: {question}\n\n"
+        f"Standalone version (respond with only the rephrased question):"
+    )
+
+    payload = {
+        "model": OLLAMA_GENERATION_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"num_predict": 64, "temperature": 0.0}, # Keep it fast and deterministic
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json=payload,
+                timeout=timeout
+            )
+            response.raise_for_status()
+            result = response.json()
+            standalone = result.get("response", "").strip()
+            if standalone:
+                logger.info("[MEMORY] Condensed '%s' -> '%s'", question, standalone)
+                return standalone
+    except Exception as e:
+        logger.warning("[MEMORY] Failed to condense question: %s", e)
+
+    return question
+
+    return question
+
+
+async def _async_stream_ollama_generate(
+    payload: Dict[str, Any], *, timeout: int, material_type: str
+) -> str:
+    """Async version of _stream_ollama_generate using httpx."""
+    payload = dict(payload)
+    payload["stream"] = True
+
+    parts: List[str] = []
+    done_seen = False
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("POST", OLLAMA_GENERATE_URL, json=payload) as resp:
+                resp.raise_for_status()
+                buf = b""
+                async for chunk_bytes in resp.aiter_bytes():
+                    if not chunk_bytes:
+                        continue
+                    
+                    buf += chunk_bytes
+                    
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+                        
+                        try:
+                            data = json.loads(line.decode("utf-8", errors="replace"))
+                            text_piece = data.get("response")
+                            if isinstance(text_piece, str) and text_piece:
+                                parts.append(text_piece)
+                            if data.get("done") is True:
+                                done_seen = True
+                                break
+                        except json.JSONDecodeError:
+                            continue
+                    
+                    if done_seen:
+                        break
+
+    except Exception as e:
+        logger.warning("Async Ollama stream failed material_type=%s error=%s", material_type, e)
+        raise
+
+    text = "".join(parts).strip()
+    if not text:
+        raise ValueError("Empty response from async Ollama stream")
+    return text
+
+
+async def generate_structured_chat(
+    chunks: List[Dict[str, Any]],
+    question: str,
+    history: Optional[List[Dict[str, str]]] = None,
+    language: str = "en",
+    timeout: int = OLLAMA_CHAT_TIMEOUT,
+) -> Dict[str, Any]:
+    """Generate a structured chat response with strict grounding and evidence validation."""
+    history = history or []
+
+    # --- Build numbered context block ---
+    context_parts: List[str] = []
+    for chunk in chunks:
+        cid = chunk.get("id", "?")
+        page = chunk.get("page_number")
+        page_str = f", page {page}" if page is not None else ""
+        snippet = str(chunk.get("content", "")).strip()
+        context_parts.append(f"[{cid}{page_str}] {snippet}")
+    context_block = "\n\n".join(context_parts) if context_parts else "No context available."
+
+    # --- Build conversation history block ---
+    history_lines: List[str] = []
+    for msg in history[-10:]:
+        role = str(msg.get("role", "user")).capitalize()
+        content = str(msg.get("content", "")).strip()
+        if content:
+            history_lines.append(f"{role}: {content}")
+    history_block = "\n".join(history_lines) if history_lines else "None"
+
+    # --- Prompt — Strict Cognify AI Tutor ---
+    prompt = (
+        "You are Cognify AI Tutor. Your absolute priority is accuracy and groundedness.\n\n"
+        "STRICT GROUNDING RULES:\n"
+        "1. USE ONLY PROVIDED CONTEXT: Your answer MUST be based SOLELY on the numbered context passages below.\n"
+        "2. NO GENERAL KNOWLEDGE: Do not use your own knowledge or guess. If the answer is not in the context, set 'supported' to false.\n"
+        "3. EVIDENCE REQUIRED: In 'evidence', list the [ID] values of every passage used to build your answer.\n"
+        "4. CONCISE & CLEAR: Keep your answer helpful but focused strictly on the facts in the material.\n\n"
+        
+        "CONTEXT PASSAGES:\n"
+        "---\n"
+        f"{context_block}\n"
+        "---\n\n"
+
+        "CONVERSATION HISTORY:\n"
+        f"{history_block}\n\n"
+
+        f"STUDENT QUESTION: {question}\n\n"
+
+        "OUTPUT FORMAT: You must respond ONLY with a single JSON object with this exact structure:\n"
+        "{\n"
+        '  "answer": "Your concise answer here",\n'
+        '  "supported": true/false,\n'
+        '  "evidence": [list of IDs used]\n'
+        "}\n\n"
+        "If the answer is not explicitly found in the context, set 'supported' to false and 'evidence' to [].\n"
+        "Generate the JSON now:"
+    )
+
+    payload: Dict[str, Any] = {
+        "model": OLLAMA_GENERATION_MODEL,
+        "prompt": prompt,
+    }
+
+    try:
+        raw = await _async_stream_ollama_generate(payload, timeout=timeout, material_type="structured_chat")
+        if not raw.strip():
+            raise ValueError("Empty LLM output")
+
+        cleaned = _extract_json_payload(raw)
+        parsed = json.loads(cleaned)
+
+        answer = str(parsed.get("answer", "")).strip()
+        supported = bool(parsed.get("supported", False))
+        evidence = parsed.get("evidence", [])
+
+        # Strict validation: If not supported or no evidence provided for a "True" claim, refuse.
+        if not supported or not evidence:
+            return {
+                "answer": "I couldn't find that information in the selected material.",
+                "cited_ids": [],
+                "confidence": 0.0,
+                "fallback": False
+            }
+
+        cited_ids: List[int] = []
+        for eid in (evidence if isinstance(evidence, list) else []):
+            try:
+                cited_ids.append(int(eid))
+            except (TypeError, ValueError):
+                pass
+
+        return {
+            "answer": answer,
+            "cited_ids": cited_ids,
+            "confidence": 1.0 if supported and cited_ids else 0.0,
+            "fallback": False
+        }
+
+    except Exception as e:
+        logger.warning("Structured chat failed: %s", e)
+        return {
+            "answer": "I couldn't find that information in the selected material.",
+            "cited_ids": [],
+            "confidence": 0.0,
+            "fallback": True
+        }
+
+
 def evaluate_quiz(
     questions: List[Dict[str, Any]],
     submissions: List[Dict[str, Any]],

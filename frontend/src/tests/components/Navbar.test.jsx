@@ -22,7 +22,9 @@ describe('Navbar Component', () => {
                 <Navbar />
             </MemoryRouter>
         );
-        expect(screen.getByText(/Cognify/i)).toBeInTheDocument();
+        // Brand text is split across two nested spans ("Cogni" + "fy").
+        // Query the wrapping link whose accessible name accumulates both.
+        expect(screen.getByRole('link', { name: /cognify/i })).toBeInTheDocument();
     });
 
     it('renders navigation links', () => {

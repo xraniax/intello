@@ -31,8 +31,32 @@ class AlertService {
         });
     }
 
+    static async triggerQuotaWarning(userId, usedMb, limitMb) {
+        return await SystemAlert.create({
+            type: 'USER_QUOTA_WARNING',
+            severity: 'WARNING',
+            title: 'Student Nearing Storage Limit',
+            message: `Student has reached 90% of their quota. Used: ${usedMb}MB / Total: ${limitMb}MB`,
+            userId
+        });
+    }
+
+    static async triggerQuotaExceeded(userId, requestedMb, remainingMb) {
+        return await SystemAlert.create({
+            type: 'USER_QUOTA_EXCEEDED',
+            severity: 'ERROR',
+            title: 'Student Quota Exceeded',
+            message: `Student tried to upload ${requestedMb}MB but only had ${remainingMb}MB remaining.`,
+            userId
+        });
+    }
+
     static async getRecentAlerts(filters = {}) {
-        return await SystemAlert.findAll(filters);
+        const [alerts, total] = await Promise.all([
+            SystemAlert.findAll(filters),
+            SystemAlert.getTotalCount(filters)
+        ]);
+        return { alerts, total };
     }
 
     static async resolveAlert(alertId) {

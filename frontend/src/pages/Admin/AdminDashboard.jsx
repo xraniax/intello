@@ -14,12 +14,21 @@ import AdminUsers from './AdminUsers';
 import AdminFiles from './AdminFiles';
 import AdminLogs from './AdminLogs';
 
+// Subtle entrance for scroll-triggered sections (not flash-inducing)
 const SECTION_ANIM = {
-    initial: { opacity: 0, y: 40 },
+    initial: { opacity: 1, y: 12 },
     whileInView: { opacity: 1, y: 0 },
-    viewport: { once: true, margin: "-100px" },
-    transition: { duration: 1, ease: [0.16, 1, 0.3, 1] }
+    viewport: { once: true, margin: "-60px" },
+    transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] }
 };
+
+// Hero section: render immediately, no flash
+const HERO_ANIM = {
+    initial: { opacity: 1, y: 0 },
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 0 }
+};
+
 
 const AmbientOrb = ({ className, color }) => (
     <motion.div 
@@ -34,7 +43,7 @@ const AmbientOrb = ({ className, color }) => (
             repeat: Infinity, 
             ease: "easeInOut" 
         }}
-        className={`absolute rounded-full blur-[140px] pointer-events-none -z-10 mix-blend-multiply ${className} ${color}`}
+        className={`absolute rounded-full blur-[140px] pointer-events-none -z-10 mix-blend-multiply will-change-[transform,opacity] ${className} ${color}`}
     />
 );
 
@@ -81,16 +90,42 @@ const AdminDashboard = () => {
     }, []);
 
     return (
-        <div className="w-full relative bg-[#F8FAFC]">
-            <AmbientOrb className="w-[600px] h-[600px] top-0 -left-64" color="bg-indigo-300/40" />
-            <AmbientOrb className="w-[500px] h-[500px] top-[100vh] -right-32" color="bg-fuchsia-300/40" />
-            <AmbientOrb className="w-[700px] h-[700px] top-[200vh] -left-80" color="bg-teal-300/40" />
+        <div className="w-full relative overflow-hidden" style={{ background: 'linear-gradient(160deg, #f8f7ff 0%, #fdf9ff 35%, #f5f8ff 70%, #f9f7ff 100%)' }}>
+
+            {/* ── Layer 2: Animated mesh gradient blobs ── */}
+            <AmbientOrb className="w-[900px] h-[900px] -top-80 -left-80" color="bg-violet-300/25" />
+            <AmbientOrb className="w-[700px] h-[700px] top-[30vh] -right-60" color="bg-indigo-200/20" />
+            <AmbientOrb className="w-[800px] h-[800px] top-[90vh] left-[10vw]" color="bg-sky-200/15" />
+
+            {/* ── Layer 3: Subtle dot grid ── */}
+            <div className="fixed inset-0 bg-dot-grid opacity-20 pointer-events-none z-0" />
+
+            {/* ── Layer 4: Decorative SVG rings (top-right corner art) ── */}
+            <svg className="absolute top-0 right-0 w-[480px] h-[480px] pointer-events-none opacity-[0.06] z-0" viewBox="0 0 480 480" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="480" cy="0" r="100" stroke="#6366f1" strokeWidth="1.5" />
+                <circle cx="480" cy="0" r="180" stroke="#8b5cf6" strokeWidth="1" />
+                <circle cx="480" cy="0" r="260" stroke="#6366f1" strokeWidth="0.8" />
+                <circle cx="480" cy="0" r="340" stroke="#a78bfa" strokeWidth="0.5" />
+                <circle cx="480" cy="0" r="420" stroke="#6366f1" strokeWidth="0.4" />
+            </svg>
+
+            {/* ── Layer 5: Bottom-left ring accent ── */}
+            <svg className="absolute bottom-0 left-0 w-[360px] h-[360px] pointer-events-none opacity-[0.05] z-0" viewBox="0 0 360 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="0" cy="360" r="80" stroke="#8b5cf6" strokeWidth="1.5" />
+                <circle cx="0" cy="360" r="150" stroke="#6366f1" strokeWidth="1" />
+                <circle cx="0" cy="360" r="240" stroke="#a78bfa" strokeWidth="0.6" />
+                <circle cx="0" cy="360" r="320" stroke="#6366f1" strokeWidth="0.4" />
+            </svg>
+
+            {/* ── Layer 6: Diagonal shimmer line ── */}
+            <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.035]"
+                style={{ background: 'repeating-linear-gradient(125deg, transparent 0px, transparent 80px, rgba(99,102,241,0.4) 80px, rgba(99,102,241,0.4) 81px)' }} />
 
             {/* SECTION 1: OVERVIEW */}
             <motion.section 
                 id="overview" 
                 className="min-h-[calc(100vh-80px)] flex flex-col justify-center p-8 md:p-24 relative"
-                {...SECTION_ANIM}
+                {...HERO_ANIM}
             >
                 <div className="max-w-7xl mx-auto w-full">
                     <div className="inline-flex items-center gap-3 px-5 py-2 bg-gray-50 border border-gray-100 rounded-full mb-10 shadow-sm">
@@ -98,35 +133,39 @@ const AdminDashboard = () => {
                         <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-900">Administrative Terminal</span>
                     </div>
 
-                    <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-tight mb-8">
-                        Platform <br className="hidden md:block" />
-                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500">
-                            Intelligence
+                    <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.9] mb-10 translate-x-[-4px]">
+                        Operational <br className="hidden md:block" />
+                        <span className="text-gradient-hero">
+                            Intelligence.
                         </span>
                     </h1>
 
-                    <p className="max-w-2xl text-xl font-bold text-gray-500 mb-20 leading-relaxed">
-                        Architecture is stable. Nodes are synchronized. <br />
-                        Explore your platform's narrative journey below.
+                    <p className="max-w-xl text-lg font-bold text-gray-400 mb-20 leading-relaxed uppercase tracking-widest">
+                        System Architecture stable. <br />
+                        Data Synchronization in progress.
                     </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                         {[
-                            { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'indigo' },
-                            { label: 'Active Presence', value: stats.onlineNow, icon: Zap, color: 'indigo' },
-                            { label: 'Cluster Data', value: formatBytes(stats.totalStorage), icon: Database, color: 'indigo' }
+                            { label: 'Total Base Users', value: stats.totalUsers, icon: Users, color: 'indigo' },
+                            { label: 'Real-time Presence', value: stats.onlineNow, icon: Zap, color: 'indigo' },
+                            { label: 'Cloud Storage Sum', value: formatBytes(stats.totalStorage), icon: Database, color: 'indigo' }
                         ].map((s, i) => (
                             <motion.div 
                                 key={i} 
-                                whileHover={{ y: -10 }}
-                                className="p-10 rounded-[3rem] bg-white/70 backdrop-blur-xl border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_40px_rgba(99,102,241,0.1)] transition-all duration-500 group relative overflow-hidden"
+                                whileHover={{ y: -8, scale: 1.02 }}
+                                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                                className="glass-card p-10 rounded-[3.5rem] border-white shadow-[0_20px_50px_-20px_rgba(0,0,0,0.05)] hover:shadow-[0_30px_70px_-15px_rgba(99,102,241,0.15)] transition-all duration-300 group relative overflow-hidden will-change-transform"
                             >
-                                <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-white/0 pointer-events-none" />
-                                <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-8 group-hover:bg-gray-900 group-hover:text-white transition-all duration-500">
-                                    <s.icon className="w-6 h-6" />
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/60 to-white/0 pointer-events-none" />
+                                <div className="w-16 h-16 rounded-[2rem] bg-gray-50 flex items-center justify-center mb-10 group-hover:bg-indigo-600 group-hover:text-white group-hover:rotate-6 shadow-sm transition-all duration-300">
+                                    <s.icon className="w-7 h-7" />
                                 </div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">{s.label}</p>
-                                <h3 className="text-5xl font-black tracking-tighter">{loading ? <Skeleton className="w-20 h-10" /> : s.value}</h3>
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-2 group-hover:text-indigo-500 transition-colors">{s.label}</p>
+                                <h3 className="text-5xl font-black tracking-tighter text-gray-900">{loading ? <Skeleton className="w-24 h-12" /> : s.value}</h3>
+                                <div className="mt-8 h-1 w-full bg-indigo-50/50 rounded-full overflow-hidden">
+                                     <div className="h-full w-full bg-indigo-500 origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-500 ease-out will-change-transform" />
+                                </div>
                             </motion.div>
                         ))}
                     </div>

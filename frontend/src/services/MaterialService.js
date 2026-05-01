@@ -7,9 +7,9 @@ import api, { API_URL, authFetch } from '@/services/api';
  */
 
 export const MaterialService = {
-    // Retrieval & Collections
-    getHistory: () => api.get('/materials/history'),
-    getTrash: () => api.get('/materials/trash'),
+    // Retrieval & Collections - now support pagination params
+    getHistory: (params = {}) => api.get('/materials/history', { params }),
+    getTrash: (params = {}) => api.get('/materials/trash', { params }),
     getSettings: () => api.get('/materials/settings'),
     getOne: (id) => api.get(`/materials/${id}`),
 
@@ -51,6 +51,9 @@ export const MaterialService = {
     sync: (id, signal) => api.get(`/materials/${id}/sync`, { signal }),
 
     chat: (materialIds, question) => api.post('/materials/chat-combined', { materialIds, question }),
+
+    unifiedChat: (subjectId, question, history) => 
+        api.post('/chat', { subjectId, question, conversation_history: history }),
 
     /**
      * streamMaterial — Standardized cancellable async primitive for AI streams.

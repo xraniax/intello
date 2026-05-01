@@ -1,13 +1,6 @@
 import os
-from typing import List, Dict, Optional
+from typing import Dict, List, Literal, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-try:
-   
-    from typing import Literal  
-except ImportError:
-    
-    from typing_extensions import Literal  
 
 from PyPDF2 import PdfReader
 

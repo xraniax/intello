@@ -1,316 +1,23 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Plus, Search, BookOpen, Trash2, Edit3, MoreHorizontal,
-    Sparkles, LayoutDashboard, LogOut, Layers, Brain, Zap,
-    Clock, ChevronRight, BookMarked, X, Shield,
-    FileText, FolderOpen, BarChart2,
+    Plus, Search, Sparkles, LayoutDashboard, LogOut,
+    Zap, X, Shield, FileText, FolderOpen, BarChart2, Brain, ChevronRight, BookMarked, Trash2,
 } from 'lucide-react';
 import { useSubjectStore } from '@/store/useSubjectStore';
 import { useUIStore } from '@/store/useUIStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { subjectService } from '@/features/subjects/services/SubjectService';
-import { staggerContainer, staggerItemBouncy, slideDown, bounceUp, popIn,
-         textRevealContainer, textRevealWord } from '@/utils/motion';
-import { useCountUp } from '@/hooks/useCountUp';
-import { useTilt } from '@/hooks/useTilt';
+import { staggerContainer, staggerItemBouncy, slideDown, bounceUp } from '@/utils/motion';
+import { ACCENTS, accentFor, getGreeting } from './dashboard/dashboardUtils';
+import Orb from './dashboard/Orb';
+import SubjectCard from './dashboard/SubjectCard';
+import AddCard from './dashboard/AddCard';
+import AnimatedGreeting from './dashboard/AnimatedGreeting';
+import AnimatedStat from './dashboard/AnimatedStat';
+import RenameModal from './dashboard/RenameModal';
 
-// ── Accent palette ─────────────────────────────────────────
-const ACCENTS = [
-    { bg: 'var(--grad-primary)',  light: 'var(--c-primary-ultra)', text: 'var(--c-primary)', shadow: 'var(--shadow-primary)', hex: '#7C5CFC' },
-    { bg: 'var(--grad-warm)',     light: 'var(--c-coral-light)',   text: 'var(--c-coral)',   shadow: 'var(--shadow-coral)',   hex: '#FF6B6B' },
-    { bg: 'var(--grad-cool)',     light: 'var(--c-teal-light)',    text: 'var(--c-teal)',    shadow: 'var(--shadow-teal)',    hex: '#0EB8D5' },
-    { bg: 'var(--grad-success)',  light: 'var(--c-mint-light)',    text: 'var(--c-mint)',    shadow: 'var(--shadow-mint)',    hex: '#00C896' },
-    { bg: 'var(--grad-sunset)',   light: 'var(--c-amber-light)',   text: 'var(--c-amber)',   shadow: 'var(--shadow-amber)',   hex: '#FFB020' },
-    { bg: 'var(--grad-candy)',    light: 'var(--c-rose-light)',    text: 'var(--c-rose)',    shadow: 'var(--shadow-rose)',    hex: '#F43F5E' },
-    { bg: 'var(--grad-ocean)',    light: 'var(--c-sky-light)',     text: 'var(--c-sky)',     shadow: 'var(--shadow-sky)',     hex: '#3BAAFF' },
-    { bg: 'var(--grad-peach)',    light: 'var(--c-fuchsia-light)', text: 'var(--c-fuchsia)', shadow: 'var(--shadow-fuchsia)', hex: '#D946EF' },
-];
-const accentFor  = (id = '') => ACCENTS[(id.charCodeAt(0) || 0) % ACCENTS.length];
-const getGreeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Good morning';
-    if (h < 17) return 'Good afternoon';
-    return 'Good evening';
-};
-// ── Floating decoration orbs ────────────────────────────────
-const Orb = ({ style, delay = 0, size = 80, opacity = 0.12 }) => (
-    <motion.div
-        className="absolute rounded-full pointer-events-none"
-        style={{ width: size, height: size, ...style, opacity }}
-        animate={{ y: [0, -18, 0], x: [0, 8, 0] }}
-        transition={{ duration: 5 + delay, repeat: Infinity, ease: 'easeInOut', delay }}
-    />
-);
-
-const timeSince = (dateStr) => {
-    if (!dateStr) return null;
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const m = Math.floor(diff / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24);
-    if (d > 0) return `${d}d ago`;
-    if (h > 0) return `${h}h ago`;
-    if (m > 0) return `${m}m ago`;
-    return 'Just now';
-};
-
-// ── SubjectCard — with 3D tilt + glow halo ─────────────────
-const SubjectCard = React.memo(({ subject, onDelete, onRename }) => {
-    const navigate  = useNavigate();
-    const accent    = accentFor(subject.id);
-    const [menu, setMenu] = useState(false);
-    const menuRef   = useRef(null);
-    const since     = timeSince(subject.last_activity_at || subject.updated_at);
-    const { ref: tiltRef, onMouseMove, onMouseLeave } = useTilt(7, 200);
-
-    useEffect(() => {
-        if (!menu) return;
-        const h = (e) => { if (!menuRef.current?.contains(e.target)) setMenu(false); };
-        document.addEventListener('mousedown', h);
-        return () => document.removeEventListener('mousedown', h);
-    }, [menu]);
-
-    return (
-        <motion.div
-            ref={tiltRef}
-            variants={staggerItemBouncy}
-            layout
-            className="group relative flex flex-col rounded-[24px] overflow-hidden cursor-pointer transition-all duration-300"
-            style={{
-                background: 'var(--c-surface)',
-                border: '1px solid var(--c-border-strong)',
-                boxShadow: 'var(--shadow-xs)',
-                transformStyle: 'preserve-3d',
-                willChange: 'transform',
-            }}
-            onMouseMove={onMouseMove}
-            onMouseLeave={(e) => {
-                onMouseLeave(e);
-                e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
-                e.currentTarget.style.borderColor = 'var(--c-border-strong)';
-            }}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = `0 12px 30px ${accent.hex}15, var(--shadow-md)`;
-                e.currentTarget.style.borderColor = accent.hex + '40';
-            }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => navigate(`/subjects/${subject.id}`)}
-        >
-            {/* Cursor-tracking glow overlay */}
-            <div className="glow-overlay" />
-
-            {/* Gradient top band - thinner, elegant */}
-            <div className="h-[4px] w-full flex-shrink-0" style={{ background: accent.bg }} />
-
-            {/* Body */}
-            <div className="flex flex-col flex-1 p-5 gap-4">
-                <div className="flex items-start justify-between gap-2">
-                    <motion.div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
-                        style={{ background: accent.light }}
-                        whileHover={{
-                            rotate: [0, -8, 8, -4, 0],
-                            scale: 1.15,
-                            transition: { duration: 0.5, type: 'spring', damping: 10 }
-                        }}
-                    >
-                        <BookOpen className="w-6 h-6" style={{ color: accent.text }} />
-                    </motion.div>
-
-                    {/* Context menu */}
-                    <div ref={menuRef} className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
-                        <motion.button
-                            whileTap={{ scale: 0.88 }}
-                            onClick={() => setMenu(v => !v)}
-                            className="w-8 h-8 rounded-xl flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
-                            style={{ color: 'var(--c-text-muted)', background: 'var(--c-surface-alt)' }}
-                        >
-                            <MoreHorizontal className="w-4 h-4" />
-                        </motion.button>
-                        <AnimatePresence>
-                            {menu && (
-                                <motion.div
-                                    {...popIn}
-                                    className="absolute right-0 top-9 z-20 w-40 rounded-2xl overflow-hidden py-1"
-                                    style={{
-                                        background: 'var(--c-surface)',
-                                        border: '1.5px solid var(--c-border)',
-                                        boxShadow: 'var(--shadow-xl)',
-                                    }}
-                                >
-                                    <button
-                                        onClick={() => { onRename(subject); setMenu(false); }}
-                                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium text-left transition-colors"
-                                        style={{ color: 'var(--c-text)' }}
-                                        onMouseEnter={e => e.currentTarget.style.background = 'var(--c-surface-alt)'}
-                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <Edit3 className="w-3.5 h-3.5" style={{ color: 'var(--c-primary)' }} />
-                                        Rename
-                                    </button>
-                                    <button
-                                        onClick={() => { onDelete(subject.id); setMenu(false); }}
-                                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium text-left transition-colors"
-                                        style={{ color: 'var(--c-danger)' }}
-                                        onMouseEnter={e => e.currentTarget.style.background = 'var(--c-danger-light)'}
-                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                        Delete
-                                    </button>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                    <h3
-                        className="font-bold text-[18px] leading-tight mb-2 truncate tracking-tight"
-                        style={{ color: 'var(--c-text)' }}
-                    >
-                        {subject.name}
-                    </h3>
-                    {subject.description && (
-                        <p className="text-[13px] line-clamp-2 leading-relaxed opacity-70" style={{ color: 'var(--c-text-secondary)' }}>
-                            {subject.description}
-                        </p>
-                    )}
-                </div>
-
-                <div className="flex items-center justify-between">
-                    <div
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold"
-                        style={{ background: accent.light, color: accent.text }}
-                    >
-                        <Layers className="w-3 h-3" />
-                        {subject.material_count ?? 0} items
-                    </div>
-                    {since && (
-                        <div className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--c-text-placeholder)' }}>
-                            <Clock className="w-3 h-3" />
-                            {since}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Hover CTA arrow */}
-            <motion.div
-                className="absolute bottom-4 right-4 w-7 h-7 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ background: accent.bg, boxShadow: `0 4px 12px ${accent.hex}50` }}
-            >
-                <ChevronRight className="w-3.5 h-3.5 text-white" />
-            </motion.div>
-        </motion.div>
-    );
-});
-SubjectCard.displayName = 'SubjectCard';
-
-// ── Add card — magnetic pull ────────────────────────────────
-const AddCard = ({ onClick }) => {
-    const cardRef = useRef(null);
-    const iconRef = useRef(null);
-    const prefersReduced = useReducedMotion();
-
-    const handleMouseMove = useCallback((e) => {
-        if (prefersReduced || !cardRef.current || !iconRef.current) return;
-        const rect = cardRef.current.getBoundingClientRect();
-        const dx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
-        const dy = ((e.clientY - rect.top)  / rect.height - 0.5) * 2;
-        iconRef.current.style.transform = `translate(${dx * 6}px, ${dy * 6}px)`;
-        iconRef.current.style.transition = 'transform 0.1s linear';
-    }, [prefersReduced]);
-
-    const handleMouseLeave = useCallback(() => {
-        if (!iconRef.current) return;
-        iconRef.current.style.transform = 'translate(0, 0)';
-        iconRef.current.style.transition = 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
-    }, []);
-
-    return (
-        <motion.button
-            ref={cardRef}
-            variants={staggerItemBouncy}
-            layout
-            whileHover={{ y: -2, transition: { type: 'spring', damping: 18, stiffness: 260 } }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onClick}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
-            className="flex flex-col items-center justify-center gap-3 rounded-[24px] border border-dashed transition-all group min-h-[180px]"
-            style={{ borderColor: 'var(--c-border-strong)', background: 'var(--c-canvas)' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-surface)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
-            onFocus={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-surface)'; }}
-            onBlur={e => { e.currentTarget.style.borderColor = 'var(--c-border-strong)'; e.currentTarget.style.background = 'var(--c-canvas)'; e.currentTarget.style.boxShadow = 'none'; }}
-        >
-            <motion.div
-                ref={iconRef}
-                className="w-12 h-12 rounded-[14px] flex items-center justify-center"
-                style={{ background: 'var(--c-surface)', color: 'var(--c-text-muted)', border: '1px solid var(--c-border-soft)', boxShadow: 'var(--shadow-xs)' }}
-                whileHover={{ rotate: 90, scale: 1.05 }}
-                transition={{ type: 'spring', damping: 14, stiffness: 200 }}
-            >
-                <Plus className="w-5 h-5" />
-            </motion.div>
-            <span className="text-sm font-semibold tracking-tight" style={{ color: 'var(--c-text-secondary)' }}>Create new subject</span>
-        </motion.button>
-    );
-};
-
-// ── Animated greeting — word-by-word stagger ───────────────
-const AnimatedGreeting = ({ greeting, isDark = false }) => {
-    const words = `${greeting}`.split(' ');
-    const textColor = isDark ? 'white' : 'var(--c-text)';
-    return (
-        <motion.h1
-            variants={textRevealContainer}
-            initial="initial"
-            animate="animate"
-            className="text-[1.75rem] sm:text-[2.25rem] font-extrabold mb-2 flex flex-wrap gap-x-[0.3em]"
-            style={{ color: textColor, letterSpacing: '-0.02em', perspective: '400px', fontWeight: 800 }}
-        >
-            {words.map((word, i) => (
-                <motion.span 
-                    key={i} 
-                    variants={textRevealWord} 
-                    style={{ display: 'inline-block' }}
-                    className={i === words.length - 1 ? 'text-gradient-hero' : ''}
-                >
-                    {word}
-                </motion.span>
-            ))}
-        </motion.h1>
-    );
-};
-
-// ── Animated stat — magazine/editorial style ────────────────
-const AnimatedStat = ({ value, label, icon: Icon, color, bg }) => {
-    const displayed = useCountUp(value, 800);
-    return (
-        <div className="flex flex-col gap-3 p-4 rounded-2xl relative overflow-hidden group hover-lift" style={{ background: 'var(--c-surface)', border: `1px solid ${bg}`, boxShadow: 'var(--shadow-xs)' }}>
-            <div className="absolute top-0 right-0 -mr-4 -mt-4 w-20 h-20 rounded-full opacity-0 group-hover:opacity-20 pointer-events-none transition-opacity duration-500" style={{ background: bg }} />
-            <div className="flex justify-between items-start">
-                <span className="text-[11px] font-bold uppercase tracking-wider relative z-10" style={{ color: 'var(--c-text-muted)' }}>{label}</span>
-                <div className="p-1.5 rounded-[10px] relative z-10" style={{ background: bg }}>
-                    <Icon className="w-3.5 h-3.5" style={{ color }} />
-                </div>
-            </div>
-            <motion.span
-                key={value}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ type: 'spring', damping: 18, stiffness: 220 }}
-                className="text-[28px] font-black leading-none font-serif tracking-tight relative z-10"
-                style={{ color: 'var(--c-text)' }}
-            >
-                {displayed}
-            </motion.span>
-        </div>
-    );
-};
-
-// ── Dashboard ──────────────────────────────────────────────
 const Dashboard = () => {
     const navigate       = useNavigate();
     const user           = useAuthStore(s => s.data.user);
@@ -329,9 +36,6 @@ const Dashboard = () => {
     const [newDesc, setNewDesc]          = useState('');
     const [creating, setCreating]        = useState(false);
     const [renameTarget, setRenameTarget]= useState(null);
-    const [renameName, setRenameName]    = useState('');
-    const [renameDesc, setRenameDesc]    = useState('');
-    const [renaming, setRenaming]        = useState(false);
     const [deleteError, setDeleteError]  = useState(null);
     const addInputRef                    = useRef(null);
     const sidebarRef                     = useRef(null);
@@ -363,17 +67,6 @@ const Dashboard = () => {
         }
     };
 
-    const handleRename = async () => {
-        if (!renameName.trim() || !renameTarget) return;
-        setRenaming(true);
-        try {
-            await updateSubject(renameTarget.id, renameName.trim(), renameDesc.trim());
-            setRenameTarget(null);
-            setRenameName('');
-            setRenameDesc('');
-        } finally { setRenaming(false); }
-    };
-
     const error = storeError || deleteError;
 
     const initials = user?.name
@@ -381,7 +74,6 @@ const Dashboard = () => {
         : '?';
 
     const isActivePath = (p) => window.location.pathname === p;
-
     const totalMaterials = subjects.reduce((a, s) => a + (s.material_count ?? 0), 0);
 
     const handleSidebarMouseMove = (e) => {
@@ -406,13 +98,12 @@ const Dashboard = () => {
                 onMouseMove={handleSidebarMouseMove}
                 onMouseLeave={handleSidebarMouseLeave}
                 className="hidden lg:flex flex-col w-80 flex-shrink-0 overflow-hidden pt-4 pb-8 relative group/sidebar glass-panel"
-                style={{ 
-                    background: 'rgba(250, 250, 250, 0.4)', 
+                style={{
+                    background: 'rgba(250, 250, 250, 0.4)',
                     borderRight: '1px solid var(--c-border-soft)',
                     backdropFilter: 'blur(20px) saturate(180%)',
                 }}
             >
-                {/* Enhanced Ambient Decorations */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-60 group-hover/sidebar:opacity-100 transition-opacity duration-1000">
                     <Orb style={{ background: 'var(--c-primary)', top: '-2%', left: '-30px' }} size={150} delay={0} opacity={0.1} />
                     <Orb style={{ background: 'var(--grad-candy)', top: '35%', right: '-50px' }} size={180} delay={2} opacity={0.08} />
@@ -420,16 +111,15 @@ const Dashboard = () => {
                     <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-white/40 to-transparent" />
                 </div>
 
-                {/* Cursor Glow Overlay */}
-                <div 
+                <div
                     className="absolute inset-0 pointer-events-none transition-opacity duration-500"
-                    style={{ 
+                    style={{
                         background: 'radial-gradient(400px circle at var(--glow-x, 0) var(--glow-y, 0), rgba(124, 92, 252, 0.04), transparent 80%)',
                         opacity: 'var(--glow-opacity, 0)'
-                    }} 
+                    }}
                 />
 
-                {/* User Card - Elevated Glass */}
+                {/* User Card */}
                 <div className="p-4 relative z-10">
                     <Link to="/profile">
                         <motion.div
@@ -461,11 +151,12 @@ const Dashboard = () => {
                     </Link>
                 </div>
 
-                {/* Nav — with bouncy pill & dynamic colors */}
+                {/* Nav */}
                 <nav className="px-3 mt-2 flex flex-col gap-1 relative z-10">
                     {[
                         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, accent: ACCENTS[0] },
                         { label: 'Analytics', path: '/analytics',  icon: BarChart2, accent: ACCENTS[2] },
+                        { label: 'Trash', path: '/trash', icon: Trash2, accent: ACCENTS[5] },
                     ].map(item => {
                         const active = isActivePath(item.path);
                         return (
@@ -473,16 +164,14 @@ const Dashboard = () => {
                                 key={item.path}
                                 to={item.path}
                                 className="relative flex items-center gap-3 px-4 py-3.5 rounded-2xl text-[15px] font-bold transition-all group/nav"
-                                style={{
-                                    color: active ? item.accent.text : 'var(--c-text-muted)',
-                                }}
+                                style={{ color: active ? item.accent.text : 'var(--c-text-muted)' }}
                             >
                                 {active && (
                                     <motion.span
                                         layoutId="sidebar-pill"
                                         className="absolute inset-0 rounded-2xl"
-                                        style={{ 
-                                            background: `linear-gradient(135deg, ${item.accent.light}, #ffffff)`, 
+                                        style={{
+                                            background: `linear-gradient(135deg, ${item.accent.light}, #ffffff)`,
                                             border: '1.5px solid white',
                                             boxShadow: `0 8px 20px ${item.accent.hex}15`
                                         }}
@@ -499,7 +188,7 @@ const Dashboard = () => {
                                 </motion.div>
                                 <span className="relative z-10 font-extrabold group-hover/nav:translate-x-1 transition-transform tracking-tight">{item.label}</span>
                                 {active && (
-                                    <motion.div 
+                                    <motion.div
                                         layoutId="active-dot"
                                         className="ml-auto w-1.5 h-1.5 rounded-full relative z-10"
                                         style={{ background: item.accent.bg }}
@@ -514,10 +203,7 @@ const Dashboard = () => {
                             className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-[14px] font-bold transition-all hover:bg-rose-50 hover:text-rose-600 group/admin"
                             style={{ color: 'var(--c-text-muted)' }}
                         >
-                            <motion.div 
-                                whileHover={{ rotate: 180, scale: 1.2 }}
-                                transition={{ type: 'spring' }}
-                            >
+                            <motion.div whileHover={{ rotate: 180, scale: 1.2 }} transition={{ type: 'spring' }}>
                                 <Shield className="w-5 h-5 group-hover:text-rose-500" />
                             </motion.div>
                             <span className="font-extrabold tracking-tight">Admin Center</span>
@@ -527,25 +213,13 @@ const Dashboard = () => {
 
                 <div className="mx-6 my-4 h-[2px] opacity-20" style={{ background: 'var(--c-border-soft)' }} />
 
-                {/* Fun Stats */}
+                {/* Stats */}
                 <div className="px-4 grid grid-cols-2 gap-3 relative z-10">
-                    <AnimatedStat
-                        value={subjects.length}
-                        label="Grown"
-                        icon={FolderOpen}
-                        color="var(--c-primary)"
-                        bg="var(--c-primary-ultra)"
-                    />
-                    <AnimatedStat
-                        value={totalMaterials}
-                        label="Seeds"
-                        icon={FileText}
-                        color="var(--c-teal)"
-                        bg="var(--c-teal-light)"
-                    />
+                    <AnimatedStat value={subjects.length} label="Grown" icon={FolderOpen} color="var(--c-primary)" bg="var(--c-primary-ultra)" />
+                    <AnimatedStat value={totalMaterials} label="Seeds" icon={FileText} color="var(--c-teal)" bg="var(--c-teal-light)" />
                 </div>
 
-                {/* Recent Items as mini-cards with "Bloom" effects */}
+                {/* Recent subjects */}
                 {subjects.length > 0 && (
                     <div className="px-4 mt-6 flex-1 overflow-hidden relative z-10">
                         <div className="flex items-center justify-between mb-3 px-2">
@@ -569,7 +243,7 @@ const Dashboard = () => {
                                         whileHover={{ x: 5 }}
                                     >
                                         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/0 group-hover:to-white/100 pointer-events-none transition-all" />
-                                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 group-hover:scale-[2] transition-all duration-300 relative z-10" 
+                                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 group-hover:scale-[2] transition-all duration-300 relative z-10"
                                              style={{ background: acc.bg, boxShadow: `0 0 12px ${acc.hex}60` }} />
                                         <span className="truncate group-hover:text-indigo-600 transition-colors relative z-10">{s.name}</span>
                                         <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 relative z-10" style={{ color: acc.hex }} />
@@ -598,8 +272,7 @@ const Dashboard = () => {
 
             {/* ── Main ── */}
             <main className="relative flex-1 overflow-y-auto custom-scrollbar" style={{ background: 'var(--c-surface)', borderTopLeftRadius: '32px', fontSize: '20px', zoom: 1.1, boxShadow: '-4px 0 32px rgba(0,0,0,0.03)' }}>
-                
-                {/* Background decoration orbs — fixed in the viewport of the main element */}
+
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     <Orb style={{ background: 'var(--grad-primary)', top: '15%', left: '5%' }} size={160} delay={0} opacity={0.07} />
                     <Orb style={{ background: 'var(--grad-candy)', top: '10%', right: '8%' }} size={120} delay={1.5} opacity={0.06} />
@@ -610,36 +283,24 @@ const Dashboard = () => {
 
                 <div className="relative z-10 max-w-[1440px] mx-auto px-10 py-10">
 
-                    {/* Hero greeting banner — Soft, welcoming, editorial */}
+                    {/* Hero greeting banner */}
                     <motion.div
                         {...slideDown}
                         className="relative rounded-[32px] overflow-hidden mb-12 px-12 py-14 flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white group"
-                        style={{ 
+                        style={{
                             border: '1px solid var(--c-border-strong)',
                             boxShadow: 'var(--shadow-sm)',
                         }}
                     >
-                        {/* Interactive border glow — the "pop of color" */}
                         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none">
-                            <div className="absolute inset-[-1px] rounded-[32px] border border-transparent" 
+                            <div className="absolute inset-[-1px] rounded-[32px] border border-transparent"
                                  style={{ background: 'var(--grad-primary)', mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', maskComposite: 'exclude', padding: '1px' }} />
                         </div>
-                        {/* Ambient orb layer — very subtle */}
-                        <div
-                            className="ambient-orb ambient-orb-md ambient-orb-1"
-                            style={{ background: 'var(--c-primary)', top: '-40px', right: '0px', opacity: 0.15 }}
-                        />
-                        <div
-                            className="ambient-orb ambient-orb-sm ambient-orb-2"
-                            style={{ background: 'var(--c-coral)', bottom: '-20px', left: '10%', opacity: 0.12 }}
-                        />
+                        <div className="ambient-orb ambient-orb-md ambient-orb-1" style={{ background: 'var(--c-primary)', top: '-40px', right: '0px', opacity: 0.15 }} />
+                        <div className="ambient-orb ambient-orb-sm ambient-orb-2" style={{ background: 'var(--c-coral)', bottom: '-20px', left: '10%', opacity: 0.12 }} />
 
                         <div className="relative z-10">
-                            <AnimatedGreeting
-                                greeting={getGreeting()}
-                                isDark={false}
-                            />
-
+                            <AnimatedGreeting greeting={getGreeting()} isDark={false} />
                             <motion.p
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
@@ -652,7 +313,7 @@ const Dashboard = () => {
                                     : 'Create your first subject to begin building your workspace.'}
                             </motion.p>
                         </div>
-                        
+
                         <motion.div
                             className="relative z-10 w-16 h-16 rounded-[20px] hidden md:flex items-center justify-center flex-shrink-0"
                             style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border-strong)', boxShadow: 'var(--shadow-sm)' }}
@@ -764,7 +425,7 @@ const Dashboard = () => {
                         </div>
                     )}
 
-                    {/* Loading skeletons — staggered */}
+                    {/* Loading skeletons */}
                     {loading && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                             {[1,2,3,4,5,6].map((i) => (
@@ -787,7 +448,7 @@ const Dashboard = () => {
                         </div>
                     )}
 
-                    {/* Grid */}
+                    {/* Subject grid */}
                     {!loading && (
                         <motion.div
                             variants={staggerContainer}
@@ -800,11 +461,7 @@ const Dashboard = () => {
                                     key={subject.id}
                                     subject={subject}
                                     onDelete={handleDelete}
-                                    onRename={s => { 
-                                        setRenameTarget(s); 
-                                        setRenameName(s.name); 
-                                        setRenameDesc(s.description || '');
-                                    }}
+                                    onRename={s => setRenameTarget(s)}
                                 />
                             ))}
                             {!search && <AddCard onClick={() => setShowAdd(true)} />}
@@ -852,72 +509,14 @@ const Dashboard = () => {
             </main>
 
             {/* ── Rename modal ── */}
-            <AnimatePresence>
-                {renameTarget && (
-                    <>
-                        <motion.div
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            onClick={() => setRenameTarget(null)}
-                            className="fixed inset-0 z-50"
-                            style={{ background: 'rgba(13,11,30,0.5)', backdropFilter: 'blur(8px)' }}
-                        />
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                            transition={{ type: 'spring', damping: 24, stiffness: 260 }}
-                            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
-                        >
-                            <div
-                                className="bg-white rounded-3xl p-6 w-full max-w-sm pointer-events-auto"
-                                style={{ boxShadow: 'var(--shadow-2xl)' }}
-                                onClick={e => e.stopPropagation()}
-                            >
-                                <div className="flex items-center gap-2 mb-5">
-                                    <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--c-primary-ultra)', color: 'var(--c-primary)' }}>
-                                        <Edit3 className="w-4 h-4" />
-                                    </div>
-                                    <span className="font-bold text-[15px]" style={{ color: 'var(--c-text)' }}>Edit Subject</span>
-                                </div>
-                                <div className="space-y-3 mb-6">
-                                    <div>
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1.5 block">Subject Name</label>
-                                        <input
-                                            autoFocus
-                                            value={renameName}
-                                            onChange={e => setRenameName(e.target.value)}
-                                            onKeyDown={e => { if (e.key === 'Escape') setRenameTarget(null); }}
-                                            className="input-field w-full"
-                                            placeholder="Subject name…"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1.5 block">Description</label>
-                                        <textarea
-                                            value={renameDesc}
-                                            onChange={e => setRenameDesc(e.target.value)}
-                                            onKeyDown={e => { if (e.key === 'Escape') setRenameTarget(null); }}
-                                            className="input-field w-full min-h-[80px] py-3 text-sm leading-relaxed resize-none custom-scrollbar"
-                                            placeholder="Add a short description…"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="flex gap-2 justify-end">
-                                    <button onClick={() => setRenameTarget(null)} className="btn btn-sm btn-outline">Cancel</button>
-                                    <motion.button
-                                        whileTap={{ scale: 0.93 }}
-                                        onClick={handleRename}
-                                        disabled={!renameName.trim() || renaming}
-                                        className="btn btn-sm btn-solid"
-                                    >
-                                        {renaming ? 'Saving…' : 'Save'}
-                                    </motion.button>
-                                </div>
-                            </div>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+            <RenameModal
+                target={renameTarget}
+                onClose={() => setRenameTarget(null)}
+                onSave={async (name, desc) => {
+                    await updateSubject(renameTarget.id, name, desc);
+                    setRenameTarget(null);
+                }}
+            />
         </div>
     );
 };

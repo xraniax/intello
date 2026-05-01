@@ -1,5 +1,6 @@
 import SubjectService from '../services/subject.service.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { parsePagination, buildPaginatedResponse } from '../utils/pagination.js';
 
 class SubjectController {
     static create = asyncHandler(async (req, res) => {
@@ -9,8 +10,17 @@ class SubjectController {
     });
 
     static getAll = asyncHandler(async (req, res) => {
-        const subjects = await SubjectService.getAllSubjects(req.user.id);
-        res.status(200).json({ status: 'success', data: subjects });
+        const { page, limit, offset } = parsePagination(req.query);
+        const result = await SubjectService.getAllSubjects(req.user.id, { limit, offset });
+        
+        // If pagination was applied, return paginated response
+        if (result && result.subjects) {
+            const paginatedResponse = buildPaginatedResponse(result.subjects, result.total, { page, limit });
+            res.status(200).json({ status: 'success', ...paginatedResponse });
+        } else {
+            // Backward compatibility: return plain array if no pagination requested
+            res.status(200).json({ status: 'success', data: result });
+        }
     });
 
     static getOne = asyncHandler(async (req, res) => {

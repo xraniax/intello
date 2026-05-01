@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PanelRightClose, MessageSquarePlus, Mic, MicOff, Send, Bot, User, Volume2 } from 'lucide-react';
 import { chatBubbleUser, chatBubbleAI } from '@/utils/motion';
@@ -32,12 +32,29 @@ const ChatPanel = ({
     handleTTS,
     isThinking,
     isListening,
+    isSpeaking,
+    stopSpeaking,
     chatEndRef,
     contextInfo,
     chatError,
     onClearChat,
     onCollapse
 }) => {
+    const [speakingIdx, setSpeakingIdx] = React.useState(null);
+
+    // Reset speaking index when speech ends
+    React.useEffect(() => {
+        if (!isSpeaking) setSpeakingIdx(null);
+    }, [isSpeaking]);
+
+    const onListenToggle = (content, idx) => {
+        if (isSpeaking && speakingIdx === idx) {
+            stopSpeaking();
+        } else {
+            setSpeakingIdx(idx);
+            handleTTS(content);
+        }
+    };
     return (
         <div className={`panel-inner chat-panel`} style={{ background: 'var(--c-canvas)' }}>
             {/* Panel Header */}
@@ -114,44 +131,118 @@ const ChatPanel = ({
                                 {...(msg.role === 'user' ? chatBubbleUser : chatBubbleAI)}
                                 className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                             >
-                                <div className={`flex items-end gap-3 max-w-[92%] group ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                                <div className={`flex items-start gap-4 max-w-[95%] group ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                                     <motion.div
-                                        className={`w-10 h-10 rounded-2xl shadow-sm border-2 flex items-center justify-center shrink-0 mb-1 ${
+                                        className={`w-12 h-12 rounded-[1.25rem] shadow-sm border-2 flex items-center justify-center shrink-0 ${
                                             msg.role === 'ai'
-                                                ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                                                ? (msg.isError ? 'bg-red-50 border-red-100 text-red-500' : 'bg-white border-indigo-100 text-indigo-600')
                                                 : 'bg-purple-50 border-purple-100 text-purple-600'
                                         }`}
-                                        whileHover={{ scale: 1.1 }}
+                                        whileHover={{ scale: 1.1, rotate: 5 }}
                                         transition={{ type: 'spring', damping: 12 }}
                                     >
-                                        {msg.role === 'ai' ? <Bot className="w-5 h-5" /> : <User className="w-5 h-5" />}
+                                        {msg.role === 'ai' ? <Bot className="w-6 h-6" /> : <User className="w-6 h-6" />}
                                     </motion.div>
-                                    <div className={`px-6 py-5 rounded-[2.5rem] shadow-xl hover:shadow-2xl transition-all duration-300 relative ${
-                                        msg.role === 'user'
-                                            ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white rounded-br-none'
-                                            : 'bg-white text-indigo-950 border-2 border-indigo-50 rounded-bl-none'
-                                    }`}>
-                                        <div className="whitespace-pre-wrap font-bold text-[13px] leading-relaxed">{msg.content}</div>
-                                        {msg.role === 'ai' && (
-                                            <motion.button
-                                                whileHover={{ scale: 1.05 }}
-                                                whileTap={{ scale: 0.95 }}
-                                                onClick={() => handleTTS(msg.content)}
-                                                className="mt-3 flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-indigo-400 hover:text-indigo-600"
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-indigo-50 flex items-center justify-center">
-                                                    <Volume2 className="w-3.5 h-3.5" />
+
+                                    <div className="flex flex-col gap-2">
+                                        <div className={`px-7 py-5 rounded-[2.5rem] shadow-xl transition-all duration-300 relative ${
+                                            msg.role === 'user'
+                                                ? 'bg-indigo-600 text-white rounded-tr-none shadow-indigo-100'
+                                                : (msg.isError 
+                                                    ? 'bg-red-50 text-red-700 border-2 border-red-100 rounded-tl-none font-bold' 
+                                                    : 'bg-white text-indigo-950 border-2 border-indigo-50 rounded-tl-none')
+                                        }`}>
+                                            <div className="whitespace-pre-wrap font-bold text-[14px] leading-[1.6]">{msg.content}</div>
+                                            
+                                            {/* AI Meta Data: Sources & Confidence */}
+                                            {msg.role === 'ai' && !msg.isError && (
+                                                <div className="mt-6 flex flex-col gap-3 pt-4 border-t border-indigo-50/50">
+                                                    {/* Source Citations */}
+                                                    {msg.sources && msg.sources.length > 0 && (
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300 w-full mb-1">Sources</span>
+                                                            {msg.sources.slice(0, 3).map((source, idx) => (
+                                                                <motion.div
+                                                                    key={idx}
+                                                                    whileHover={{ scale: 1.05, y: -2 }}
+                                                                    className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-600 text-[10px] font-black border border-indigo-100/50 cursor-help"
+                                                                    title={source.excerpt}
+                                                                >
+                                                                    P{source.page_number || idx + 1}
+                                                                </motion.div>
+                                                            ))}
+                                                            {msg.sources.length > 3 && (
+                                                                <span className="text-[10px] font-black text-indigo-300 self-center">+{msg.sources.length - 3} more</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Actions & Stats */}
+                                                    <div className="flex items-center justify-between mt-1">
+                                                        <motion.button
+                                                            whileHover={{ scale: 1.05, x: 5 }}
+                                                            whileTap={{ scale: 0.95 }}
+                                                            onClick={() => onListenToggle(msg.content, i)}
+                                                            className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                                                                isSpeaking && speakingIdx === i 
+                                                                    ? 'text-red-500 hover:text-red-600' 
+                                                                    : 'text-indigo-400 hover:text-indigo-600'
+                                                            }`}
+                                                        >
+                                                            {isSpeaking && speakingIdx === i ? (
+                                                                <>
+                                                                    <motion.div
+                                                                        animate={{ scale: [1, 1.2, 1] }}
+                                                                        transition={{ duration: 0.5, repeat: Infinity }}
+                                                                    >
+                                                                        <Volume2 className="w-4 h-4" />
+                                                                    </motion.div>
+                                                                    Stop
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Volume2 className="w-4 h-4" />
+                                                                    Listen
+                                                                </>
+                                                            )}
+                                                        </motion.button>
+
+                                                        {msg.confidence !== undefined && (
+                                                            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-100">
+                                                                <div className="w-1.5 h-1.5 rounded-full" style={{ background: msg.confidence > 0.8 ? '#10B981' : '#F59E0B' }} />
+                                                                <span className="text-[9px] font-black uppercase tracking-tighter text-gray-400">
+                                                                    {Math.round(msg.confidence * 100)}% Confidence
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                Speak
-                                            </motion.button>
-                                        )}
+                                            )}
+
+                                            {/* Error Retry Layout */}
+                                            {msg.isError && (
+                                                <motion.button
+                                                    whileHover={{ scale: 1.02, x: 5 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                    onClick={() => {
+                                                        const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+                                                        if (lastUserMsg) {
+                                                            setCurrentQuestion(lastUserMsg.content);
+                                                        }
+                                                    }}
+                                                    className="mt-4 w-full py-3 rounded-2xl bg-red-100 text-red-600 text-[10px] font-black uppercase tracking-widest hover:bg-red-200 transition-colors"
+                                                >
+                                                    Retry Question
+                                                </motion.button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </motion.div>
                         ))}
                     </AnimatePresence>
 
-                    {/* Thinking indicator — animated dots via Framer */}
+                    {/* Thinking indicator */}
                     <AnimatePresence>
                         {isThinking && (
                             <motion.div
@@ -159,13 +250,14 @@ const ChatPanel = ({
                                 animate={{ opacity: 1, x: 0, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.9 }}
                                 transition={{ type: 'spring', damping: 20, stiffness: 260 }}
-                                className="flex items-start gap-2 max-w-[90%]"
+                                className="flex items-start gap-4"
                             >
-                                <div className="w-8 h-8 rounded-full shadow-sm border flex items-center justify-center shrink-0" style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border)' }}>
-                                    <Bot className="w-4 h-4" style={{ color: 'var(--c-primary)' }} />
+                                <div className="w-12 h-12 rounded-[1.25rem] bg-indigo-50 border-2 border-indigo-100 flex items-center justify-center shrink-0">
+                                    <Bot className="w-6 h-6 text-indigo-400" />
                                 </div>
-                                <div className="px-5 py-4 rounded-[1.25rem] rounded-bl-none shadow-xl flex items-center gap-2 border" style={{ background: 'var(--c-surface)', borderColor: 'var(--c-primary-light)' }}>
+                                <div className="px-7 py-5 rounded-[2.5rem] rounded-tl-none bg-white border-2 border-indigo-50 shadow-sm flex items-center gap-3">
                                     <ThinkingDots />
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Thinking...</span>
                                 </div>
                             </motion.div>
                         )}
@@ -191,8 +283,8 @@ const ChatPanel = ({
                             className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isListening ? 'bg-red-500 text-white shadow-lg' : 'bg-indigo-50 text-indigo-500 hover:bg-indigo-100'}`}
                         >
                             {isListening ? (
-                                <motion.div animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 0.8, repeat: Infinity }}>
-                                    <MicOff className="w-6 h-6" />
+                                <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>
+                                    <Mic className="w-6 h-6" />
                                 </motion.div>
                             ) : <Mic className="w-6 h-6" />}
                         </motion.button>

@@ -1,5 +1,7 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import User from '../models/user.model.js';
+import LoginAttempt from '../models/login_attempt.model.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import sendEmail from '../utils/services/email.service.js';
 import SettingsService from '../services/settings.service.js';
@@ -37,6 +39,38 @@ class AuthController {
         const user = await User.create(email, password, name);
         console.log(`[AUTH] Registration successful for email: ${email}, id: ${user.id}`);
 
+        const firstName = user.name.split(' ')[0];
+        const welcomeMessage = `Hi ${firstName},
+
+Welcome to **Cognify** <3
+
+We’re excited to have you join our learning community.
+
+Your account has been successfully created, and your personalized learning space is now ready. From here, you can:
+
+• Access your courses and learning materials
+• Take quizzes, review flashcards, explore summaries, and complete mock exams while tracking your progress
+• Interact with AI-powered learning tools
+• Stay organized with a workspace built for focus and growth
+
+At Cognify, learning is designed to feel **engaging, intelligent, and enjoyable** — helping you build skills at your own pace.
+
+Your account details:
+**Email:** ${user.email}
+**Role:** ${user.role}
+
+If you ever need help, our team is here to support you.
+
+We’re glad you’re here,
+**The Cognify Team**
+
+*Learn smarter. Grow confidently.* 🌱`;
+        sendEmail({
+            email: user.email,
+            subject: 'Welcome to Cognify <3',
+            message: welcomeMessage
+        }).catch(err => console.error('[AUTH] Failed to send welcome email:', err.message));
+
         res.status(201).json({
             status: 'success',
             data: {
@@ -53,12 +87,86 @@ class AuthController {
     static login = asyncHandler(async (req, res) => {
         const { email, password } = req.body;
         console.log(`[AUTH] Login attempt for email: ${email}`);
+        
+        const ip_address = req.ip || req.connection?.remoteAddress || '127.0.0.1';
+        const user_agent = req.headers['user-agent'] || 'Unknown Browser';
+        const user_agent_hash = crypto.createHash('sha256').update(user_agent).digest('hex');
+
+        // Check if this connection tuple is strictly locked (e.g. 5 failures within 15 min window)
+        const attemptState = await LoginAttempt.checkStatus(email, ip_address, user_agent_hash);
+        if (attemptState && attemptState.locked_until && new Date(attemptState.locked_until) > new Date()) {
+            console.warn(`[AUTH] Login blocked: Tuple locked for email: ${email}`);
+            res.status(401);
+            throw new Error('Invalid email or password');
+        }
+
+        const handleFailedLogin = async (userObj) => {
+            const record = await LoginAttempt.trackFailure(email, ip_address, user_agent_hash, user_agent);
+            
+            if (record.attempt_count >= 5) {
+                await LoginAttempt.lockTuple(email, ip_address, user_agent_hash);
+                console.warn(`[AUTH] Tuple locked for email: ${email} from IP: ${ip_address} due to 5 failures.`);
+            } else if (record.attempt_count === 3 && userObj) {
+                // Determine if we should send an email based on cooldown
+                const alertSentAt = record.last_security_alert_sent_at ? new Date(record.last_security_alert_sent_at) : null;
+                const cooldownPassed = !alertSentAt || (new Date() - alertSentAt > 15 * 60 * 1000);
+                
+                if (cooldownPassed) {
+                    const firstName = userObj.name.split(' ')[0];
+                    const time = new Date().toUTCString();
+                    const resetUrl = `${process.env.FRONTEND_URL}/login`; // Force them to review account / reset via forgot password if needed
+                    
+                    const message = `Hi ${firstName},
+
+We detected **multiple unsuccessful attempts** to sign in to your **Cognify** account.
+
+For your security, we wanted to let you know in case this activity was not you.
+
+**Attempt details:**
+• Email: ${email}
+• Time: ${time}
+• Device / Browser: ${user_agent}
+• Location: IP ${ip_address}
+
+### If this was you
+
+No action is needed — you can simply try signing in again or reset your password if needed.
+
+### If this was NOT you
+
+We strongly recommend that you secure your account immediately by resetting your password.
+Review account activity by visiting:
+${resetUrl}
+
+As an extra precaution, please make sure:
+• Your password is unique to Cognify
+• You do not share your login credentials
+• Your device is secure
+
+Your account security matters to us.
+
+Stay safe,
+**The Cognify Team**
+
+*Smart learning starts with secure learning.* 🔐`;
+
+                    await sendEmail({
+                        email: userObj.email,
+                        subject: 'Security Alert: Failed Login Attempts',
+                        message
+                    }).catch(err => console.error('[AUTH] Failed to send security email:', err.message));
+                    
+                    await LoginAttempt.markAlertSent(email, ip_address, user_agent_hash);
+                }
+            }
+        };
 
         const user = await User.findByEmail(email);
         if (!user) {
             console.warn(`[AUTH] Login failed: User not found for email: ${email}`);
+            await handleFailedLogin(null);
             res.status(401);
-            throw new Error('Invalid email or password');
+            throw new Error('Invalid email or password'); // Generic message
         }
 
         console.log(`[AUTH] User found: ${user.id}, status: ${user.status}, provider: ${user.auth_provider}`);
@@ -66,8 +174,9 @@ class AuthController {
         const isMatch = await User.comparePassword(password, user.password_hash);
         if (!isMatch) {
             console.warn(`[AUTH] Login failed: Password mismatch for email: ${email}`);
+            await handleFailedLogin(user);
             res.status(401);
-            throw new Error('Invalid email or password');
+            throw new Error('Invalid email or password'); // Generic message
         }
 
         if (normalizeStatus(user.status) !== 'ACTIVE') {
@@ -81,8 +190,11 @@ class AuthController {
 
         console.log(`[AUTH] Login successful for email: ${email}`);
         
-        // Update login and activity timestamps (fire and forget)
+        // Update login and activity timestamps
         User.updateLastLogin(user.id).catch(err => console.error('[AUTH] Failed to update login timestamp:', err.message));
+        
+        // Success clears the tracking tuple entirely
+        await LoginAttempt.clearTuple(email, ip_address, user_agent_hash);
 
         res.json({
             status: 'success',
@@ -118,7 +230,7 @@ class AuthController {
 
         const user = req.user;
         console.log(`[AUTH] Social Auth profile: ${user.email}, provider: ${user.auth_provider}, status: ${user.status}`);
-        
+
         if (normalizeStatus(user.status) !== 'ACTIVE') {
             console.warn(`[AUTH] Social Auth failed: Account ${user.status} for email: ${user.email}`);
             const errorType = normalizeStatus(user.status) === 'SUSPENDED' ? 'account_suspended' : 'account_inactive';
@@ -127,6 +239,40 @@ class AuthController {
 
         const token = generateToken(user.id);
         console.log(`[AUTH] Social Auth successful, redirecting user: ${user.id}`);
+
+        if (user.isNewRecord) {
+            const firstName = user.name.split(' ')[0];
+            const welcomeMessage = `Hi ${firstName},
+
+Welcome to **Cognify** ✨
+
+We’re excited to have you join our learning community.
+
+Your account has been successfully created, and your personalized learning space is now ready. From here, you can:
+
+• Access your courses and learning materials
+• Take quizzes, review flashcards, explore summaries, and complete mock exams while tracking your progress
+• Interact with AI-powered learning tools
+• Stay organized with a workspace built for focus and growth
+
+At Cognify, learning is designed to feel **engaging, intelligent, and enjoyable** — helping you build skills at your own pace.
+
+Your account details:
+**Email:** ${user.email}
+**Role:** ${user.role}
+
+If you ever need help, our team is here to support you.
+
+We’re glad you’re here,
+**The Cognify Team**
+
+*Learn smarter. Grow confidently.* 🌱`;
+            sendEmail({
+                email: user.email,
+                subject: 'Welcome to Cognify ✨',
+                message: welcomeMessage
+            }).catch(err => console.error('[AUTH] Failed to send welcome email:', err.message));
+        }
 
         // Update login and activity timestamps (fire and forget)
         User.updateLastLogin(user.id).catch(err => console.error('[AUTH] Failed to update login timestamp:', err.message));

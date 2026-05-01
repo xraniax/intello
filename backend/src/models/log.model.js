@@ -21,6 +21,33 @@ class Log {
     }
 
     /**
+     * Get total count of logs for pagination.
+     */
+    static async getTotalCount(filters = {}) {
+        let sql = `
+            SELECT COUNT(*)::int as count
+            FROM admin_logs l
+            WHERE 1=1
+        `;
+        const params = [];
+        let idx = 1;
+
+        if (filters.action) {
+            sql += ` AND l.action = $${idx}`;
+            params.push(filters.action);
+            idx++;
+        }
+        if (filters.targetType) {
+            sql += ` AND l.target_type = $${idx}`;
+            params.push(filters.targetType);
+            idx++;
+        }
+
+        const result = await query(sql, params);
+        return result.rows[0].count;
+    }
+
+    /**
      * Fetch all logs with filtering, sorting, and pagination.
      */
     static async findAll(filters = {}) {

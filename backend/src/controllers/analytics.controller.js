@@ -1,4 +1,5 @@
 import AnalyticsService from '../services/analytics.service.js';
+import { parsePagination, buildPaginatedResponse } from '../utils/pagination.js';
 
 const analyticsController = {
 
@@ -140,11 +141,27 @@ const analyticsController = {
             const order           = VALID_ORDERS.includes(req.query.order) ? req.query.order  : 'desc';
             const state           = VALID_STATES.includes(req.query.state) ? req.query.state  : null;
             const minInteractions = parseInt(req.query.minInteractions, 10) || 0;
+            const { page, limit, offset } = parsePagination(req.query);
 
             const result = await AnalyticsService.getConcepts(userId, subjectId, {
-                sort, order, state, minInteractions,
+                sort, order, state, minInteractions, pagination: { limit, offset },
             });
-            res.json({ status: 'ok', data: result });
+            
+            const paginatedResponse = buildPaginatedResponse(
+                result.concepts, 
+                result.total_concepts, 
+                { page, limit }
+            );
+            
+            res.json({ 
+                status: 'ok', 
+                data: {
+                    subject_id: result.subject_id,
+                    concepts: paginatedResponse.data,
+                    pagination: paginatedResponse.pagination,
+                    distribution: result.distribution
+                }
+            });
         } catch (err) {
             next(err);
         }
@@ -253,8 +270,14 @@ const analyticsController = {
 
     async getSubjectsList(req, res, next) {
         try {
-            const result = await AnalyticsService.getSubjectsList(req.user.id);
-            res.json({ status: 'ok', data: result });
+            const { page, limit, offset } = parsePagination(req.query);
+            const result = await AnalyticsService.getSubjectsList(req.user.id, { limit, offset });
+            const paginatedResponse = buildPaginatedResponse(result.data || result, result.total || (result.data || result).length, { page, limit });
+            res.json({ 
+                status: 'ok', 
+                data: paginatedResponse.data,
+                pagination: paginatedResponse.pagination
+            });
         } catch (err) { next(err); }
     },
 
@@ -268,10 +291,15 @@ const analyticsController = {
 
     async getInsights(req, res, next) {
         try {
-            const limit  = Math.min(parseInt(req.query.limit, 10) || 5, 20);
             const type   = req.query.type || null;
-            const result = await AnalyticsService.getInsights(req.user.id, { limit, type });
-            res.json({ status: 'ok', data: result });
+            const { page, limit, offset } = parsePagination(req.query);
+            const result = await AnalyticsService.getInsights(req.user.id, { limit, offset, type });
+            const paginatedResponse = buildPaginatedResponse(result.data || result, result.total || (result.data || result).length, { page, limit });
+            res.json({ 
+                status: 'ok', 
+                data: paginatedResponse.data,
+                pagination: paginatedResponse.pagination
+            });
         } catch (err) { next(err); }
     },
 

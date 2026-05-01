@@ -70,22 +70,9 @@ const AppContent = () => {
   const isAdminRoute = location.pathname.startsWith('/admin');
 
   React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    if (token) {
-      loginWithToken(token).then((loadedUser) => {
-        const url = new URL(window.location);
-        url.searchParams.delete('token');
-        window.history.replaceState({}, document.title, url.pathname + url.search);
-        if (loadedUser?.role === 'admin') {
-          window.location.replace('/admin');
-        }
-      }).catch(err => {
-        console.error('Landing token handling failed', err);
-        window.location.replace('/login?error=auth_failed');
-      });
-    }
-  }, [loginWithToken]);
+    // Token harvesting is now handled globally in AuthContext.jsx
+    // to prevent race conditions with protected routes.
+  }, []);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">

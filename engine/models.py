@@ -8,10 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 
-try:
-    from database import Base
-except ImportError:
-    from .database import Base
+from database import Base
 
 
 class Document(Base):

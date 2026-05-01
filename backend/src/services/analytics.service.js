@@ -372,6 +372,7 @@ class AnalyticsService {
         order           = 'asc',
         state           = null,
         minInteractions = 3,
+        pagination      = null,
     } = {}) {
         const SORT_COLS = {
             weakness:      'mastery_score',
@@ -382,15 +383,33 @@ class AnalyticsService {
         const col = SORT_COLS[sort] ?? 'mastery_score';
         const dir = order === 'desc' ? 'DESC' : 'ASC';
 
-        const { rows } = await query(
-            `SELECT topic_name, mastery_score, quiz_accuracy, flashcard_retention,
+        // Get total count for pagination
+        const countResult = await query(
+            `SELECT COUNT(*)::int as count
+             FROM user_concept_mastery
+             WHERE user_id = $1 AND subject_id = $2
+               AND response_count >= $3`,
+            [userId, subjectId, minInteractions]
+        );
+        const totalCount = countResult.rows[0].count;
+
+        let sql = `
+            SELECT topic_name, mastery_score, quiz_accuracy, flashcard_retention,
                     exam_accuracy, response_count, last_activity_at
              FROM user_concept_mastery
              WHERE user_id = $1 AND subject_id = $2
                AND response_count >= $3
-             ORDER BY ${col} ${dir} NULLS LAST`,
-            [userId, subjectId, minInteractions]
-        );
+             ORDER BY ${col} ${dir} NULLS LAST
+        `;
+        const params = [userId, subjectId, minInteractions];
+
+        if (pagination) {
+            const { limit, offset } = pagination;
+            sql += ` LIMIT $4 OFFSET $5`;
+            params.push(limit, offset);
+        }
+
+        const { rows } = await query(sql, params);
 
         const concepts = rows.map((r) => {
             const score      = f(r.mastery_score) ?? 0;
@@ -425,7 +444,7 @@ class AnalyticsService {
 
         return {
             subject_id:     subjectId,
-            total_concepts: filtered.length,
+            total_concepts: totalCount,
             concepts:       filtered,
             distribution,
         };
@@ -1072,10 +1091,18 @@ class AnalyticsService {
     }
 
     /** All subjects with their analytics summary — for the subjects list sidebar. */
-    static async getSubjectsList(userId) {
+    static async getSubjectsList(userId, pagination = null) {
         await this.#ensureGlobalSnapshot(userId);
-        const { rows } = await query(
-            `SELECT s.id, s.name, s.last_activity_at,
+        
+        // Get total count
+        const countResult = await query(
+            `SELECT COUNT(*)::int as count FROM subjects WHERE user_id = $1`,
+            [userId]
+        );
+        const total = countResult.rows[0].count;
+
+        let sql = `
+            SELECT s.id, s.name, s.last_activity_at,
                     COALESCE(usa.crs_score, 0)     AS crs,
                     COALESCE(usa.trend_7d, 0)       AS trend_7d,
                     COALESCE(usa.concept_count, 0)  AS concept_count,
@@ -1085,10 +1112,18 @@ class AnalyticsService {
              LEFT JOIN user_subject_analytics usa
                     ON usa.subject_id = s.id AND usa.user_id = s.user_id
              WHERE s.user_id = $1
-             ORDER BY crs DESC NULLS LAST`,
-            [userId]
-        );
-        return rows.map((r) => ({
+             ORDER BY crs DESC NULLS LAST
+        `;
+        const params = [userId];
+
+        if (pagination) {
+            const { limit, offset } = pagination;
+            sql += ` LIMIT $2 OFFSET $3`;
+            params.push(limit, offset);
+        }
+
+        const { rows } = await query(sql, params);
+        const data = rows.map((r) => ({
             id:             r.id,
             name:           r.name,
             crs:            f(r.crs) ?? 0,
@@ -1098,6 +1133,8 @@ class AnalyticsService {
             at_risk_count:  i(r.at_risk_count),
             last_activity_at: r.last_activity_at,
         }));
+
+        return { data, total };
     }
 
     /** Activity heatmap data — last N days, one entry per active day. */
@@ -1105,22 +1142,34 @@ class AnalyticsService {
         return this.#getHeatmapData(userId, days);
     }
 
-    /** Ranked insight feed (non-dismissed, not expired). */
-    static async getInsights(userId, { limit = 5, type = null } = {}) {
-        const params = [userId, Math.min(limit, 20)];
-        const typeFilter = type ? `AND type = ANY($3::text[])` : '';
+    /** Ranked insight feed (non-dismissed, not expired) with pagination. */
+    static async getInsights(userId, { limit = 20, offset = 0, type = null } = {}) {
+        const params = [userId];
+        const typeFilter = type ? `AND type = ANY($2::text[])` : '';
         if (type) params.push(type.split(','));
 
+        // Get total count
+        const countResult = await query(
+            `SELECT COUNT(*)::int as count FROM user_insights
+             WHERE user_id = $1 AND dismissed = false
+               AND (expires_at IS NULL OR expires_at > NOW())
+               ${typeFilter}`,
+            params
+        );
+        const total = countResult.rows[0].count;
+
+        // Get paginated results
+        const dataParams = [...params, limit, offset];
         const { rows } = await query(
             `SELECT * FROM user_insights
              WHERE user_id = $1 AND dismissed = false
                AND (expires_at IS NULL OR expires_at > NOW())
                ${typeFilter}
              ORDER BY priority ASC, generated_at DESC
-             LIMIT $2`,
-            params
+             LIMIT $${type ? 3 : 2} OFFSET $${type ? 4 : 3}`,
+            dataParams
         );
-        return rows;
+        return { data: rows, total };
     }
 
     /** Mark an insight as dismissed. */

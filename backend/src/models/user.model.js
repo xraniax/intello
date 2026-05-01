@@ -35,7 +35,7 @@ class User {
         );
 
         if (existingByProvider.rows[0]) {
-            return existingByProvider.rows[0];
+            return { user: existingByProvider.rows[0], isNew: false };
         }
 
         // If not found by provider, check by email (to link accounts)
@@ -46,11 +46,12 @@ class User {
                 'UPDATE users SET auth_provider = $1, provider_id = $2 WHERE id = $3 RETURNING id, email, name, role, status, last_login_at, created_at, avatar_url, settings, achievements',
                 [provider, providerId, existingByEmail.id]
             );
-            return result.rows[0];
+            return { user: result.rows[0], isNew: false };
         }
 
         // Otherwise create new user
-        return await this.create(email, null, name, 'user', provider, providerId);
+        const newUser = await this.create(email, null, name, 'user', provider, providerId);
+        return { user: newUser, isNew: true };
     }
 
     /**
@@ -245,6 +246,14 @@ class User {
     static async countByRole(role) {
         const res = await query('SELECT COUNT(*)::int as count FROM users WHERE role = $1', [role]);
         return res.rows[0].count;
+    }
+
+    /**
+     * Get total count of users for pagination.
+     */
+    static async getTotalCount() {
+        const result = await query('SELECT COUNT(*)::int as count FROM users');
+        return result.rows[0].count;
     }
 
     /**

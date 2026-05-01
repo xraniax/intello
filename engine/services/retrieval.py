@@ -10,14 +10,13 @@ from utils.logging import get_job_logger
 QUIZ_TOP_K = int(os.getenv("QUIZ_TOP_K", "10"))
 ENABLE_RERANKING_PER_TASK = os.getenv("ENABLE_RERANKING_PER_TASK", "true").lower() == "true"
 
-try:
-    from models import Chunk, Document
-except ImportError:
-    from ..models import Chunk, Document
+from models import Chunk, Document
 
 from .embeddings import embed_step
 from .embedding_cache import get_cache
 
+
+from sqlalchemy import func
 
 def retrieve_chunks_by_topic(
     session: Session,
@@ -27,14 +26,12 @@ def retrieve_chunks_by_topic(
     job_id: Optional[str] = None,
     rerank: bool = True,
     task_type: Optional[str] = None
-) -> List[Chunk]:
+) -> List[tuple]:
     """
     Retrieve the top_k most relevant chunks for a given topic within a subject.
-    If topic is None, returns all chunks for the subject.
-
-    Performance optimization: Topic embeddings are cached to avoid redundant HTTP calls.
+    Returns a list of (Chunk, similarity_score) tuples.
     """
-    # Normalize subject_id to UUID when provided as string.
+    # ... (same UUID normalization logic)
     normalized_subject_id = subject_id
     if isinstance(subject_id, str):
         try:
@@ -42,23 +39,20 @@ def retrieve_chunks_by_topic(
         except ValueError:
             return []
 
-    # Always enforce bounded retrieval size.
     safe_top_k = top_k if isinstance(top_k, int) and top_k > 0 else 5
-
     log = get_job_logger(job_id, "engine-retrieval")
 
-    # If no topic, return a bounded, deterministic sample (most recent chunks first).
     if not topic:
-        return session.query(Chunk).join(Document)\
+        chunks = session.query(Chunk).join(Document)\
             .filter(Document.subject_id == normalized_subject_id)\
             .order_by(Chunk.created_at.desc(), Chunk.id.desc())\
             .limit(safe_top_k)\
             .all()
+        return [(c, 0.0) for c in chunks]
 
     log.info(f"STEP: RETRIEVAL STARTED for subject {subject_id}, topic='{topic}', task={task_type}")
     start_time = time.perf_counter()
 
-    # Get topic embedding (cached)
     cache = get_cache()
     topic_embedding = cache.get(topic)
 
@@ -68,17 +62,23 @@ def retrieve_chunks_by_topic(
             cache.set(topic, topic_embedding)
 
     if topic_embedding:
-        chunks = session.query(Chunk).join(Document)\
+        # Calculate cosine distance and convert to similarity (1 - distance)
+        distance_col = Chunk.embedding.cosine_distance(topic_embedding)
+        results = session.query(Chunk, (1 - distance_col).label("similarity"))\
+            .join(Document)\
             .filter(Document.subject_id == normalized_subject_id)\
-            .order_by(Chunk.embedding.cosine_distance(topic_embedding))\
+            .order_by(distance_col)\
             .limit(safe_top_k)\
             .all()
+        
+        chunks_with_scores = [(r[0], float(r[1])) for r in results]
     else:
         chunks = session.query(Chunk).join(Document)\
             .filter(Document.subject_id == normalized_subject_id)\
             .order_by(Chunk.created_at.desc(), Chunk.id.desc())\
             .limit(safe_top_k)\
             .all()
+        chunks_with_scores = [(c, 0.0) for c in chunks]
 
-    log.info(f"STEP: RETRIEVAL SUCCESS for subject {subject_id} (duration: {time.perf_counter() - start_time:.2f}s, retrieved: {len(chunks)})")
-    return chunks
+    log.info(f"STEP: RETRIEVAL SUCCESS for subject {subject_id} (duration: {time.perf_counter() - start_time:.2f}s, retrieved: {len(chunks_with_scores)})")
+    return chunks_with_scores

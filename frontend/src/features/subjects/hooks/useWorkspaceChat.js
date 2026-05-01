@@ -5,9 +5,8 @@ import { MaterialService } from '@/services/MaterialService';
 /**
  * useWorkspaceChat
  * Owns: chat messages, current question, thinking state, speech, handleChat.
- * Depends on: uploads + selectedUploads passed from the orchestrator.
  */
-export const useWorkspaceChat = ({ uploads, selectedUploads }) => {
+export const useWorkspaceChat = ({ subjectId }) => {
     const [chatMessages, setChatMessages] = useState([]);
     const [currentQuestion, setCurrentQuestion] = useState('');
     const [isThinking, setIsThinking] = useState(false);
@@ -15,32 +14,59 @@ export const useWorkspaceChat = ({ uploads, selectedUploads }) => {
     const [chatCollapsed, setChatCollapsed] = useState(false);
     const chatEndRef = useRef(null);
 
-    const { speak, listen, isListening, cancel } = useSpeech();
+    const { speak, listen, isListening, isSpeaking, stopSpeaking, cancel } = useSpeech();
 
     const handleChat = useCallback(async (e) => {
         if (e) e.preventDefault();
         if (!currentQuestion.trim() || isThinking) return;
 
+        // Check if user is authenticated before proceeding
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setChatError('Please log in to use the chat feature.');
+            return;
+        }
+
         setChatError('');
         const userMsg = { role: 'user', content: currentQuestion };
+        
+        // Append user message immediately
         setChatMessages(prev => [...prev, userMsg]);
         setCurrentQuestion('');
         setIsThinking(true);
 
         try {
-            const contextIds = selectedUploads.length > 0
-                ? selectedUploads
-                : uploads.map(m => m.id);
-            const res = await MaterialService.chat(contextIds, userMsg.content);
-            setChatMessages(prev => [...prev, { role: 'ai', content: res.data.data.result }]);
+            // Build conversation history for the engine (exclude current question)
+            const history = chatMessages
+                .filter(m => !m.isError)
+                .map(m => ({
+                    role: m.role === 'ai' ? 'assistant' : m.role,
+                    content: m.content,
+                }))
+                .slice(-10); // Windowed memory
+
+            const res = await MaterialService.unifiedChat(subjectId, userMsg.content, history);
+            const { answer, sources, confidence } = res.data.data;
+
+            setChatMessages(prev => [...prev, { 
+                role: 'ai', 
+                content: answer,
+                sources: sources || [],
+                confidence: confidence || 0
+            }]);
         } catch (err) {
-            const msg = err.message || 'AI engine is unreachable. Please try again.';
+            console.error('[useWorkspaceChat] Global Chat Error:', err);
+            const msg = err.response?.data?.message || err.message || 'AI engine is unreachable. Please try again.';
             setChatError(msg);
-            setChatMessages(prev => [...prev, { role: 'ai', content: `Error: ${msg}` }]);
+            setChatMessages(prev => [...prev, { 
+                role: 'ai', 
+                content: `Error: ${msg}`,
+                isError: true 
+            }]);
         } finally {
             setIsThinking(false);
         }
-    }, [currentQuestion, isThinking, selectedUploads, uploads]);
+    }, [currentQuestion, isThinking, chatMessages, subjectId]);
 
     return {
         chatMessages,
@@ -55,6 +81,8 @@ export const useWorkspaceChat = ({ uploads, selectedUploads }) => {
         setChatCollapsed,
         handleChat,
         speak,
+        isSpeaking,
+        stopSpeaking,
         listen,
         isListening,
         cancel,

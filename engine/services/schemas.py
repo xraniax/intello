@@ -1,8 +1,4 @@
-from typing import List, Optional
-try:
-    from typing import Literal
-except ImportError:
-    from typing_extensions import Literal
+from typing import List, Optional, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -77,6 +73,52 @@ class ChatRequest(BaseModel):
     language: str = Field(default="en")
     user_id: Optional[str] = None
     chunks: Optional[List[str]] = None
+
+
+class ChatMessage(BaseModel):
+    """A single turn in a conversation (user or assistant)."""
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1)
+
+
+class UnifiedChatRequest(BaseModel):
+    """Structured payload for the unified POST /chat endpoint."""
+    subject_id: str = Field(
+        ...,
+        description="Subject UUID or integer ID. Accepts both UUID strings and numeric IDs.",
+    )
+    question: str = Field(..., min_length=1, max_length=2000, description="The student's question.")
+    conversation_history: List[ChatMessage] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Prior turns in the conversation for context-aware answering.",
+    )
+    top_k: int = Field(default=8, ge=1, le=50, description="Number of context chunks to retrieve.")
+    language: str = Field(default="en", description="Language for the AI response.")
+
+    @model_validator(mode="after")
+    def sanitize_subject_id(self) -> "UnifiedChatRequest":
+        val = str(self.subject_id).strip()
+        if not val:
+            raise ValueError("subject_id must not be empty")
+        self.subject_id = val
+        return self
+
+
+class ChatSource(BaseModel):
+    """A retrieved chunk that contributed to the answer."""
+    chunk_id: int
+    document_id: int
+    page_number: Optional[int] = None
+    excerpt: str = Field(..., description="First 200 chars of the chunk content used as context.")
+
+
+class UnifiedChatResponse(BaseModel):
+    """Structured response from the unified /chat endpoint."""
+    answer: str
+    sources: List[ChatSource]
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    latency_ms: float
 
 # --- Structured Output Models ---
 

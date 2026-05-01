@@ -602,8 +602,8 @@ def task_generate_material(
         if chunks and isinstance(chunks, list) and len(chunks) > 0:
             chunk_texts = chunks
         else:
-            retrieved_chunks = retrieve_chunks_by_topic(db, subject_id, effective_topic, top_k)
-            chunk_texts = [c.content for c in retrieved_chunks if c.content]
+            chunks_with_scores = retrieve_chunks_by_topic(db, subject_id, effective_topic, top_k)
+            chunk_texts = [c.content for c, _ in chunks_with_scores if c.content]
         
         logger.info(f"Retrieved {len(chunk_texts)} chunk texts for generation.")
         

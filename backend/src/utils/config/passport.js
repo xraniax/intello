@@ -9,13 +9,14 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: '/api/auth/google/callback'
+        callbackURL: `${BACKEND_URL}/api/auth/google/callback`
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : `${profile.id}@google.com`;
             const name = profile.displayName || profile.name?.givenName || 'Google User';
 
-            const user = await User.findOrCreateByProvider(email, name, 'google', profile.id);
+            const { user, isNew } = await User.findOrCreateByProvider(email, name, 'google', profile.id);
+            user.isNewRecord = isNew; // use isNewRecord to avoid conflicts
             return done(null, user);
         } catch (err) {
             console.error('Google Auth Error:', err);
@@ -30,14 +31,15 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
     passport.use(new GitHubStrategy({
         clientID: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        callbackURL: '/api/auth/github/callback',
+        callbackURL: `${BACKEND_URL}/api/auth/github/callback`,
         scope: ['user:email']
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : `${profile.id}@github.com`;
             const name = profile.displayName || profile.username || 'GitHub User';
 
-            const user = await User.findOrCreateByProvider(email, name, 'github', profile.id);
+            const { user, isNew } = await User.findOrCreateByProvider(email, name, 'github', profile.id);
+            user.isNewRecord = isNew;
             return done(null, user);
         } catch (err) {
             console.error('GitHub Auth Error:', err);

@@ -6,10 +6,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-try:
-    from models import Document
-except ImportError:
-    from ..models import Document
+from models import Document
 
 from .bulk_insert import bulk_insert_chunks
 from .document_processor import process_document

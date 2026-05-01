@@ -35,18 +35,37 @@ class Subject {
     }
 
     /**
+     * Get total count of subjects for a user
+     */
+    static async getCountByUserId(userId) {
+        const result = await query(
+            'SELECT COUNT(*)::int as count FROM subjects WHERE user_id = $1',
+            [userId]
+        );
+        return result.rows[0].count;
+    }
+
+    /**
      * Fetch all subjects for a user with material counts
      */
-    static async findAllByUserId(userId) {
-        const result = await query(
-            `SELECT s.*, s.last_activity_at AS "lastActivityAt", count(m.id)::int as material_count
+    static async findAllByUserId(userId, pagination = null) {
+        let sql = `
+            SELECT s.*, s.last_activity_at AS "lastActivityAt", count(m.id)::int as material_count
              FROM subjects s
              LEFT JOIN materials m ON s.id = m.subject_id AND m.deleted_at IS NULL
              WHERE s.user_id = $1
              GROUP BY s.id
-             ORDER BY s.last_activity_at DESC`,
-            [userId]
-        );
+             ORDER BY s.last_activity_at DESC
+        `;
+        const params = [userId];
+
+        if (pagination) {
+            const { limit, offset } = pagination;
+            sql += ` LIMIT $2 OFFSET $3`;
+            params.push(limit, offset);
+        }
+
+        const result = await query(sql, params);
         return result.rows;
     }
 

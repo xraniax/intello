@@ -2,6 +2,7 @@ import MaterialService from '../services/material.service.js';
 import SettingsService from '../services/settings.service.js';
 import engineClient from '../services/engine.client.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { parsePagination, buildPaginatedResponse } from '../utils/pagination.js';
 import fs from 'fs';
 
 /**
@@ -84,11 +85,17 @@ class MaterialController {
     });
 
     static getHistory = asyncHandler(async (req, res) => {
-        const history = await MaterialService.getUserHistory(req.user.id);
-        res.status(200).json({
-            status: 'success',
-            data: history
-        });
+        const { page, limit, offset } = parsePagination(req.query);
+        const result = await MaterialService.getUserHistory(req.user.id, { limit, offset });
+        
+        // If pagination was applied, return paginated response
+        if (result && result.history) {
+            const paginatedResponse = buildPaginatedResponse(result.history, result.total, { page, limit });
+            res.status(200).json({ status: 'success', ...paginatedResponse });
+        } else {
+            // Backward compatibility: return plain array if no pagination requested
+            res.status(200).json({ status: 'success', data: result });
+        }
     });
 
     static chatCombined = asyncHandler(async (req, res) => {
@@ -199,11 +206,17 @@ class MaterialController {
     });
 
     static getTrash = asyncHandler(async (req, res) => {
-        const trash = await MaterialService.getTrash(req.user.id);
-        res.status(200).json({
-            status: 'success',
-            data: trash
-        });
+        const { page, limit, offset } = parsePagination(req.query);
+        const result = await MaterialService.getTrash(req.user.id, { limit, offset });
+        
+        // If pagination was applied, return paginated response
+        if (result && result.trash) {
+            const paginatedResponse = buildPaginatedResponse(result.trash, result.total, { page, limit });
+            res.status(200).json({ status: 'success', ...paginatedResponse });
+        } else {
+            // Backward compatibility: return plain array if no pagination requested
+            res.status(200).json({ status: 'success', data: result });
+        }
     });
 
     static restore = asyncHandler(async (req, res) => {

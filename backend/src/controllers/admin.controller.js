@@ -1,14 +1,17 @@
 import AdminService from '../services/admin.service.js';
+import { parsePagination, buildPaginatedResponse } from '../utils/pagination.js';
 
 class AdminController {
     /**
-     * Get all users for administration
+     * Get all users for administration (paginated)
      */
     static async getUsers(req, res) {
         try {
-            const { sortBy, order, page, limit } = req.query;
-            const users = await AdminService.getAllUsers({ sortBy, order, page, limit });
-            res.json({ success: true, data: users });
+            const { sortBy, order } = req.query;
+            const { page, limit, offset } = parsePagination(req.query);
+            const { users, total } = await AdminService.getAllUsers({ sortBy, order, page, limit, offset });
+            const paginatedResponse = buildPaginatedResponse(users, total, { page, limit });
+            res.json({ success: true, ...paginatedResponse });
         } catch (error) {
             console.error('Admin Fetch Users Error:', error);
             res.status(500).json({ success: false, message: 'Failed to fetch users' });
@@ -74,26 +77,30 @@ class AdminController {
     }
 
     /**
-     * Get administrative action logs
+     * Get administrative action logs (paginated)
      */
     static async getLogs(req, res) {
         try {
-            const { sortBy, order, page, limit, action, entityType } = req.query;
-            const logs = await AdminService.getAdminLogs({ sortBy, order, page, limit, action, entityType });
-            res.json({ success: true, data: logs });
+            const { sortBy, order, action, entityType } = req.query;
+            const { page, limit, offset } = parsePagination(req.query);
+            const { logs, total } = await AdminService.getAdminLogs({ sortBy, order, page, limit, offset, action, entityType });
+            const paginatedResponse = buildPaginatedResponse(logs, total, { page, limit });
+            res.json({ success: true, ...paginatedResponse });
         } catch (error) {
             console.error('Admin Fetch Logs Error:', error);
             res.status(500).json({ success: false, message: 'Failed to fetch admin logs' });
         }
     }
     /**
-     * File Management
+     * File Management (paginated)
      */
     static async getAllFiles(req, res) {
         try {
-            const { userId, subjectId, minSizeMb, mimeType, sortBy, order, page, limit } = req.query;
-            const files = await AdminService.getAllFiles({ userId, subjectId, minSizeMb, mimeType, sortBy, order, page, limit });
-            res.status(200).json({ success: true, data: files });
+            const { userId, subjectId, minSizeMb, mimeType, sortBy, order } = req.query;
+            const { page, limit, offset } = parsePagination(req.query);
+            const { files, total } = await AdminService.getAllFiles({ userId, subjectId, minSizeMb, mimeType, sortBy, order, page, limit, offset });
+            const paginatedResponse = buildPaginatedResponse(files, total, { page, limit });
+            res.status(200).json({ success: true, ...paginatedResponse });
         } catch (error) {
             console.error('Admin Fetch Files Error:', error);
             res.status(500).json({ success: false, message: 'Failed to fetch files' });
@@ -196,16 +203,17 @@ class AdminController {
     }
 
     /**
-     * Alert Management
+     * Alert Management (paginated)
      */
     static async getAlerts(req, res) {
         try {
             const isResolved = req.query.isResolved === 'true' ? true : 
                               req.query.isResolved === 'false' ? false : undefined;
-            const limit = parseInt(req.query.limit) || 50;
+            const { page, limit, offset } = parsePagination(req.query);
             
-            const alerts = await AdminService.getAlerts({ isResolved, limit });
-            res.json({ success: true, data: alerts });
+            const { alerts, total } = await AdminService.getAlerts({ isResolved, page, limit, offset });
+            const paginatedResponse = buildPaginatedResponse(alerts, total, { page, limit });
+            res.json({ success: true, ...paginatedResponse });
         } catch (error) {
             console.error('Admin Fetch Alerts Error:', error);
             res.status(500).json({ success: false, message: 'Failed to fetch alerts' });
@@ -226,6 +234,9 @@ class AdminController {
         try {
             const { id } = req.params;
             const alert = await AdminService.resolveAlert(req.user.id, id);
+            if (!alert) {
+                return res.status(404).json({ success: false, message: 'Alert not found' });
+            }
             res.json({ success: true, data: alert, message: 'Alert marked as resolved' });
         } catch (error) {
             console.error('Admin Resolve Alert Error:', error);

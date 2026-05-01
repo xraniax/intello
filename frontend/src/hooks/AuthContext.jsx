@@ -20,9 +20,33 @@ export const AuthProvider = ({ children }) => {
     const loading = !isInitialized || !!globalLoading;
 
     useEffect(() => {
-        if (!isInitialized) {
-            loadUser().catch(() => {});
-        }
+        const init = async () => {
+            if (isInitialized) return;
+
+            // 1. Check URL for token (OAuth callback landing)
+            const params = new URLSearchParams(window.location.search);
+            const urlToken = params.get('token');
+            if (urlToken) {
+                console.log('[AuthContext] Token detected in URL, harvesting...');
+                localStorage.setItem('token', urlToken);
+                // Clean URL
+                const url = new URL(window.location);
+                url.searchParams.delete('token');
+                window.history.replaceState({}, document.title, url.pathname + url.search);
+            }
+
+            // 2. Load user with current token (from localStorage)
+            try {
+                await loadUser();
+            } catch (err) {
+                console.error('[AuthContext] Load user failed:', err);
+                if (urlToken) {
+                    window.location.replace('/login?error=auth_failed');
+                }
+            }
+        };
+
+        init();
     }, [isInitialized, loadUser]);
 
     const loginWithToken = useCallback(async (token) => {

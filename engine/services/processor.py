@@ -17,24 +17,10 @@ from .embeddings import embed_step
 
 logger = logging.getLogger("engine-processor")
 
-# DB integration: engine root on PYTHONPATH (Docker WORKDIR /app) or package import from services.*
-try:
-    import database
-    import models
-
-    SessionLocal = database.SessionLocal
-    Document = models.Document
-    logger.info("Imported database and models from engine root.")
-except ImportError:
-    try:
-        from ..database import SessionLocal
-        from ..models import Document
-
-        logger.info("Imported database and models via services package (parent package).")
-    except ImportError as e3:
-        logger.error("Database/models import failed: %s", e3)
-        SessionLocal = None  # type: ignore[misc, assignment]
-        Document = None  # type: ignore[misc, assignment]
+import database
+import models
+SessionLocal = database.SessionLocal
+Document = models.Document
 
 
 def get_db() -> Optional[Session]:

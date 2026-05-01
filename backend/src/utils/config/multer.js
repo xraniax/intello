@@ -47,7 +47,12 @@ const documentOnlyFilter = (req, file, cb) => {
 export const documentUpload = async (req, res, next) => {
   try {
     const controls = await SettingsService.getStorageControls();
-    const maxSizeBytes = (controls?.max_file_size_mb || 10) * 1024 * 1024;
+    
+    // Check if user has specific max_file_size_mb overrides in their settings JSON
+    const userMaxFileSizeMb = req.user?.settings?.max_file_size_mb;
+    const effectiveLimitMb = userMaxFileSizeMb || controls?.max_file_size_mb || 10;
+    
+    const maxSizeBytes = effectiveLimitMb * 1024 * 1024;
     
     // Pass allowed types to the filter via the request object
     req.allowedMimeTypes = controls?.allowed_types || ['application/pdf'];
@@ -60,7 +65,7 @@ export const documentUpload = async (req, res, next) => {
 
     upload(req, res, async function (err) {
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-        const errorMsg = `File too large. Max allowed size is ${controls.max_file_size_mb}MB.`;
+        const errorMsg = `File too large. Max allowed size is ${effectiveLimitMb}MB.`;
         await AlertService.triggerUploadFailure(req.user?.id, req.file?.originalname || 'Unknown File', errorMsg);
         const customErr = new Error(errorMsg);
         customErr.statusCode = 400;

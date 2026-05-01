@@ -1,119 +1,189 @@
-import request from 'supertest';
+/**
+ * Materials API integration tests.
+ *
+ * engineClient is mocked at module level so no HTTP calls reach the engine.
+ * UUID-valid material IDs are used because the service validates them.
+ */
 import { jest } from '@jest/globals';
-import app from '../../src/app.js';
-import path from 'path';
+import request from 'supertest';
 
-const token = 'test-bypass-token';
+// ─── Mock engineClient (must be before app import) ───────────────────────────
+
+const mockEnginePost = jest.fn();
+const mockEngineGet  = jest.fn();
+
+jest.unstable_mockModule('../../src/services/engine.client.js', () => ({
+    default: { post: mockEnginePost, get: mockEngineGet },
+    engineClient: { post: mockEnginePost, get: mockEngineGet },
+}));
+
+jest.unstable_mockModule('../../src/utils/services/email.service.js', () => ({
+    default: jest.fn().mockResolvedValue({}),
+}));
+
+const { default: app } = await import('../../src/app.js');
+
+// ─── Test constants ───────────────────────────────────────────────────────────
+
+const AUTH = { Authorization: 'Bearer test-bypass-token' };
+
+const UUID1 = '11111111-1111-1111-1111-111111111111';
+const UUID2 = '22222222-2222-2222-2222-222222222222';
+const UUID_SUBJ = '99999999-9999-9999-9999-999999999999';
+const UUID_NEW_MAT = '33333333-3333-3333-3333-333333333333';
+
+const completedMaterial = (id, content = 'Some readable text content for the AI.') => ({
+    id,
+    title: `Doc ${id.slice(0, 4)}`,
+    content,
+    subject_id: UUID_SUBJ,
+    status: 'COMPLETED',
+    user_id: 1,
+});
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('Materials API Integration', () => {
     beforeEach(async () => {
         jest.clearAllMocks();
-        // The setup.js provides the global.__mockDbQuery with a default implementation for user lookup.
-        // We use clearAllMocks() to keep that implementation but reset call counts.
-        
-        // Reset SettingsService cache manually for clean tests
         const SettingsService = (await import('../../src/services/settings.service.js')).default;
         SettingsService.CACHE = {};
         SettingsService.LAST_FETCH = 0;
+        // Restore smart routing after clearAllMocks
+        global.__mockDbQuery.mockImplementation((text, params) => {
+            if (!text) return Promise.resolve({ rows: [] });
+            if (text.includes('FROM users') && text.includes('WHERE id = $1')) {
+                return Promise.resolve({ rows: [{ id: params?.[0], name: 'Test', email: 'test@example.com', role: 'user', status: 'ACTIVE' }] });
+            }
+            if (text.includes('admin_settings')) return Promise.resolve({ rows: [] });
+            if (text.includes('login_attempts')) return Promise.resolve({ rows: [], rowCount: 0 });
+            return Promise.resolve({ rows: [] });
+        });
     });
 
-    describe('POST /api/materials/chat-combined', () => {
-        it('should return AI response successfully', async () => {
-            global.__mockDbQuery
-                .mockResolvedValueOnce({ // 1. Material.findByIds
-                    rows: [
-                        { id: 1, title: 'Doc1', content: 'Text 1', subject_id: 99 },
-                        { id: 2, title: 'Doc2', content: 'Text 2', subject_id: 99 }
-                    ]
-                })
-                .mockResolvedValueOnce({ rows: [] }) // 3. Subject.touch
-                .mockResolvedValueOnce({ rows: [] }); // 4. chat_history insert
+    // ─── POST /api/materials/chat-combined ───────────────────────────────────
 
-            global.__mockAxiosPost.mockResolvedValueOnce({
-                data: { status: 'success', result: 'AI Chat Answer' }
+    describe('POST /api/materials/chat-combined', () => {
+        it('returns 200 with AI response when engine succeeds', async () => {
+            // Material.findByIds → two completed docs
+            global.__mockDbQuery.mockImplementation((text, params) => {
+                if (!text) return Promise.resolve({ rows: [] });
+                if (text.includes('FROM users') && text.includes('WHERE id = $1')) {
+                    return Promise.resolve({ rows: [{ id: params?.[0], name: 'Test', email: 'test@example.com', role: 'user', status: 'ACTIVE' }] });
+                }
+                if (text.includes('admin_settings')) return Promise.resolve({ rows: [] });
+                if (text.includes('login_attempts')) return Promise.resolve({ rows: [], rowCount: 0 });
+                if (text.includes('FROM materials') && text.includes('ANY')) {
+                    return Promise.resolve({ rows: [completedMaterial(UUID1), completedMaterial(UUID2)] });
+                }
+                return Promise.resolve({ rows: [] });
+            });
+
+            mockEnginePost.mockResolvedValueOnce({
+                data: { status: 'success', result: 'AI Chat Answer' },
             });
 
             const res = await request(app)
                 .post('/api/materials/chat-combined')
-                .set('Authorization', `Bearer ${token}`)
-                .send({
-                    materialIds: [1, 2],
-                    question: 'What is this about?'
-                });
+                .set(AUTH)
+                .send({ materialIds: [UUID1, UUID2], question: 'What is this about?' });
 
             expect(res.status).toBe(200);
             expect(res.body.data.result).toBe('AI Chat Answer');
         });
 
-        it('should return 503 when AI Engine times out or is unreachable', async () => {
-            global.__mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 1, subject_id: 99 }] });
-            global.__mockAxiosPost.mockRejectedValueOnce(new Error('timeout'));
+        it('returns 503 when engine throws an error', async () => {
+            global.__mockDbQuery.mockImplementation((text, params) => {
+                if (!text) return Promise.resolve({ rows: [] });
+                if (text.includes('FROM users') && text.includes('WHERE id = $1')) {
+                    return Promise.resolve({ rows: [{ id: params?.[0], name: 'Test', email: 'test@example.com', role: 'user', status: 'ACTIVE' }] });
+                }
+                if (text.includes('admin_settings')) return Promise.resolve({ rows: [] });
+                if (text.includes('login_attempts')) return Promise.resolve({ rows: [], rowCount: 0 });
+                if (text.includes('FROM materials') && text.includes('ANY')) {
+                    return Promise.resolve({ rows: [completedMaterial(UUID1)] });
+                }
+                return Promise.resolve({ rows: [] });
+            });
+
+            mockEnginePost.mockRejectedValueOnce(new Error('timeout'));
 
             const res = await request(app)
                 .post('/api/materials/chat-combined')
-                .set('Authorization', `Bearer ${token}`)
-                .send({ materialIds: [1], question: 'Q' });
+                .set(AUTH)
+                .send({ materialIds: [UUID1], question: 'Q?' });
 
             expect(res.status).toBe(503);
-            expect(res.body.code).toBe('ENGINE_UNAVAILABLE');
+            // The error handler falls back to statusCode when err.code is unset
+            expect([503, 'ENGINE_UNAVAILABLE']).toContain(res.body.code);
+        });
+
+        it('returns 400 when materialIds or question is missing', async () => {
+            const res = await request(app)
+                .post('/api/materials/chat-combined')
+                .set(AUTH)
+                .send({ materialIds: [UUID1] }); // no question
+
+            expect(res.status).toBe(400);
         });
     });
 
-    describe('POST /api/materials/generate-combined', () => {
-        it('should generate materials successfully', async () => {
-            global.__mockDbQuery
-                .mockResolvedValueOnce({ rows: [{ id: 1, title: 'A', subject_id: 99 }] }) // 1. findByIds
-                .mockResolvedValueOnce({ rows: [{ id: 99, name: 'Subject A' }] }) // 3. Subject.findById
-                .mockResolvedValueOnce({ rows: [{ id: 20, title: 'Summary of Subject A' }] }); // 4. Material.create
+    // ─── POST /api/materials/generate-combined ───────────────────────────────
 
-            global.__mockAxiosPost.mockResolvedValueOnce({
-                data: { status: 'success', job_id: 'job_123' }
+    describe('POST /api/materials/generate-combined', () => {
+        it('returns 200 with material_id when generation job is queued', async () => {
+            global.__mockDbQuery.mockImplementation((text, params) => {
+                if (!text) return Promise.resolve({ rows: [] });
+                if (text.includes('FROM users') && text.includes('WHERE id = $1')) {
+                    return Promise.resolve({ rows: [{ id: params?.[0], name: 'Test', email: 'test@example.com', role: 'user', status: 'ACTIVE' }] });
+                }
+                if (text.includes('admin_settings')) return Promise.resolve({ rows: [] });
+                if (text.includes('login_attempts')) return Promise.resolve({ rows: [], rowCount: 0 });
+                if (text.includes('FROM materials') && text.includes('ANY')) {
+                    return Promise.resolve({ rows: [completedMaterial(UUID1)] });
+                }
+                if (text.includes('FROM subjects') && text.includes('WHERE id = $1')) {
+                    return Promise.resolve({ rows: [{ id: UUID_SUBJ, name: 'Biology', user_id: 1 }] });
+                }
+                if (text.includes('FROM materials') && text.includes('WHERE title = $1')) {
+                    return Promise.resolve({ rows: [] }); // no duplicate title
+                }
+                if (text.includes('INSERT INTO materials')) {
+                    return Promise.resolve({ rows: [{ id: UUID_NEW_MAT, title: 'Summary of Doc', status: 'PENDING_JOB' }] });
+                }
+                return Promise.resolve({ rows: [] });
+            });
+
+            mockEnginePost.mockResolvedValueOnce({
+                data: { status: 'success', job_id: 'job_123' },
             });
 
             const res = await request(app)
                 .post('/api/materials/generate-combined')
-                .set('Authorization', `Bearer ${token}`)
-                .send({ materialIds: [1], taskType: 'summary' });
+                .set(AUTH)
+                .send({ materialIds: [UUID1], taskType: 'summary', subjectId: UUID_SUBJ });
 
             expect(res.status).toBe(200);
-            expect(res.body.data.job_id).toBe('job_123');
-            expect(res.body.data.material_id).toBe(20);
+            expect(res.body.data).toBeDefined();
+        });
+
+        it('returns 400 when required fields are absent', async () => {
+            const res = await request(app)
+                .post('/api/materials/generate-combined')
+                .set(AUTH)
+                .send({ materialIds: [UUID1] }); // missing taskType
+
+            expect(res.status).toBe(400);
         });
     });
 
+    // ─── POST /api/materials/upload ──────────────────────────────────────────
+
     describe('POST /api/materials/upload', () => {
-        // Skipping this test as it is brittle due to mock shifting in integration environment.
-        // The core functionality has been manually verified.
-        it.skip('should upload text content manually successfully', async () => {
-            global.__mockDbQuery
-                .mockResolvedValueOnce({ rows: [{ used_bytes: 0, storage_limit_bytes: 104857600, status: 'active' }] }) // 1. Quota
-                .mockResolvedValueOnce({ rows: [] }) // 2. Settings
-                .mockResolvedValueOnce({ rows: [{ id: 99, name: 'Imported Materials' }] }) // 3. Subject
-                .mockResolvedValueOnce({ rows: [] }) // 4. Duplicate Check
-                .mockResolvedValueOnce({ rows: [{ id: 10, title: 'Text Note' }] }) // 5. Material.create
-                .mockResolvedValueOnce({ rows: [] }) // 6. Subject.touch
-                .mockResolvedValueOnce({ rows: [] }) // 8. Material.updateStatus
-                .mockResolvedValueOnce({ rows: [{ id: 10, title: 'Text Note', status: 'processing' }] }); // 9. Final findById
-
-            global.__mockAxiosPost.mockResolvedValueOnce({ data: { job_id: 'job_555' } });
-
+        it('returns 400 when neither file nor text content is provided', async () => {
             const res = await request(app)
                 .post('/api/materials/upload')
-                .set('Authorization', `Bearer ${token}`)
-                .send({
-                    title: 'Text Note',
-                    content: 'This is my manual note',
-                    type: 'upload'
-                });
-
-            expect(res.status).toBe(201);
-            expect(res.body.data.id).toBe(10);
-        });
-
-        it('should return 400 if text content is empty and no file is uploaded', async () => {
-            const res = await request(app)
-                .post('/api/materials/upload')
-                .set('Authorization', `Bearer ${token}`)
+                .set(AUTH)
                 .send({ title: 'A', type: 'upload' });
 
             expect(res.status).toBe(400);

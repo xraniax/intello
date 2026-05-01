@@ -1,5 +1,5 @@
 {
-  "name": "backend",
+  "name": "@cognify/backend",
   "version": "1.0.0",
   "type": "module",
   "main": "src/server.js",
@@ -9,7 +9,14 @@
     "start:server": "node src/server.js",
     "dev:server": "nodemon src/server.js",
     "migrate": "node scripts/migrate.js",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write src",
     "test": "NODE_OPTIONS='--experimental-vm-modules' npx jest",
+    "test:coverage": "NODE_OPTIONS='--experimental-vm-modules' npx jest --coverage",
+    "test:unit": "NODE_OPTIONS='--experimental-vm-modules' npx jest --testPathPattern=unit",
+    "test:integration": "NODE_OPTIONS='--experimental-vm-modules' npx jest --testPathPattern=integration",
+    "test:watch": "NODE_OPTIONS='--experimental-vm-modules' npx jest --watch",
     "create:admin": "node scripts/createAdmin.js"
   },
   "dependencies": {
@@ -22,6 +29,7 @@
     "express": "^4.22.1",
     "express-rate-limit": "^8.3.0",
     "express-session": "^1.19.0",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.0",
     "nodemailer": "^8.0.2",
