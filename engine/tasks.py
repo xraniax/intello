@@ -569,8 +569,8 @@ def task_generate_material(self, subject_id: str, material_type: str, topic: Opt
         ai_generated_content = _normalize_generation_result(
             material,
             material_type,
-            effective_topic,
-            effective_language,
+            topic,
+            language,
             top_k,
             subject_id,
         )
