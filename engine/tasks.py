@@ -15,6 +15,7 @@ from services.google_drive import download_file_from_drive
 from services.ingestion import ingest_file
 from services.retrieval import retrieve_chunks_by_topic
 from services.generation import generate_study_material
+from services.summary_pipeline import generate_summary, MAP_MAX_CHUNKS as SUMMARY_MAP_MAX_CHUNKS
 from utils.logging import get_job_logger
 
 logger = logging.getLogger(__name__)
@@ -147,7 +148,7 @@ def task_chunk(self, data):
 
     try:
         from services.preprocessing import chunk_step
-        chunks = chunk_step(text, max_chunk_chars=2000, chunk_overlap=200, job_id=job_id)
+        chunks = chunk_step(text, max_chunk_chars=2000, chunk_overlap=200, request_id=job_id)
         duration = time.perf_counter() - start_time
         log.info(f"STEP: CHUNKING SUCCESS (duration: {duration:.2f}s, chunks: {len(chunks)})")
         return {**data, "chunks": chunks}
@@ -538,42 +539,69 @@ def task_process_document(
     soft_time_limit=1800,
     time_limit=2100,
 )
-def task_generate_material(self, subject_id: str, material_type: str, topic: Optional[str] = None, language: str = "en", top_k: int = 5, user_id: Optional[str] = None, difficulty: str = "intermediate"):
+def task_generate_material(self, subject_id: str, material_type: str, topic: Optional[str] = None, language: str = "en", top_k: int = 5, user_id: Optional[str] = None, difficulty: str = "intermediate", source_filenames: Optional[List[str]] = None):
     """Background celery task for executing Retrieval-Augmented LLM generation."""
-    logger.info("Celery task_generate_material started: subject=%s, type=%s, topic=%s, difficulty=%s", subject_id, material_type, topic, difficulty)
+    logger.info("Celery task_generate_material started: subject=%s, type=%s, topic=%s, difficulty=%s, file_filter=%d", subject_id, material_type, topic, difficulty, len(source_filenames or []))
     db = SessionLocal()
     try:
-        # 1. Retrieve context chunks
+        # 1. Retrieve context chunks — scope to selected files when provided
         if material_type == "summary":
             from services.retrieval import retrieve_sequential_chunks
-            chunks = retrieve_sequential_chunks(db, subject_id)
+            # FIX S-1: Cap retrieval to prevent OOM on large subjects.
+            chunks = retrieve_sequential_chunks(db, subject_id, limit=SUMMARY_MAP_MAX_CHUNKS, source_filenames=source_filenames or [])
         else:
-            chunks = retrieve_chunks_by_topic(db, subject_id, topic, top_k)
+            chunks = retrieve_chunks_by_topic(db, subject_id, topic, top_k, source_filenames=source_filenames or [])
 
         chunk_texts = [c.content for c in chunks if c.content]
 
-        logger.info(f"Retrieved {len(chunk_texts)} chunk texts for generation.")
+        logger.info(f"Retrieved {len(chunk_texts)} chunk texts for generation (type={material_type}).")
 
         if not chunk_texts:
             raise ValueError("No document chunks found for the given subject or topic.")
 
-        # 2. Generate material (this handles its own LLM retries)
-        material = generate_study_material(
-            chunk_texts,
-            material_type,
-            topic,
-            language,
-            user_id=user_id,
-            difficulty=difficulty,
-        )
-        ai_generated_content = _normalize_generation_result(
-            material,
-            material_type,
-            topic,
-            language,
-            top_k,
-            subject_id,
-        )
+        # 2. Generate material — dedicated pipeline for summaries
+        if material_type == "summary":
+            material = generate_summary(
+                chunk_texts,
+                topic=topic,
+                language=language,
+                difficulty=difficulty,
+            )
+        else:
+            material = generate_study_material(
+                chunk_texts,
+                material_type,
+                topic,
+                language,
+                user_id=user_id,
+                difficulty=difficulty,
+            )
+
+        # Fast-path normalization for summary strings (S-7)
+        if material_type == "summary" and isinstance(material, str):
+            ai_generated_content = {
+                "type": "summary",
+                "content": material,
+                "metadata": {
+                    "model": os.getenv("OLLAMA_GENERATION_MODEL", "unknown"),
+                    "provider": "ollama",
+                    "additional_info": {
+                        "topic": topic,
+                        "language": language,
+                        "top_k": top_k,
+                        "subject_id": subject_id,
+                    },
+                },
+            }
+        else:
+            ai_generated_content = _normalize_generation_result(
+                material,
+                material_type,
+                topic,
+                language,
+                top_k,
+                subject_id,
+            )
         
         return {
             "status": "SUCCESS",

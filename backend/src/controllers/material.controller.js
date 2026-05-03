@@ -115,23 +115,49 @@ class MaterialController {
     });
 
     static generateCombinedStream = asyncHandler(async (req, res) => {
-        console.log('[MaterialController] generateCombinedStream body:', JSON.stringify(req.body, null, 2));
+        const reqStart = Date.now();
+        console.log('[TRACE][BACKEND_STREAM_RECV] timestamp=%d body=%s', reqStart, JSON.stringify(req.body));
         const { materialIds, taskType, subjectId, genOptions } = req.body;
         if (!materialIds || !taskType) {
             res.status(400);
             throw new Error('materialIds and taskType are required');
         }
 
+        console.log('[TRACE][BACKEND_STREAM_FWD] forwarding to engine timestamp=%d', Date.now());
         const response = await MaterialService.generateStream(req.user.id, materialIds, taskType, subjectId, genOptions);
+        const engineResponseMs = Date.now() - reqStart;
+        console.log('[TRACE][BACKEND_ENGINE_RESP] engine_response_ms=%d status=%d', engineResponseMs, response.status);
 
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
 
+        let firstChunk = true;
+        let chunkCount = 0;
+        response.data.on('data', (chunk) => {
+            chunkCount++;
+            if (firstChunk) {
+                console.log('[TRACE][BACKEND_FIRST_CHUNK] time_to_first_chunk_ms=%d', Date.now() - reqStart);
+                firstChunk = false;
+            }
+        });
+
+        console.log('[TRACE][BACKEND_PIPE_START] timestamp=%d time_since_request_ms=%d', Date.now(), Date.now() - reqStart);
         response.data.pipe(res);
 
+        response.data.on('end', () => {
+            console.log('[TRACE][BACKEND_PIPE_END] total_ms=%d chunks_piped=%d', Date.now() - reqStart, chunkCount);
+        });
+
+        response.data.on('error', (err) => {
+            console.error('[TRACE][BACKEND_PIPE_ERROR] total_ms=%d error=%s', Date.now() - reqStart, err.message);
+        });
+
         req.on('close', () => {
-            console.log('[MaterialController] Client closed generation stream connection');
+            const totalMs = Date.now() - reqStart;
+            console.log('[TRACE][BACKEND_CLIENT_CLOSE] total_ms=%d chunks_piped=%d', totalMs, chunkCount);
             if (response.data.destroy) response.data.destroy();
         });
     });
@@ -173,6 +199,8 @@ class MaterialController {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
 
         response.data.pipe(res);
 

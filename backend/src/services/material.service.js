@@ -325,6 +325,7 @@ class MaterialService {
      * Returns an axios response with responseType: 'stream' so the controller can pipe it.
      */
     static async generateStream(userId, materialIds, taskType, subjectId, genOptions = {}) {
+        const startMs = Date.now();
         const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const safeIds = (Array.isArray(materialIds) ? materialIds : [])
             .filter(id => typeof id === 'string' && UUID_PATTERN.test(id));
@@ -342,6 +343,13 @@ class MaterialService {
         // Build GPS so difficulty reaches the engine prompt builder
         const gps = this._buildGPS(taskType, genOptions);
 
+        // Extract basenames of stored files so the engine can filter its documents table
+        // (engine documents.filename = basename of the multer-stored file path)
+        const sourceFilenames = sourceDocuments
+            .filter(d => d.file_path)
+            .map(d => d.file_path.split('/').pop())
+            .filter(f => f && f.length > 0);
+
         const enginePayload = {
             subject_id: finalSubjectId,
             material_type: materialType,
@@ -349,12 +357,19 @@ class MaterialService {
             language: (genOptions || {}).language || 'en',
             top_k: 20,
             generation_options: gps,
+            ...(sourceFilenames.length > 0 && { source_filenames: sourceFilenames }),
         };
 
-        return engineClient.post('/generate/stream', enginePayload, {
+        console.log('[TRACE][BACKEND_SVC_ENGINE_REQ] type=%s subject=%s files=%d elapsed_ms=%d payload_keys=%s',
+            materialType, finalSubjectId, sourceFilenames.length, Date.now() - startMs, Object.keys(enginePayload).join(','));
+
+        const resp = await engineClient.post('/generate/stream', enginePayload, {
             responseType: 'stream',
-            timeout: 300000,
+            timeout: 600000,  // 10 minutes — matches frontend GENERATION_TIMEOUT_MS
         });
+
+        console.log('[TRACE][BACKEND_SVC_ENGINE_RESP] status=%d elapsed_ms=%d', resp.status, Date.now() - startMs);
+        return resp;
     }
 
     /**
@@ -394,13 +409,18 @@ class MaterialService {
             PENDING_JOB
         );
 
+        const sourceFilenames = sourceDocuments
+            .filter(d => d.file_path)
+            .map(d => d.file_path.split('/').pop())
+            .filter(f => f && f.length > 0);
+
         const enginePayload = {
             subject_id: finalSubjectId,
             material_type: materialType,
-            chunks: sourceDocuments.map(d => d.content),
             topic: genOptions.topic,
             language: genOptions.language || 'en',
-            generation_options: gps
+            generation_options: gps,
+            ...(sourceFilenames.length > 0 && { source_filenames: sourceFilenames }),
         };
 
         // 4. Health Watchdog & Dual-Path Routing

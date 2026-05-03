@@ -679,14 +679,14 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
             if (subjectId && responsesRef.current.length > 0) {
                 AnalyticsService.recordQuizAttempt({
                     subjectId,
-                    materialId: materialId ?? quizData?.id,
+                    materialId: materialId ?? quizDataId,
                     responses: responsesRef.current,
                     startedAt: startedAtRef.current,
                     completedAt: new Date().toISOString(),
                 }).catch(() => {});
             }
         }
-    }, [currentQuestionIndex, questions.length, subjectId, materialId, quizData?.id]);
+    }, [currentQuestionIndex, questions.length, subjectId, materialId, quizDataId]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {

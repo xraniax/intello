@@ -194,7 +194,7 @@ def detect_gpu_and_ollama() -> Dict[str, Any]:
             f"Ensure Ollama is running at {OLLAMA_BASE_URL}",
             "Check OLLAMA_BASE_URL environment variable",
             "Verify GPU drivers and CUDA availability on host",
-            "Run: docker logs ollama_gpu (if using Docker)"
+            "Run: docker logs ollama(if using Docker)"
         ]
     
     # Log recommendations

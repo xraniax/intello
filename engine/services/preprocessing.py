@@ -488,6 +488,11 @@ def preprocess_step(
     }
 
 
+# Hard upper bound to prevent giant chunks from reaching the DB or the LLM context window.
+# Any chunk produced by _chunk_text that still exceeds this is force-split using character boundaries.
+_MAX_CHUNK_CHARS_HARD_CAP = int(os.getenv("MAX_CHUNK_CHARS_HARD_CAP", "4000"))
+
+
 def chunk_step(
     text: str,
     *,
@@ -495,8 +500,35 @@ def chunk_step(
     chunk_overlap: int = 200,
     request_id: Optional[str] = None,
 ) -> List[str]:
-    """Split cleaned text into chunks (reusable pipeline step)."""
-    return _chunk_text(text, max_chars=max_chunk_chars, overlap=chunk_overlap, request_id=request_id)
+    """Split cleaned text into chunks (reusable pipeline step).
+
+    A hard cap of MAX_CHUNK_CHARS_HARD_CAP (default 4000) is enforced after primary
+    chunking. Any chunk that still exceeds this is character-split with no overlap to
+    guarantee bounded storage size regardless of tokenizer behaviour.
+    """
+    raw_chunks = _chunk_text(text, max_chars=max_chunk_chars, overlap=chunk_overlap, request_id=request_id)
+
+    cap = max(max_chunk_chars, _MAX_CHUNK_CHARS_HARD_CAP)
+    result: List[str] = []
+    oversized = 0
+    for chunk in raw_chunks:
+        if len(chunk) <= cap:
+            result.append(chunk)
+        else:
+            oversized += 1
+            # Force-split without overlap — correctness over aesthetics
+            for i in range(0, len(chunk), max_chunk_chars):
+                sub = chunk[i:i + max_chunk_chars]
+                if sub:
+                    result.append(sub)
+    if oversized:
+        logger.warning(
+            "%s%d oversized chunk(s) force-split (hard cap=%d chars)",
+            _rid_prefix(request_id),
+            oversized,
+            cap,
+        )
+    return result
 
 
 #high level preprocessing function

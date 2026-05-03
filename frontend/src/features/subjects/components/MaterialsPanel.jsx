@@ -66,12 +66,6 @@ const MaterialsPanel = ({
 
     const onGenerate = () => {
         if (isGenerating) return;
-        if (selectedCount === 0) {
-            setShowAlert(true);
-            clearTimeout(alertTimer.current);
-            alertTimer.current = setTimeout(() => setShowAlert(false), 3500);
-            return;
-        }
         setShowAlert(false);
         handleGenerate({
             count,

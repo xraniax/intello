@@ -4,6 +4,7 @@ import logging
 import time
 import re
 import asyncio
+import concurrent.futures
 from typing import List, Optional, Dict, Any, Union, Iterator, AsyncIterator
 
 import httpx
@@ -27,6 +28,8 @@ OLLAMA_MAX_CONTEXT_CHARS = int(os.getenv("OLLAMA_MAX_CONTEXT_CHARS", "15000"))
 OLLAMA_REQUEST_RETRIES = int(os.getenv("OLLAMA_REQUEST_RETRIES", "4"))
 OLLAMA_REQUEST_RETRY_DELAY_SECONDS = float(os.getenv("OLLAMA_REQUEST_RETRY_DELAY_SECONDS", "2"))
 MAP_MAX_CHUNKS = int(os.getenv("MAP_MAX_CHUNKS", "80"))
+MAP_CONCURRENCY = int(os.getenv("MAP_CONCURRENCY", "2"))
+STREAM_MAP_MAX_CHUNKS = int(os.getenv("STREAM_MAP_MAX_CHUNKS", "20"))
 
 
 def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_type: str) -> str:
@@ -368,18 +371,8 @@ def build_prompt(
                 "and tangential points. Aim for a balanced, medium-length summary."
             )
 
-        base_instructions = (
-            f"Summarize the following material as if you are a student explaining it to a classmate.{lang_phrase}\n"
-            f"{depth_instruction}\n"
-            f"Prioritize the most important ideas — not every detail deserves equal space.\n"
-            f"Write naturally. Choose paragraphs or occasional short bullet groups, whichever fits the content best. "
-            f"Do NOT force everything into one format.\n"
-            f"Never open with phrases like 'This document covers', 'The text discusses', or 'This summary'. "
-            f"Jump straight into the actual content.\n"
-            f"Do NOT use headers, section titles, or bold formatting."
-        )
         prompt = (
-            f"System instructions:\n{base_instructions}\n\n"
+            f"{depth_instruction}{lang_phrase}\n\n"
             f"Text to summarize:\n---\n{context}\n---\n\n"
             f"Summary:"
         )
@@ -518,14 +511,30 @@ def _map_summarize_chunk(chunk_text: str, language: str, timeout: int, retries: 
         "prompt": prompt,
     }
     
+    prompt_chars = len(prompt)
+    logger.info(
+        "[TRACE][MAP_CHUNK] model=%s prompt_chars=%d chunk_input_chars=%d timeout=%d",
+        OLLAMA_GENERATION_MODEL, prompt_chars, len(chunk_text), timeout,
+    )
+    
     for attempt in range(retries):
+        attempt_start = time.perf_counter()
         try:
             generated_text = _stream_ollama_generate(payload, timeout=timeout, material_type="map_summary")
+            attempt_ms = int((time.perf_counter() - attempt_start) * 1000)
             if generated_text and generated_text.strip():
+                logger.info(
+                    "[TRACE][MAP_CHUNK] attempt=%d/%d duration_ms=%d output_chars=%d",
+                    attempt + 1, retries, attempt_ms, len(generated_text),
+                )
                 return generated_text.strip()
         except Exception as e:
+            attempt_ms = int((time.perf_counter() - attempt_start) * 1000)
+            logger.warning(
+                "[TRACE][MAP_CHUNK] attempt=%d/%d FAILED duration_ms=%d error=%s",
+                attempt + 1, retries, attempt_ms, e,
+            )
             if attempt == retries - 1:
-                logger.warning("Map summarization failed: %s", e)
                 return ""
             time.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
     return ""
@@ -536,25 +545,119 @@ def generate_map_summaries(
     language: str = "en",
     timeout: int = OLLAMA_GENERATION_TIMEOUT,
     retries: int = OLLAMA_REQUEST_RETRIES,
+    max_chunks: Optional[int] = None,
 ) -> List[str]:
-    """MAP stage: summarize each chunk sequentially."""
+    """MAP stage: summarize chunks with bounded concurrency via ThreadPoolExecutor."""
+    map_stage_start = time.perf_counter()
+    cap = max_chunks or MAP_MAX_CHUNKS
     eligible = [c for c in chunks if len(c.strip()) >= 100]
-    if len(eligible) > MAP_MAX_CHUNKS:
+    total_input_chars = sum(len(c) for c in eligible)
+    concurrency = min(len(eligible), MAP_CONCURRENCY) if eligible else 1
+    logger.info(
+        "[TRACE][MAP_START] total_chunks=%d eligible_chunks=%d total_input_chars=%d cap=%d concurrency=%d model=%s",
+        len(chunks), len(eligible), total_input_chars, cap, concurrency, OLLAMA_GENERATION_MODEL,
+    )
+    if len(eligible) > cap:
         logger.warning(
-            "MAP stage: capping %d eligible chunks to %d (set MAP_MAX_CHUNKS env to override)",
-            len(eligible),
-            MAP_MAX_CHUNKS,
+            "[TRACE][MAP] capping %d eligible chunks to %d",
+            len(eligible), cap,
         )
-        eligible = eligible[:MAP_MAX_CHUNKS]
+        eligible = eligible[:cap]
 
-    mapped_summaries = []
-    for idx, chunk in enumerate(eligible):
-        logger.info("MAP stage: summarizing chunk %d/%d", idx + 1, len(eligible))
+    if not eligible:
+        return []
+
+    # Concurrent execution — each chunk runs in its own thread
+    results = [None] * len(eligible)
+    chunk_timings = [0] * len(eligible)
+
+    def _run_chunk(idx_chunk):
+        idx, chunk = idx_chunk
+        chunk_start = time.perf_counter()
+        logger.info("[TRACE][MAP] chunk %d/%d chars=%d", idx + 1, len(eligible), len(chunk))
         summary = _map_summarize_chunk(chunk, language, timeout, retries)
+        chunk_ms = int((time.perf_counter() - chunk_start) * 1000)
         if summary:
-            mapped_summaries.append(summary)
+            logger.info("[TRACE][MAP] chunk %d/%d DONE duration_ms=%d output_chars=%d", idx + 1, len(eligible), chunk_ms, len(summary))
+        else:
+            logger.warning("[TRACE][MAP] chunk %d/%d EMPTY duration_ms=%d", idx + 1, len(eligible), chunk_ms)
+        return idx, summary or "", chunk_ms
 
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = pool.map(_run_chunk, enumerate(eligible))
+        for idx, summary, chunk_ms in futures:
+            results[idx] = summary
+            chunk_timings[idx] = chunk_ms
+
+    mapped_summaries = [s for s in results if s]
+    map_total_ms = int((time.perf_counter() - map_stage_start) * 1000)
+    valid_timings = [t for t in chunk_timings if t > 0]
+    avg_ms = int(sum(valid_timings) / len(valid_timings)) if valid_timings else 0
+    logger.info(
+        "[TRACE][MAP_END] processed=%d/%d total_ms=%d avg_chunk_ms=%d min_ms=%d max_ms=%d output_summaries=%d concurrency=%d",
+        len(eligible), len(chunks), map_total_ms, avg_ms,
+        min(valid_timings) if valid_timings else 0,
+        max(valid_timings) if valid_timings else 0,
+        len(mapped_summaries), concurrency,
+    )
     return mapped_summaries
+
+
+async def _async_map_summaries(
+    chunks: List[str],
+    language: str = "en",
+    timeout: int = OLLAMA_GENERATION_TIMEOUT,
+    retries: int = OLLAMA_REQUEST_RETRIES,
+    max_chunks: Optional[int] = None,
+) -> List[str]:
+    """Async MAP stage with bounded concurrency for the streaming path.
+
+    Uses asyncio.Semaphore + run_in_executor so the event loop stays
+    responsive (emitting keepalives) while MAP work proceeds in threads.
+    """
+    cap = max_chunks or STREAM_MAP_MAX_CHUNKS
+    eligible = [c for c in chunks if len(c.strip()) >= 100]
+    if len(eligible) > cap:
+        eligible = eligible[:cap]
+
+    if not eligible:
+        return []
+
+    map_start = time.perf_counter()
+    concurrency = min(len(eligible), MAP_CONCURRENCY)
+    sem = asyncio.Semaphore(concurrency)
+    loop = asyncio.get_running_loop()
+
+    logger.info(
+        "[TRACE][ASYNC_MAP_START] eligible=%d cap=%d concurrency=%d",
+        len(eligible), cap, concurrency,
+    )
+
+    async def _map_one(idx: int, chunk: str):
+        async with sem:
+            result = await loop.run_in_executor(
+                None, _map_summarize_chunk, chunk, language, timeout, retries,
+            )
+            return idx, result or ""
+
+    tasks = [_map_one(i, c) for i, c in enumerate(eligible)]
+    gathered = await asyncio.gather(*tasks, return_exceptions=True)
+
+    ordered = [None] * len(eligible)
+    for item in gathered:
+        if isinstance(item, Exception):
+            logger.warning("[TRACE][ASYNC_MAP] chunk failed: %s", item)
+            continue
+        idx, summary = item
+        ordered[idx] = summary
+
+    mapped = [s for s in ordered if s]
+    map_ms = int((time.perf_counter() - map_start) * 1000)
+    logger.info(
+        "[TRACE][ASYNC_MAP_END] total_ms=%d input=%d output=%d concurrency=%d",
+        map_ms, len(eligible), len(mapped), concurrency,
+    )
+    return mapped
 
 
 def _build_generation_context(chunks: List[str]) -> str:
@@ -578,15 +681,45 @@ async def generate_study_material_stream(
     This path is intentionally independent from Celery so callers can forward
     progressive output to clients over SSE.
     """
+    overall_start = time.perf_counter()
+    logger.info(
+        "[TRACE][STREAM_GEN_START] material_type=%s chunks=%d difficulty=%s topic=%s",
+        material_type, len(chunks), difficulty, topic,
+    )
+
     if not chunks:
         yield "[ERROR] Not enough context to generate material."
         return
 
     if material_type == "summary":
-        yield "*(Analyzing full document across chunks...)*\n\n"
-        mapped_chunks = generate_map_summaries(chunks, language, OLLAMA_GENERATION_TIMEOUT, OLLAMA_REQUEST_RETRIES)
-        if mapped_chunks:
-            chunks = mapped_chunks
+        total_chars = sum(len(c) for c in chunks)
+        if total_chars <= OLLAMA_MAX_CONTEXT_CHARS:
+            # Small document — all chunks fit in a single context window.
+            # Skip the MAP stage entirely and go straight to REDUCE.
+            logger.info(
+                "[TRACE][MAP_SKIP] total_chars=%d <= max_context=%d, bypassing MAP",
+                total_chars, OLLAMA_MAX_CONTEXT_CHARS,
+            )
+        else:
+            # Large document — run concurrent async MAP
+            map_start = time.perf_counter()
+            logger.info(
+                "[TRACE][MAP_PHASE_START] input_chunks=%d total_chars=%d",
+                len(chunks), total_chars,
+            )
+            mapped_chunks = await _async_map_summaries(
+                chunks,
+                language,
+                OLLAMA_GENERATION_TIMEOUT,
+                OLLAMA_REQUEST_RETRIES,
+            )
+            map_ms = int((time.perf_counter() - map_start) * 1000)
+            logger.info(
+                "[TRACE][MAP_PHASE_END] duration_ms=%d input_chunks=%d output_summaries=%d",
+                map_ms, len(chunks), len(mapped_chunks) if mapped_chunks else 0,
+            )
+            if mapped_chunks:
+                chunks = mapped_chunks
 
     context = _build_generation_context(chunks)
     prompt = build_prompt(material_type, context, topic, language, difficulty=difficulty)
@@ -601,8 +734,19 @@ async def generate_study_material_stream(
     else:
         payload["format"] = "json"
 
+    reduce_prompt_chars = len(prompt)
+    logger.info(
+        "[TRACE][REDUCE_START] model=%s prompt_chars=%d context_chars=%d url=%s timeout=%d",
+        OLLAMA_GENERATION_MODEL, reduce_prompt_chars, len(context),
+        OLLAMA_GENERATE_URL, OLLAMA_GENERATION_TIMEOUT,
+    )
+
     retries = OLLAMA_REQUEST_RETRIES
     for attempt in range(1, retries + 1):
+        reduce_attempt_start = time.perf_counter()
+        first_token_logged = False
+        token_count = 0
+        total_chars = 0
         try:
             async with httpx.AsyncClient(timeout=OLLAMA_GENERATION_TIMEOUT) as client:
                 async with client.stream(
@@ -611,6 +755,11 @@ async def generate_study_material_stream(
                     json=payload,
                 ) as resp:
                     resp.raise_for_status()
+                    logger.info(
+                        "[TRACE][REDUCE_HTTP_OK] attempt=%d/%d status=%d time_to_response_ms=%d",
+                        attempt, retries, resp.status_code,
+                        int((time.perf_counter() - reduce_attempt_start) * 1000),
+                    )
 
                     async for line in resp.aiter_lines():
                         if not line:
@@ -626,31 +775,47 @@ async def generate_study_material_stream(
 
                         piece = chunk.get("response")
                         if isinstance(piece, str) and piece:
+                            token_count += 1
+                            total_chars += len(piece)
+                            if not first_token_logged:
+                                first_token_ms = int((time.perf_counter() - reduce_attempt_start) * 1000)
+                                logger.info(
+                                    "[TRACE][REDUCE_FIRST_TOKEN] attempt=%d/%d time_to_first_token_ms=%d",
+                                    attempt, retries, first_token_ms,
+                                )
+                                first_token_logged = True
                             yield piece
 
                         if chunk.get("done") is True:
+                            reduce_ms = int((time.perf_counter() - reduce_attempt_start) * 1000)
+                            overall_ms = int((time.perf_counter() - overall_start) * 1000)
+                            throughput = (token_count / (reduce_ms / 1000)) if reduce_ms > 0 else 0
+                            logger.info(
+                                "[TRACE][REDUCE_DONE] attempt=%d/%d reduce_ms=%d tokens=%d chars=%d throughput_tok_per_s=%.1f overall_ms=%d",
+                                attempt, retries, reduce_ms, token_count, total_chars, throughput, overall_ms,
+                            )
                             return
             return
-        except (httpx.TimeoutException, httpx.RequestError) as e:
+        except (httpx.TimeoutException, httpx.RequestError, httpx.HTTPStatusError) as e:
+            attempt_ms = int((time.perf_counter() - reduce_attempt_start) * 1000)
             if attempt == retries:
                 logger.error(
-                    "Streaming generation failed after %d attempts for material_type=%s: %s",
-                    retries,
-                    material_type,
-                    e,
+                    "[TRACE][REDUCE_FAIL] attempt=%d/%d duration_ms=%d error=%s tokens_before_fail=%d",
+                    attempt, retries, attempt_ms, e, token_count,
                 )
                 yield f"[ERROR] Ollama unreachable at {OLLAMA_BASE_URL} after {retries} attempts"
                 return
             logger.warning(
-                "Streaming generation retry %d/%d for material_type=%s due to: %s",
-                attempt,
-                retries,
-                material_type,
-                e,
+                "[TRACE][REDUCE_RETRY] attempt=%d/%d duration_ms=%d error=%s",
+                attempt, retries, attempt_ms, e,
             )
             await asyncio.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
         except Exception as e:
-            logger.exception("Streaming generation failed for material_type=%s", material_type)
+            attempt_ms = int((time.perf_counter() - reduce_attempt_start) * 1000)
+            logger.exception(
+                "[TRACE][REDUCE_CRASH] attempt=%d duration_ms=%d error=%s",
+                attempt, attempt_ms, e,
+            )
             yield f"[ERROR] {e}"
             return
 

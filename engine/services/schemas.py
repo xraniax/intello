@@ -67,6 +67,9 @@ class GenerateRequest(BaseModel):
     language: str = Field(default="en")
     user_id: Optional[str] = None
     generation_options: Optional[dict] = None
+    # Filenames (basename of stored file path) used to scope retrieval to selected documents.
+    # Maps to engine documents.filename via subject_id+filename lookup — NOT to documents.id (Integer).
+    source_filenames: Optional[List[str]] = None
 
 class ChatRequest(BaseModel):
     subject_id: UUID

@@ -21,6 +21,7 @@ from .embeddings import embed_step, ollama_tags_url
 from .processor import process_subject
 from .retrieval import retrieve_chunks_by_topic
 from .generation import generate_study_material, generate_study_material_stream, evaluate_quiz, generate_chat_response
+from .summary_pipeline import generate_summary_stream
 from .ollama_config import get_ollama_base_url, get_engine_env_source
 from .google_client import (
     GoogleDriveConfigError,
@@ -305,19 +306,19 @@ async def _run_text_job(
 
         await _text_job_update(job_id, status="SUCCESS", result=job_result, error=None)
     except Exception as e:
-           logger.exception("Text processing job failed for job_id=%s", job_id)
+        logger.exception("Text processing job failed for job_id=%s", job_id)
 
-    job_state = await _text_job_get(job_id)
-    if job_state and job_state.get("status") == "REVOKED":
-        logger.info("Cancelled text job %s exited after revoke", job_id)
-        return
+        job_state = await _text_job_get(job_id)
+        if job_state and job_state.get("status") == "REVOKED":
+            logger.info("Cancelled text job %s exited after revoke", job_id)
+            return
 
-    await _text_job_update(
-        job_id,
-        status="FAILURE",
-        error=str(e),
-        result=None,
-    )
+        await _text_job_update(
+            job_id,
+            status="FAILURE",
+            error=str(e),
+            result=None,
+        )
        
 
 @app.exception_handler(Exception)
@@ -1020,6 +1021,7 @@ async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
             body.top_k,
             getattr(body, 'user_id', None),
             difficulty,
+            source_filenames=body.source_filenames or [],
         )
         
         return {
@@ -1043,11 +1045,13 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
     """Generate study materials as real-time SSE chunks (bypasses Celery)."""
     from fastapi.responses import StreamingResponse
 
+    request_start = time.perf_counter()
     logger.info(
-        "Generate stream request: subject=%s, type=%s, topic=%s",
+        "[TRACE][API_STREAM_RECV] subject=%s type=%s topic=%s timestamp=%.3f",
         body.subject_id,
         body.material_type,
         body.topic,
+        time.time(),
     )
 
     request_options = body.generation_options if isinstance(body.generation_options, dict) else {}
@@ -1070,12 +1074,14 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
             status_code=400,
         )
 
+    retrieval_start = time.perf_counter()
     try:
         if material_type == "summary":
             from .retrieval import retrieve_sequential_chunks
-            chunks = retrieve_sequential_chunks(db, str(body.subject_id))
+            from .summary_pipeline import STREAM_MAP_MAX_CHUNKS
+            chunks = retrieve_sequential_chunks(db, str(body.subject_id), limit=STREAM_MAP_MAX_CHUNKS, source_filenames=body.source_filenames)
         else:
-            chunks = retrieve_chunks_by_topic(db, str(body.subject_id), topic, body.top_k)
+            chunks = retrieve_chunks_by_topic(db, str(body.subject_id), topic, body.top_k, source_filenames=body.source_filenames)
         chunk_texts = [c.content for c in chunks if c.content]
     except Exception as e:
         logger.exception("Generation stream retrieval failed")
@@ -1085,6 +1091,13 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
             details=str(e),
             status_code=500,
         )
+
+    retrieval_ms = int((time.perf_counter() - retrieval_start) * 1000)
+    total_chunk_chars = sum(len(c) for c in chunk_texts)
+    logger.info(
+        "[TRACE][API_RETRIEVAL_DONE] type=%s chunks=%d total_chars=%d retrieval_ms=%d",
+        material_type, len(chunk_texts), total_chunk_chars, retrieval_ms,
+    )
 
     if not chunk_texts:
         return _stage_error_response(
@@ -1097,21 +1110,87 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
     gen_opts = body.generation_options or {}
     difficulty = gen_opts.get("difficulty", "intermediate")
 
+    # ── Dedicated summary pipeline (S-3, S-4, S-6, S-9) ──
+    if material_type == "summary":
+        async def summary_generator():
+            gen_start = time.perf_counter()
+            first_piece_logged = False
+            piece_count = 0
+            logger.info("[SUMMARY][API_GEN_START] time_since_request_ms=%d", int((gen_start - request_start) * 1000))
+            try:
+                async for piece in generate_summary_stream(
+                    chunk_texts,
+                    topic=topic,
+                    language=language,
+                    difficulty=difficulty,
+                ):
+                    if piece is None:
+                        continue
+                    text = str(piece)
+                    if text.startswith("[ERROR]"):
+                        raise RuntimeError(text[7:].strip() or "Summary generation failed")
+                    piece_count += 1
+                    if not first_piece_logged:
+                        logger.info(
+                            "[SUMMARY][API_FIRST_PIECE] time_since_request_ms=%d",
+                            int((time.perf_counter() - request_start) * 1000),
+                        )
+                        first_piece_logged = True
+                    yield text
+                    await asyncio.sleep(0)
+            finally:
+                gen_ms = int((time.perf_counter() - gen_start) * 1000)
+                total_ms = int((time.perf_counter() - request_start) * 1000)
+                logger.info(
+                    "[SUMMARY][API_GEN_END] pieces=%d gen_ms=%d total_ms=%d",
+                    piece_count, gen_ms, total_ms,
+                )
+
+        return StreamingResponse(
+            stream_llm_response(summary_generator(), source="summary"),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # ── Non-summary materials — unchanged shared path ──
     async def generation_async_generator():
-        async for piece in generate_study_material_stream(
-            chunk_texts,
-            material_type,
-            topic,
-            language,
-            difficulty=difficulty,
-        ):
-            if piece is None:
-                continue
-            text = str(piece)
-            if text.startswith("[ERROR]"):
-                raise RuntimeError(text[7:].strip() or "Generation stream failed")
-            yield text
-            await asyncio.sleep(0)
+        gen_start = time.perf_counter()
+        first_piece_logged = False
+        piece_count = 0
+        logger.info("[TRACE][API_GEN_ITER_START] time_since_request_ms=%d", int((gen_start - request_start) * 1000))
+        try:
+            async for piece in generate_study_material_stream(
+                chunk_texts,
+                material_type,
+                topic,
+                language,
+                difficulty=difficulty,
+            ):
+                if piece is None:
+                    continue
+                text = str(piece)
+                if text.startswith("[ERROR]"):
+                    raise RuntimeError(text[7:].strip() or "Generation stream failed")
+                piece_count += 1
+                if not first_piece_logged:
+                    logger.info(
+                        "[TRACE][API_FIRST_PIECE] time_since_request_ms=%d",
+                        int((time.perf_counter() - request_start) * 1000),
+                    )
+                    first_piece_logged = True
+                yield text
+                await asyncio.sleep(0)
+        finally:
+            gen_ms = int((time.perf_counter() - gen_start) * 1000)
+            total_ms = int((time.perf_counter() - request_start) * 1000)
+            logger.info(
+                "[TRACE][API_GEN_ITER_END] pieces=%d gen_ms=%d total_request_ms=%d",
+                piece_count, gen_ms, total_ms,
+            )
 
     return StreamingResponse(
         stream_llm_response(generation_async_generator(), source="generation"),

@@ -174,6 +174,7 @@ const SummaryView = ({ summaryData, title, isExpanded = false }) => {
         // Handle structured summary contract (v1.1) with sections array
         if (typeof summaryData === 'object') {
             const data = summaryData.content || summaryData;
+            if (typeof data === 'string') return data;
             if (data.sections && Array.isArray(data.sections)) {
                 return data.sections.map(s => `## ${s.heading || ''}\n${s.body || s.content || ''}`).join('\n\n');
             }

@@ -4,7 +4,7 @@ import Material from '../models/material.model.js';
 import { COMPLETED } from '../constants/status.enum.js';
 import { query } from '../utils/config/db.js';
 
-const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://ollama_gpu:11434').replace(/\/$/, '');
+const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://ollama:11434').replace(/\/$/, '');
 const OLLAMA_MODEL = process.env.OLLAMA_GENERATION_MODEL || 'qwen2.5:7b-instruct';
 const OLLAMA_GENERATE_URL = `${OLLAMA_BASE_URL}/api/generate`;
 const ENGINE_URL = (process.env.ENGINE_URL || 'http://engine:8000').replace(/\/$/, '');
