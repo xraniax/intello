@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { useUIStore } from './useUIStore';
 import { useAuthStore } from './useAuthStore';
 
-// Each entry: { intervalId: number, controller: AbortController }
+// Each entry: { timerId: number, controller: AbortController }
 // AbortController aborts any in-flight sync request when the slot is cleared.
 const pollingIntervals = new Map();
 
@@ -199,7 +199,7 @@ export const useMaterialStore = create(devtools((set, get) => ({
             const slot = pollingIntervals.get(materialId);
             if (slot) {
                 slot.controller.abort();   // abort in-flight sync request
-                clearInterval(slot.intervalId);
+                clearTimeout(slot.timerId);
                 pollingIntervals.delete(materialId);
             }
         },
@@ -207,7 +207,7 @@ export const useMaterialStore = create(devtools((set, get) => ({
         clearAllPolling: () => {
             for (const slot of pollingIntervals.values()) {
                 slot.controller.abort();   // abort every in-flight request
-                clearInterval(slot.intervalId);
+                clearTimeout(slot.timerId);
             }
             pollingIntervals.clear();
         },
@@ -236,13 +236,22 @@ export const useMaterialStore = create(devtools((set, get) => ({
             const startTime = Date.now();
             const MAX_POLLING_MS = 600_000; // 10 minutes
 
+            // Adaptive backoff: 3s for the first 30s, 6s up to 60s, 10s beyond.
+            const getDelay = (elapsed) => {
+                if (elapsed < 30_000) return 3_000;
+                if (elapsed < 60_000) return 6_000;
+                return 10_000;
+            };
+
             // Each tick creates its own AbortController so we can abort the
             // in-flight request the moment clearPolling / clearAllPolling is called.
             // The slot's controller is replaced per-tick; clearing aborts the latest one.
             let tickController = new AbortController();
 
-            const intervalId = setInterval(async () => {
-                if (Date.now() - startTime > MAX_POLLING_MS) {
+            const tick = async () => {
+                const elapsed = Date.now() - startTime;
+
+                if (elapsed > MAX_POLLING_MS) {
                     console.warn(`[MaterialStore] Polling timeout for ${materialId}`);
                     get().actions.clearPolling(materialId);
                     set((state) => ({
@@ -270,86 +279,92 @@ export const useMaterialStore = create(devtools((set, get) => ({
                     if (slot) slot.controller = tickController;
 
                     const response = await MaterialService.sync(materialId, tickController.signal);
-                    if (!response?.data?.data) return;
+                    const material = response?.data?.data;
 
-                    const material = response.data.data;
-                    const status = normalizeStatus(material.status);
+                    if (material) {
+                        const status = normalizeStatus(material.status);
 
-                    if (status === COMPLETED || status === SUCCESS) {
-                        get().actions.clearPolling(materialId);
-                        
-                        if (material.type !== 'document') {
-                            const result = material.ai_generated_content || material.content;
+                        if (status === COMPLETED || status === SUCCESS) {
+                            get().actions.clearPolling(materialId);
+
+                            if (material.type !== 'document') {
+                                const result = material.ai_generated_content || material.content;
+                                set((state) => ({
+                                    ...state,
+                                    data: {
+                                        ...state.data,
+                                        jobProgress: {
+                                            stage: 'success',
+                                            progress: 100,
+                                            message: 'Refining knowledge complete!',
+                                            result: result,
+                                            materialId: materialId
+                                        }
+                                    }
+                                }));
+                            }
+                            await get().actions.fetchMaterials();
+                        } else if (status === FAILED) {
+                            get().actions.clearPolling(materialId);
                             set((state) => ({
                                 ...state,
                                 data: {
                                     ...state.data,
                                     jobProgress: {
-                                        stage: 'success',
+                                        stage: FAILED.toLowerCase(),
                                         progress: 100,
-                                        message: 'Refining knowledge complete!',
-                                        result: result,
-                                        materialId: materialId
+                                        message: material.error_message || 'Processing failed'
+                                    }
+                                }
+                            }));
+                            setTimeout(() => {
+                                set((state) => ({
+                                    ...state,
+                                    data: { ...state.data, jobProgress: null }
+                                }));
+                            }, 5000);
+                        } else {
+                            const stageMessage = material.stage_message || '';
+                            let stage = status.toLowerCase();
+                            let progress = status === PROCESSING ? 40 : 10;
+
+                            if (stageMessage.toLowerCase().includes('ocr')) { stage = 'ocr'; progress = 30; }
+                            else if (stageMessage.toLowerCase().includes('chunk')) { stage = 'chunking'; progress = 60; }
+                            else if (stageMessage.toLowerCase().includes('embed')) { stage = 'embedding'; progress = 90; }
+
+                            set((state) => ({
+                                ...state,
+                                data: {
+                                    ...state.data,
+                                    jobProgress: {
+                                        jobId: material.job_id,
+                                        materialId: material.id,
+                                        stage,
+                                        progress,
+                                        message: stageMessage || 'AI is cultivating your material...'
                                     }
                                 }
                             }));
                         }
-                        await get().actions.fetchMaterials();
-                    } else if (status === FAILED) {
-                        get().actions.clearPolling(materialId);
-                        set((state) => ({
-                            ...state,
-                            data: {
-                                ...state.data,
-                                jobProgress: {
-                                    stage: FAILED.toLowerCase(),
-                                    progress: 100,
-                                    message: material.error_message || 'Processing failed'
-                                }
-                            }
-                        }));
-                        setTimeout(() => {
-                            set((state) => ({
-                                ...state,
-                                data: { ...state.data, jobProgress: null }
-                            }));
-                        }, 5000);
-                    } else {
-                        const stageMessage = material.stage_message || '';
-                        let stage = status.toLowerCase();
-                        let progress = status === PROCESSING ? 40 : 10;
-
-                        if (stageMessage.toLowerCase().includes('ocr')) { stage = 'ocr'; progress = 30; }
-                        else if (stageMessage.toLowerCase().includes('chunk')) { stage = 'chunking'; progress = 60; }
-                        else if (stageMessage.toLowerCase().includes('embed')) { stage = 'embedding'; progress = 90; }
-
-                        set((state) => ({
-                            ...state,
-                            data: {
-                                ...state.data,
-                                jobProgress: {
-                                    jobId: material.job_id,
-                                    materialId: material.id,
-                                    stage,
-                                    progress,
-                                    message: stageMessage || 'AI is cultivating your material...'
-                                }
-                            }
-                        }));
                     }
                 } catch (err) {
-                    if (err.name === 'AbortError') return; // intentional cancel — silent
+                    if (err.name === 'AbortError') return; // intentional cancel — silent, skip reschedule
                     console.error('[MaterialStore] Polling loop error:', err);
                     const msg = err.message === 'cyclic object value'
                         ? 'Circular data error during sync'
                         : (err.message || 'Polling error');
                     set({ error: msg });
                 }
-            }, 3000);
+
+                // Schedule next tick only if the slot still exists (not cleared by COMPLETED/FAILED/timeout above).
+                const nextSlot = pollingIntervals.get(materialId);
+                if (nextSlot) nextSlot.timerId = setTimeout(tick, getDelay(Date.now() - startTime));
+            };
 
             // Store the slot with the initial controller so clearPolling can
             // abort the current in-flight request at any time
-            pollingIntervals.set(materialId, { intervalId, controller: tickController });
+            const timerId = setTimeout(tick, getDelay(0));
+            pollingIntervals.set(materialId, { timerId, controller: tickController });
         }
     }
 })));

@@ -42,8 +42,17 @@ SUMMARY_MAX_CONTEXT_CHARS = int(os.getenv("SUMMARY_MAX_CONTEXT_CHARS", "30000"))
 
 # MAP stage configuration.
 MAP_MAX_CHUNKS = int(os.getenv("MAP_MAX_CHUNKS", "80"))
-MAP_CONCURRENCY = int(os.getenv("MAP_CONCURRENCY", "4"))
+MAP_CONCURRENCY = int(os.getenv("MAP_CONCURRENCY", "2"))
 STREAM_MAP_MAX_CHUNKS = int(os.getenv("STREAM_MAP_MAX_CHUNKS", "20"))
+
+# Per-chunk MAP timeout.  MAP prompts are short extractions — they don't need
+# the full 300 s generation budget.  A stuck chunk releases its concurrency
+# slot after this many seconds, unblocking the rest of the batch.
+MAP_CHUNK_TIMEOUT_SECONDS = int(os.getenv("MAP_CHUNK_TIMEOUT_SECONDS", "90"))
+
+# Retry delay for MAP chunks specifically. Shorter than the shared generation
+# delay (2 s default) because holding an executor thread idle hurts concurrency.
+MAP_RETRY_DELAY_SECONDS = float(os.getenv("MAP_RETRY_DELAY_SECONDS", "0.5"))
 
 # Minimum chunk length to be considered for MAP processing.
 _MIN_CHUNK_CHARS = 100
@@ -169,26 +178,36 @@ def _map_summarize_chunk(
     """Summarize a single chunk for the MAP stage.
 
     Delegates to the shared ``_stream_ollama_generate`` for the actual LLM call.
+
+    Uses ``MAP_CHUNK_TIMEOUT_SECONDS`` (default 90 s) rather than the caller-
+    supplied ``timeout`` (typically 300 s) so that a stalled Ollama request
+    releases its concurrency slot quickly instead of blocking for 5 minutes.
+    Falls back to the caller timeout only when MAP_CHUNK_TIMEOUT_SECONDS is
+    unset or larger than the caller value.
     """
     from .generation import _stream_ollama_generate
+
+    # Use the tighter MAP-specific timeout to bound executor thread hold time.
+    effective_timeout = min(timeout, MAP_CHUNK_TIMEOUT_SECONDS)
 
     prompt = _build_map_prompt(chunk_text, language, difficulty)
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
+        "keep_alive": -1,
     }
 
     prompt_chars = len(prompt)
     logger.info(
         "[SUMMARY][MAP_CHUNK] model=%s prompt_chars=%d chunk_chars=%d timeout=%d difficulty=%s",
-        OLLAMA_GENERATION_MODEL, prompt_chars, len(chunk_text), timeout, difficulty,
+        OLLAMA_GENERATION_MODEL, prompt_chars, len(chunk_text), effective_timeout, difficulty,
     )
 
     for attempt in range(retries):
         attempt_start = time.perf_counter()
         try:
             generated_text = _stream_ollama_generate(
-                payload, timeout=timeout, material_type="summary_map",
+                payload, timeout=effective_timeout, material_type="summary_map",
             )
             attempt_ms = int((time.perf_counter() - attempt_start) * 1000)
             if generated_text and generated_text.strip():
@@ -205,7 +224,9 @@ def _map_summarize_chunk(
             )
             if attempt == retries - 1:
                 return ""
-            time.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
+            # Use MAP-specific retry delay — shorter than the shared generation
+            # delay so the executor thread is held idle for less time.
+            time.sleep(MAP_RETRY_DELAY_SECONDS)
     return ""
 
 
@@ -294,11 +315,15 @@ async def _async_map_summaries(
     timeout: int = OLLAMA_GENERATION_TIMEOUT,
     retries: int = OLLAMA_REQUEST_RETRIES,
     max_chunks: Optional[int] = None,
+    progress_queue: Optional[asyncio.Queue] = None,
 ) -> List[str]:
     """Async MAP stage for the streaming path.
 
     Uses asyncio.Semaphore + run_in_executor so the event loop stays
     responsive (emitting keepalives) while MAP work proceeds in threads.
+
+    If *progress_queue* is provided, pushes a short progress string each
+    time a chunk finishes so the caller can yield SSE progress events.
     """
     cap = max_chunks or STREAM_MAP_MAX_CHUNKS
     eligible = _prepare_eligible_chunks(chunks, cap)
@@ -309,6 +334,7 @@ async def _async_map_summaries(
     concurrency = min(len(eligible), MAP_CONCURRENCY)
     sem = asyncio.Semaphore(concurrency)
     loop = asyncio.get_running_loop()
+    completed_count = 0
 
     logger.info(
         "[SUMMARY][ASYNC_MAP_START] eligible=%d cap=%d concurrency=%d difficulty=%s",
@@ -316,10 +342,16 @@ async def _async_map_summaries(
     )
 
     async def _map_one(idx: int, chunk: str):
+        nonlocal completed_count
         async with sem:
             result = await loop.run_in_executor(
                 None, _map_summarize_chunk, chunk, language, difficulty, timeout, retries,
             )
+            completed_count += 1
+            if progress_queue is not None:
+                await progress_queue.put(
+                    f"map {completed_count}/{len(eligible)}"
+                )
             return idx, result or ""
 
     tasks = [_map_one(i, c) for i, c in enumerate(eligible)]
@@ -339,6 +371,11 @@ async def _async_map_summaries(
         "[SUMMARY][ASYNC_MAP_END] total_ms=%d input=%d output=%d concurrency=%d",
         map_ms, len(eligible), len(mapped), concurrency,
     )
+
+    # Signal the progress consumer that MAP is complete.
+    if progress_queue is not None:
+        await progress_queue.put(None)
+
     return mapped
 
 
@@ -354,6 +391,13 @@ async def generate_summary_stream(
 
     This is the primary summary generation entry point for the streaming path.
     It is intentionally independent from Celery.
+
+    Progressive MAP feedback:
+    During the MAP phase, progress markers (``[PROGRESS] map N/M``) are
+    yielded so that ``stream_core`` emits ``{"type": "progress", ...}``
+    SSE events.  The frontend ignores these (it only processes ``delta``
+    events) but they keep the connection alive with real payloads and
+    allow future UI enhancements (progress bars, stage indicators).
 
     Fixes over the old shared path:
     - REDUCE retries no longer yield partial + duplicate content (S-6).
@@ -383,10 +427,33 @@ async def generate_summary_stream(
             "[SUMMARY][MAP_PHASE_START] input_chunks=%d total_chars=%d",
             len(chunks), total_chars,
         )
-        mapped_chunks = await _async_map_summaries(
-            chunks, language, difficulty,
-            OLLAMA_GENERATION_TIMEOUT, OLLAMA_REQUEST_RETRIES,
+
+        # Progressive MAP: run summarization in a background task while
+        # this generator yields progress markers for each completed chunk.
+        progress_queue: asyncio.Queue = asyncio.Queue()
+        map_task = asyncio.create_task(
+            _async_map_summaries(
+                chunks, language, difficulty,
+                OLLAMA_GENERATION_TIMEOUT, OLLAMA_REQUEST_RETRIES,
+                progress_queue=progress_queue,
+            )
         )
+
+        # Drain progress signals until MAP signals completion (None).
+        while True:
+            try:
+                msg = await asyncio.wait_for(progress_queue.get(), timeout=10)
+            except asyncio.TimeoutError:
+                # No chunk finished in 10 s — emit a generic heartbeat.
+                yield "[PROGRESS] map processing"
+                continue
+            if msg is None:
+                # MAP finished.
+                break
+            yield f"[PROGRESS] {msg}"
+
+        # Collect the final ordered results.
+        mapped_chunks = await map_task
         map_ms = int((time.perf_counter() - map_start) * 1000)
         logger.info(
             "[SUMMARY][MAP_PHASE_END] duration_ms=%d input=%d output=%d",
@@ -399,11 +466,19 @@ async def generate_summary_stream(
     context = _build_summary_context(chunks)
     prompt = build_summary_prompt(context, language, difficulty, topic)
 
+    # Use adaptive context sizing to avoid allocating unnecessary VRAM.
+    # 1 token ≈ 3 chars, plus 1024 tokens buffer for generation.
+    adaptive_num_ctx = max(2048, min(32768, (len(prompt) // 3) + 1024))
+
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
         "stream": True,
         "system": _build_summary_system_prompt(),
+        "keep_alive": -1,
+        "options": {
+            "num_ctx": adaptive_num_ctx
+        }
     }
 
     reduce_prompt_chars = len(prompt)

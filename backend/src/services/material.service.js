@@ -9,7 +9,8 @@ import SubjectService from './subject.service.js';
 import SettingsService from './settings.service.js';
 import QuotaService from './quota.service.js';
 import FallbackGenerationService from './fallback_generation.service.js';
-import { query } from '../utils/config/db.js';
+import { query, withTransaction } from '../utils/config/db.js';
+import { enforceGenerationConstraintsForPersistence } from '../utils/generationConstraints.js';
 import {
     COMPLETED,
     FAILED,
@@ -108,8 +109,11 @@ class MaterialService {
 
             if (filePath) {
                 formData.append('file_path', filePath);
-                if (fs.existsSync(filePath)) {
+                try {
+                    await fs.promises.access(filePath);
                     formData.append('file', fs.createReadStream(filePath));
+                } catch {
+                    // file not accessible — skip attachment, engine will use file_path only
                 }
             } else {
                 formData.append('content', content || '');
@@ -200,32 +204,35 @@ class MaterialService {
                         const aiContentStr = result.ai_generated_content ? (typeof result.ai_generated_content === 'string' ? result.ai_generated_content : JSON.stringify(result.ai_generated_content)) : null;
 
                         const nowIso = new Date().toISOString();
-                        if (result.content && result.ai_generated_content) {
-                            await query(
-                                'UPDATE materials SET content = $2, ai_generated_content = $3, status = $4, completed_at = $5, processed_at = $6 WHERE id = $1 AND user_id = $7',
-                                [materialId, contentStr, aiContentStr, COMPLETED, nowIso, nowIso, userId]
-                            );
-                        } else if (result.content) {
-                            await query(
-                                'UPDATE materials SET content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
-                                [materialId, contentStr, COMPLETED, nowIso, nowIso, userId]
-                            );
-                        } else if (result.ai_generated_content) {
-                            await query(
-                                'UPDATE materials SET ai_generated_content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
-                                [materialId, aiContentStr, COMPLETED, nowIso, nowIso, userId]
-                            );
-                        }
-
-                        await Material.updateAIResult(
-                            materialId,
-                            userId,
+                        const finalAiContent = enforceGenerationConstraintsForPersistence(
                             result.ai_generated_content,
-                            {
-                                materialType: result.material_type,
-                                ...persistedConstraints,
-                            }
+                            { materialType: result.material_type, ...persistedConstraints }
                         );
+
+                        await withTransaction(async (client) => {
+                            if (result.content && result.ai_generated_content) {
+                                await client.query(
+                                    'UPDATE materials SET content = $2, ai_generated_content = $3, status = $4, completed_at = $5, processed_at = $6 WHERE id = $1 AND user_id = $7',
+                                    [materialId, contentStr, aiContentStr, COMPLETED, nowIso, nowIso, userId]
+                                );
+                            } else if (result.content) {
+                                await client.query(
+                                    'UPDATE materials SET content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
+                                    [materialId, contentStr, COMPLETED, nowIso, nowIso, userId]
+                                );
+                            } else if (result.ai_generated_content) {
+                                await client.query(
+                                    'UPDATE materials SET ai_generated_content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
+                                    [materialId, aiContentStr, COMPLETED, nowIso, nowIso, userId]
+                                );
+                            }
+
+                            await client.query(
+                                'UPDATE materials SET ai_generated_content = $2, processed_at = NOW(), completed_at = NOW(), status = $4 WHERE id = $1 AND user_id = $3 AND deleted_at IS NULL',
+                                [materialId, finalAiContent, userId, COMPLETED]
+                            );
+                        });
+
                         generationConstraintByMaterialId.delete(String(materialId));
                     } else {
                         // Standard document processing result (task_ocr/task_chunk/task_embed)
@@ -446,7 +453,11 @@ class MaterialService {
             
             // 5. Fallback Path (Synchronous Node.js + Ollama)
             try {
-                const context = enginePayload.chunks.join('\n\n');
+                const context = sourceDocuments
+                    .map(d => d.content || '')
+                    .filter(Boolean)
+                    .join('\n\n')
+                    .substring(0, 8000);
                 const fallbackResult = await FallbackGenerationService.generateSync(
                     userId, 
                     materialRecord.id, 
@@ -544,8 +555,11 @@ class MaterialService {
         try {
             const existingFile = await File.findByMaterialId(materialId);
             if (existingFile) {
-                if (fs.existsSync(existingFile.path)) {
+                try {
+                    await fs.promises.access(existingFile.path);
                     fs.unlinkSync(existingFile.path);
+                } catch {
+                    // file already gone — nothing to delete
                 }
                 await File.delete(existingFile.id);
             }

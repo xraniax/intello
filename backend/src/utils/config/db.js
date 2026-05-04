@@ -33,4 +33,28 @@ export const query = async (text, params) => {
     return pool.query(text, params);
 };
 
+/**
+ * Run `callback(client)` inside a single PostgreSQL transaction.
+ * Commits on success, rolls back on any thrown error.
+ * In test mode the callback receives a mock client backed by global.__mockDbQuery.
+ */
+export const withTransaction = async (callback) => {
+    if (isTest && global.__mockDbQuery) {
+        const mockClient = { query: (text, params) => global.__mockDbQuery(text, params) };
+        return callback(mockClient);
+    }
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const result = await callback(client);
+        await client.query('COMMIT');
+        return result;
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+    } finally {
+        client.release();
+    }
+};
+
 export default pool;

@@ -608,6 +608,12 @@ def task_generate_material(self, subject_id: str, material_type: str, topic: Opt
             "material_type": material_type,
             "ai_generated_content": ai_generated_content,
         }
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # Non-retriable: programming errors or bad input that a retry cannot fix.
+        # ValueError covers "No document chunks found"; the others cover code bugs
+        # that should surface immediately rather than burn retry budget.
+        logger.exception("Task Generation failed with non-retriable error (%s)", type(e).__name__)
+        raise
     except Exception as e:
         logger.exception("Task Generation failed")
         # Retry with exponential backoff on failure (likely Ollama timeout)

@@ -119,12 +119,10 @@ const WorkspaceLayout = ({
                 transition={isDragging ? { duration: 0 } : transitionConfig}
                 className={`h-full overflow-hidden flex-shrink-0
                     ${isMobile ? (activePanel === 'content' ? 'flex' : 'hidden') : 'flex'}`}
-                style={{ 
-                    background: 'var(--c-surface)', 
-                    borderTopLeftRadius: '32px', 
-                    boxShadow: '-4px 0 32px rgba(0,0,0,0.03)',
-                    zoom: 1.1,
-                    fontSize: '20px'
+                style={{
+                    background: 'var(--c-surface)',
+                    borderTopLeftRadius: '32px',
+                    boxShadow: '-4px 0 32px rgba(0,0,0,0.03)'
                 }}
             >
                 <div className="w-full h-full min-w-[400px]">

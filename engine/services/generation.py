@@ -12,6 +12,7 @@ import requests
 from requests.exceptions import RequestException, Timeout
 
 from .ollama_config import get_ollama_base_url, get_ollama_generation_model
+from .summary_pipeline import _build_summary_system_prompt
 
 logger = logging.getLogger("engine-generation")
 
@@ -47,6 +48,7 @@ def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_t
     """
     payload = dict(payload)
     payload["stream"] = True
+    payload.setdefault("keep_alive", -1)
 
     parts: List[str] = []
     done_seen = False
@@ -319,20 +321,6 @@ def build_student_quiz_view(quiz_payload: Dict[str, Any]) -> Dict[str, Any]:
         safe_questions.append(safe_item)
     return {"type": "quiz", "questions": safe_questions}
 
-
-def _build_summary_system_prompt() -> str:
-    """Centralized system prompt for summary generation."""
-    return (
-        "You are a knowledgeable student explaining material to a classmate. "
-        "Write in a natural, human voice — clear and direct, not formal or robotic. "
-        "Prioritize the most important ideas; not everything deserves equal coverage. "
-        "Never narrate what the document is about (avoid 'This text discusses...', "
-        "'The document covers...', 'In this paper...'). "
-        "Instead, just explain the actual content directly. "
-        "Choose whatever structure fits best — flowing paragraphs, or short bullet "
-        "groups when listing related items — but never force one format throughout. "
-        "Do not use headers, section titles, or bold/italic formatting."
-    )
 
 def build_prompt(
     material_type: str,
@@ -614,6 +602,17 @@ async def _async_map_summaries(
 
     Uses asyncio.Semaphore + run_in_executor so the event loop stays
     responsive (emitting keepalives) while MAP work proceeds in threads.
+
+    WARNING — LEGACY PATH:
+    This function is used only by generate_study_material_stream() for
+    non-summary material types (quiz, flashcards, exam).  It calls the
+    local _map_summarize_chunk() which does NOT accept a ``difficulty``
+    parameter.
+
+    Summary streaming MUST use summary_pipeline._async_map_summaries()
+    instead, which supports difficulty-aware MAP prompts.
+    api.py /generate/stream already routes summary correctly.
+    Do NOT call this function for material_type="summary".
     """
     cap = max_chunks or STREAM_MAP_MAX_CHUNKS
     eligible = [c for c in chunks if len(c.strip()) >= 100]
@@ -691,36 +690,6 @@ async def generate_study_material_stream(
         yield "[ERROR] Not enough context to generate material."
         return
 
-    if material_type == "summary":
-        total_chars = sum(len(c) for c in chunks)
-        if total_chars <= OLLAMA_MAX_CONTEXT_CHARS:
-            # Small document — all chunks fit in a single context window.
-            # Skip the MAP stage entirely and go straight to REDUCE.
-            logger.info(
-                "[TRACE][MAP_SKIP] total_chars=%d <= max_context=%d, bypassing MAP",
-                total_chars, OLLAMA_MAX_CONTEXT_CHARS,
-            )
-        else:
-            # Large document — run concurrent async MAP
-            map_start = time.perf_counter()
-            logger.info(
-                "[TRACE][MAP_PHASE_START] input_chunks=%d total_chars=%d",
-                len(chunks), total_chars,
-            )
-            mapped_chunks = await _async_map_summaries(
-                chunks,
-                language,
-                OLLAMA_GENERATION_TIMEOUT,
-                OLLAMA_REQUEST_RETRIES,
-            )
-            map_ms = int((time.perf_counter() - map_start) * 1000)
-            logger.info(
-                "[TRACE][MAP_PHASE_END] duration_ms=%d input_chunks=%d output_summaries=%d",
-                map_ms, len(chunks), len(mapped_chunks) if mapped_chunks else 0,
-            )
-            if mapped_chunks:
-                chunks = mapped_chunks
-
     context = _build_generation_context(chunks)
     prompt = build_prompt(material_type, context, topic, language, difficulty=difficulty)
 
@@ -728,11 +697,8 @@ async def generate_study_material_stream(
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
         "stream": True,
+        "format": "json",
     }
-    if material_type == "summary":
-        payload["system"] = _build_summary_system_prompt()
-    else:
-        payload["format"] = "json"
 
     reduce_prompt_chars = len(prompt)
     logger.info(

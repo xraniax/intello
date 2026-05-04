@@ -8,7 +8,6 @@ import json
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-import requests
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile, Request, Depends, Form, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -143,7 +142,8 @@ async def startup_event():
     startup_delay = float(os.getenv("OLLAMA_STARTUP_RETRY_DELAY_SECONDS", "2"))
     for attempt in range(1, startup_retries + 1):
         try:
-            response = requests.get(ollama_url, timeout=5)
+            async with httpx.AsyncClient(timeout=5) as client:
+                response = await client.get(ollama_url)
             response.raise_for_status()
             logger.info("✓ Ollama reachable on startup (%s)", ollama_url)
             break
@@ -360,7 +360,8 @@ async def root():
 @app.get("/health")
 async def health():
     try:
-        ollama_response = requests.get(ollama_tags_url(), timeout=5)
+        async with httpx.AsyncClient(timeout=5) as client:
+            ollama_response = await client.get(ollama_tags_url())
         ollama_healthy = ollama_response.status_code == 200
     except Exception as e:
         logger.warning("Ollama health check failed: %s", e)
