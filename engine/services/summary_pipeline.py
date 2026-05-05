@@ -61,17 +61,61 @@ _MIN_CHUNK_CHARS = 100
 # ── System Prompt ────────────────────────────────────────────────────────────
 
 def _build_summary_system_prompt() -> str:
-    """Centralized system prompt for summary generation."""
+    """Invariant contract for REDUCE-stage generation: grounding, structure, and multi-doc rules.
+
+    Depth strategy (beginner / intermediate / advanced) is injected separately via the user
+    prompt so this contract stays stable across all difficulty levels.
+    """
     return (
-        "You are a knowledgeable student explaining material to a classmate. "
-        "Write in a natural, human voice — clear and direct, not formal or robotic. "
-        "Prioritize the most important ideas; not everything deserves equal coverage. "
-        "Never narrate what the document is about (avoid 'This text discusses...', "
-        "'The document covers...', 'In this paper...'). "
-        "Instead, just explain the actual content directly. "
-        "Choose whatever structure fits best — flowing paragraphs, or short bullet "
-        "groups when listing related items — but never force one format throughout. "
-        "Do not use headers, section titles, or bold/italic formatting."
+        "You are a knowledgeable student synthesizing material for a peer. "
+        "Write in a natural, direct voice — clear, confident, never formal or robotic. "
+        "Never narrate what the documents are about (avoid 'This text discusses...', "
+        "'The document covers...', 'In this paper...'). Explain the actual content directly.\n\n"
+
+        "GLOBAL RULES\n"
+        "All constraints below are global — apply them implicitly across every section "
+        "without re-evaluation at section level.\n"
+        "1. Grounding: Use only information present in the input. "
+        "No external knowledge, invented examples, or concepts absent from the source.\n"
+        "2. Concept preservation: Every distinct concept in the input must appear in the output. "
+        "Do not merge, skip, or compress unrelated ideas.\n"
+        "3. Depth and length scaling: Output depth and length scale with input complexity — "
+        "more concepts and topic clusters mean more coverage and longer output. "
+        "Brevity is never a goal; shorten only when the input itself is genuinely minimal.\n"
+        "4. Input synthesis: Before writing, classify the input as single-topic or multi-topic. "
+        "Single-topic: produce a focused explanation. "
+        "Multi-topic: treat all topics as a unified curriculum and synthesize into one structured "
+        "knowledge map. The input may have no explicit topic boundaries — infer them from shifts "
+        "in vocabulary, domain, or conceptual focus.\n"
+        "5. Structure: Use the required section order. Never add, rename, or reorder sections. "
+        "Omit a section only when it has no applicable content.\n\n"
+
+        "FORMATTING\n"
+        "Write each section label as plain text followed by a newline, then the content. "
+        "No markdown headings, bold, or italic.\n\n"
+
+        "SECTIONS\n\n"
+
+        "Overview\n"
+        "State the core subject(s) and why they matter. Give each distinct topic its own sentence.\n\n"
+
+        "Key Concepts\n"
+        "The essential ideas, principles, or mechanisms, grouped by logical theme. "
+        "For each concept: state the idea, explain it plainly, and note its context. "
+        "Do not group concepts from unrelated topic clusters under the same theme.\n\n"
+
+        "Detailed Explanation\n"
+        "How the concepts work, interact, and matter. "
+        "Make relationships explicit — dependencies, contrasts, enabling conditions. "
+        "Build on Key Concepts rather than repeating definitions. "
+        "If multiple topic clusters exist, explain each cluster before drawing cross-topic connections.\n\n"
+
+        "Examples / Applications\n"
+        "Concrete examples from the source, anchored to the concept each illustrates. "
+        "Omit only when the input contains no examples and none can be directly inferred.\n\n"
+
+        "Key Terms / Definitions\n"
+        "Domain-specific terms from the input, defined as used in the source. Skip common vocabulary."
     )
 
 
@@ -83,34 +127,46 @@ def build_summary_prompt(
     difficulty: str = "intermediate",
     topic: Optional[str] = None,
 ) -> str:
-    """Build the user-facing prompt for the REDUCE stage of summary generation.
+    """Build the user-facing REDUCE prompt, injecting a difficulty-specific depth strategy.
 
-    Extracted from the shared ``build_prompt()`` to allow summary-specific
-    evolution without affecting other material types.
+    The system prompt holds the invariant contract (grounding, structure, multi-doc rules).
+    This function injects the depth frame: beginner targets understanding what and why,
+    intermediate targets how it works, advanced targets complete coverage of all material.
     """
     lang_phrase = f" Write in {language}." if language and language.lower() != "en" else ""
 
     if difficulty in ("introductory", "beginner", "easy"):
-        depth_instruction = (
-            "Focus ONLY on the 2-3 most important ideas. "
-            "Skip minor details, examples, and edge cases entirely. "
-            "Keep it short and simple — a quick overview someone can read in under a minute."
+        depth_strategy = (
+            "DEPTH STRATEGY: BEGINNER\n"
+            "Coverage: 1-2 essential concepts per topic cluster. "
+            "Skip sub-concepts, mechanisms, algorithms, and edge cases.\n"
+            "Explanation: surface-level — what each concept is and why it matters. "
+            "No internal workings or causal chains. Assume no prior knowledge.\n"
+            "Examples: only those explicitly in the source that need no background to understand.\n"
+            "Terms: only those that would block comprehension without a definition."
         )
     elif difficulty in ("advanced", "hard"):
-        depth_instruction = (
-            "Cover nearly all the major and supporting ideas from the material. "
-            "Include important details, distinctions, and nuances, but still synthesize — "
-            "do not just restate every sentence. Explain connections between concepts."
+        depth_strategy = (
+            "DEPTH STRATEGY: ADVANCED\n"
+            "Coverage: every concept in the source without exception. "
+            "Each concept gets its own explanation block — no merging of unrelated concepts.\n"
+            "Explanation: exhaustive — internal workings, mechanisms, dependencies, causal chains. "
+            "Preserve all distinctions and sequences exactly as described in the source.\n"
+            "Examples: all examples present in the source plus applications implied by the mechanisms.\n"
+            "Terms: all domain-specific terms, defined strictly as used in the source."
         )
     else:  # intermediate / default
-        depth_instruction = (
-            "Cover all major concepts but compress the explanations. "
-            "Include enough detail to understand each idea, but skip minor examples "
-            "and tangential points. Aim for a balanced, medium-length summary."
+        depth_strategy = (
+            "DEPTH STRATEGY: INTERMEDIATE\n"
+            "Coverage: all major concepts; skip minor sub-variants that do not change understanding.\n"
+            "Explanation: moderate depth — how concepts work and relate, key dependencies and contrasts, "
+            "without exhaustive low-level detail.\n"
+            "Examples: those that clearly illustrate key concepts; skip trivial or duplicate ones.\n"
+            "Terms: those a reader needs to follow the explanation but would not already know."
         )
 
     prompt = (
-        f"{depth_instruction}{lang_phrase}\n\n"
+        f"{depth_strategy}{lang_phrase}\n\n"
         f"Text to summarize:\n---\n{context}\n---\n\n"
         f"Summary:"
     )

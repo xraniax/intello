@@ -16,7 +16,9 @@
       "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\" -File -Include \"package.json\" | ForEach-Object { $_.FullName })",
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\" -File | ForEach-Object { $_.FullName })",
       "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\data\" -File | ForEach-Object { $_.FullName })",
-      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\db\" -File | ForEach-Object { $_.FullName })"
+      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\db\" -File | ForEach-Object { $_.FullName })",
+      "Bash(python3 -c ' *)",
+      "Bash(python -c ' *)"
     ]
   }
 }
