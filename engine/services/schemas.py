@@ -93,7 +93,12 @@ class UnifiedChatRequest(BaseModel):
         max_length=50,
         description="Prior turns in the conversation for context-aware answering.",
     )
+    material_ids: Optional[List[UUID]] = Field(
+        default=None,
+        description="Optional list of material UUIDs to restrict context retrieval."
+    )
     top_k: int = Field(default=8, ge=1, le=50, description="Number of context chunks to retrieve.")
+
     language: str = Field(default="en", description="Language for the AI response.")
 
     @model_validator(mode="after")
@@ -109,6 +114,7 @@ class ChatSource(BaseModel):
     """A retrieved chunk that contributed to the answer."""
     chunk_id: int
     document_id: int
+    material_id: Optional[str] = None
     page_number: Optional[int] = None
     excerpt: str = Field(..., description="First 200 chars of the chunk content used as context.")
 
@@ -228,3 +234,33 @@ class QuizSubmitAnswerRequest(BaseModel):
     response_time: float = Field(default=0.0, ge=0.0)
     language: str = Field(default="en")
     top_k: int = Field(default=5, ge=1, le=50)
+
+# --- Study Plan Generation Models ---
+
+class GoalInput(BaseModel):
+    id: str
+    title: str
+    type: str
+    target: int
+    period: str
+    subject: Optional[str] = None
+
+class PlanGenerateRequest(BaseModel):
+    goals: List[GoalInput]
+    days_per_week: int = Field(default=5)
+    hours_per_day: float = Field(default=2.0)
+
+class PlanSession(BaseModel):
+    day_of_week: Literal["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    duration_minutes: int
+    focus_topic: str
+    goal_id: Optional[str]
+
+class StudyPlanContent(BaseModel):
+    summary: str
+    sessions: List[PlanSession]
+
+class StudyPlanOutput(BaseModel):
+    type: Literal["study_plan"] = "study_plan"
+    content: StudyPlanContent
+    metadata: GenerationMetadata

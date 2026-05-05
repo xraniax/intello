@@ -74,7 +74,7 @@ class MaterialService {
             const fileName = file.filename || file.originalname;
             const filePath = file.path;
 
-            await File.create(
+            const fileRecord = await File.create(
                 userId,
                 finalSubjectId,
                 documentRecord.id,
@@ -87,7 +87,8 @@ class MaterialService {
             fileData = {
                 name: file.originalname,
                 mimetype: file.mimetype,
-                path: filePath
+                path: filePath,
+                id: fileRecord.id
             };
         }
 
@@ -116,7 +117,11 @@ class MaterialService {
                 timeout: 300000
             });
 
-            const { job_id } = aiResponse.data;
+            const { job_id, drive_file_id } = aiResponse.data;
+            // Persist Drive file ID if upload went to Drive
+            if (drive_file_id && fileData?.id) {
+                await File.updateDriveFileId(fileData.id, drive_file_id);
+            }
             await Material.updateStatus(documentRecord.id, userId, PROCESSING, job_id);
 
             const resultDoc = await Material.findById(documentRecord.id, userId);
@@ -547,6 +552,14 @@ class MaterialService {
             const existingFile = await File.findByMaterialId(materialId);
             if (existingFile) {
                 if (fs.existsSync(existingFile.path)) fs.unlinkSync(existingFile.path);
+                // Delete from Google Drive if drive_file_id exists
+                if (existingFile.drive_file_id) {
+                    try {
+                        await engineClient.post('/drive/delete', { file_id: existingFile.drive_file_id }, { timeout: 10000 });
+                    } catch (driveErr) {
+                        console.error(`[GC] Failed to delete Drive file for material ${materialId}:`, driveErr.message);
+                    }
+                }
                 await File.delete(existingFile.id);
             }
         } catch (gcErr) {
@@ -628,7 +641,7 @@ class MaterialService {
      * Unified Chat: Validates subject ownership and forwards the request
      * to the Python engine's structured chat endpoint.
      */
-    static async chat(userId, subjectId, question, history = []) {
+    static async chat(userId, subjectId, question, history = [], materialIds = []) {
         // 1. Security: Validate that the subject exists and belongs to the user
         const subject = await Subject.findById(subjectId, userId);
         if (!subject) {
@@ -637,15 +650,32 @@ class MaterialService {
             throw error;
         }
 
+        // Validate materialIds are valid UUIDs
+        const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const validMaterialIds = (Array.isArray(materialIds) ? materialIds : [])
+            .filter(id => typeof id === 'string' && UUID_PATTERN.test(id));
+
         try {
             // 2. Prepare payload for the Engine's unified /chat endpoint
+            const sanitizedHistory = (history || []).filter(msg => 
+                msg && typeof msg === 'object' && 
+                (msg.role === 'user' || msg.role === 'assistant') && 
+                typeof msg.content === 'string' && msg.content.trim().length > 0
+            ).map(msg => ({
+                role: msg.role,
+                content: msg.content.trim()
+            })).slice(-50); // Limit to 50 messages
+
             const payload = {
                 subject_id: subjectId,
-                question: question,
-                conversation_history: history,
+                question: question.trim(),
+                conversation_history: sanitizedHistory,
+                material_ids: validMaterialIds,
                 top_k: 8,
                 language: 'en',
             };
+
+            console.log('[MaterialService] Sending payload to engine /chat:', JSON.stringify(payload, null, 2));
 
             const options = { timeout: 300000 }; // 5-minute timeout for LLM generation
             const engineResponse = await engineClient.post('/chat', payload, options);
@@ -664,6 +694,10 @@ class MaterialService {
             return result;
         } catch (error) {
             console.error('[MaterialService] Unified Chat Error:', error.message);
+            if (error.response) {
+                console.error('[MaterialService] Engine response status:', error.response.status);
+                console.error('[MaterialService] Engine response data:', JSON.stringify(error.response.data, null, 2));
+            }
             const isTimeout = error.code === 'ECONNABORTED';
             const enhancedError = new Error(isTimeout ? 'AI engine timed out.' : 'AI engine is currently unavailable.');
             enhancedError.statusCode = 503;

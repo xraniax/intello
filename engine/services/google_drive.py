@@ -169,6 +169,20 @@ def download_file_from_drive(file_id: str, *, request_id: str | None = None) -> 
     except Exception as e:
         logger.error(f"Failed to download file from Drive (ID: {file_id}): {str(e)}")
         raise RuntimeError(f"Failed to download file from Drive: {str(e)}") from e
+def delete_file_from_drive(file_id: str) -> bool:
+    """Delete a file from Google Drive by ID. Returns True if successful."""
+    try:
+        service = get_drive_service()
+        service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+        logger.info(f"Deleted file from Google Drive: {file_id}")
+        return True
+    except (GoogleDriveConfigError, GoogleDriveNotConfiguredError):
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete file from Google Drive (ID: {file_id}): {str(e)}")
+        return False
+
+
 def list_files_in_folder() -> list:
     """Retrieve all files from the configured Google Drive folder."""
     try:

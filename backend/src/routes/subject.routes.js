@@ -11,8 +11,11 @@ router.use(protect);
 
 router.post('/', validate(createSubjectSchema), SubjectController.create);
 router.get('/', SubjectController.getAll);
+router.get('/trash', SubjectController.getTrash);
 router.get('/:id', SubjectController.getOne);
 router.patch('/:id', validate(updateSubjectSchema), SubjectController.update);
+router.post('/:id/restore', SubjectController.restore);
+router.delete('/:id/permanent', SubjectController.permanentDelete);
 router.delete('/:id', SubjectController.delete);
 
 export default router;

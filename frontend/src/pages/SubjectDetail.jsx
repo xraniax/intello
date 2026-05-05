@@ -31,13 +31,18 @@ const SubjectDetail = () => {
         showUploadModal, setShowUploadModal, handleUploadSuccess,
         handleDeleteUpload, handleRenameMaterial,
         chatMessages, currentQuestion, setCurrentQuestion,
-        handleChat, isThinking, chatError, setChatMessages, setChatError,
+        handleChat, handleNewChat, handleSwitchSession, stopGeneration,
+        handleFeedback, handleBookmark, handleCopyMessage,
+        handleEditAndResend, handleRegenerate,
+        isStreaming, isThinking, chatError, setChatMessages, setChatError,
         chatEndRef, chatCollapsed, setChatCollapsed,
         filePanelCollapsed, setFilePanelCollapsed,
         genType, setGenType, handleGenerate, isGenerating,
         genResult, setGenResult, genError, jobProgress,
         retryGeneration, generationStartTime,
         isListening, isSpeaking, stopSpeaking, listen, speak,
+        handleVoiceInput, handleTTS,
+        sessions, activeSessionId, sessionsLoading, savedMessages, savedLoading, renameSession, deleteSession,
         isModalOpen, setIsModalOpen, modalConfig,
     } = ws;
 
@@ -117,12 +122,21 @@ const SubjectDetail = () => {
     }
 
     return (
-        <div className="subject-page flex-1 min-h-0 flex flex-col animate-in fade-in duration-700 pb-20 md:pb-0 bg-[var(--c-canvas)]">
-            <div className="px-6 md:px-8 py-3 md:py-4 border-b-4 border-white shadow-sm flex items-center justify-between sticky top-0 z-20 bg-white/80 backdrop-blur-xl">
+        <div className="subject-page flex-1 min-h-0 flex flex-col animate-in fade-in duration-700 pb-20 md:pb-0 relative bg-[var(--c-canvas)] isolate">
+            {/* Background Layer isolated from flex */}
+            <div className="absolute inset-0 -z-10 bg-grid-mesh bg-[var(--c-canvas)] overflow-hidden pointer-events-none mix-blend-multiply">
+                <div className="absolute ambient-orb ambient-orb-lg ambient-orb-1 top-[-10%] left-[-10%] bg-violet-400/50" />
+                <div className="absolute ambient-orb ambient-orb-md ambient-orb-2 top-[40%] right-[-10%] bg-rose-400/50" />
+                <div className="absolute ambient-orb ambient-orb-lg ambient-orb-3 bottom-[-10%] left-[30%] bg-fuchsia-400/40" />
+                <div className="absolute ambient-orb ambient-orb-md ambient-orb-1 top-[10%] left-[50%] bg-amber-400/40" />
+            </div>
+
+            {/* Workspace Header */}
+            <div className="px-6 md:px-8 py-3 md:py-4 border-b border-fuchsia-100/50 shadow-sm shadow-fuchsia-900/5 flex items-center justify-between sticky top-0 z-20 bg-white/80 backdrop-blur-2xl">
                 <div className="flex items-center gap-4 md:gap-6">
                     <Link
                         to="/dashboard"
-                        className="w-12 h-12 rounded-2xl flex items-center justify-center transition-all group bg-indigo-50 text-indigo-500 hover:bg-indigo-600 hover:text-white shadow-sm shadow-indigo-100"
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center transition-all group bg-violet-50/80 text-violet-500 hover:bg-gradient-to-tr hover:from-violet-500 hover:to-rose-500 hover:text-white shadow-sm shadow-violet-100 hover:shadow-rose-300/50 hover-lift"
                         title="Back to Garden"
                     >
                         <svg className="w-6 h-6 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -131,29 +145,29 @@ const SubjectDetail = () => {
                     </Link>
                     <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-2 md:gap-3">
-                            <h1 className="text-xl md:text-3xl font-black tracking-tight truncate leading-tight bg-gradient-to-r from-indigo-950 to-indigo-700 bg-clip-text text-transparent">{subject?.name}</h1>
-                            <span className="hidden sm:inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap bg-indigo-50 text-indigo-600 border-2 border-indigo-100">
+                            <h1 className="text-xl md:text-3xl font-black tracking-tight truncate leading-tight bg-gradient-to-r from-violet-950 to-fuchsia-700 bg-clip-text text-transparent">{subject?.name}</h1>
+                            <span className="hidden sm:inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap bg-violet-50 text-violet-600 border-2 border-violet-100 shadow-sm">
                                 {uploads.length} Sources
                             </span>
                         </div>
-                        <p className="text-[10px] md:text-xs font-bold truncate max-w-[150px] sm:max-w-md mt-1 text-gray-400 uppercase tracking-widest">
+                        <p className="text-[10px] md:text-xs font-bold truncate max-w-[150px] sm:max-w-md mt-1 text-fuchsia-300/80 uppercase tracking-widest">
                             {subject?.description || 'Refining knowledge with AI clarity.'}
                         </p>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-2 md:gap-4">
-                    <div className="hidden lg:flex items-center p-1.5 rounded-2xl bg-gray-100/50 border-2 border-white shadow-inner">
+                    <div className="hidden lg:flex items-center p-1.5 rounded-2xl bg-violet-50/40 border-2 border-white shadow-inner">
                         <button
                             onClick={() => setFilePanelCollapsed(!filePanelCollapsed)}
-                            className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all flex items-center gap-2 ${!filePanelCollapsed ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-gray-400 hover:text-indigo-400'}`}
+                            className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all flex items-center gap-2 ${!filePanelCollapsed ? 'bg-white text-violet-600 shadow-sm transform scale-105 border border-violet-100/50' : 'text-violet-900/40 hover:text-violet-600 hover:bg-white/50'}`}
                         >
                             <PanelLeft className="w-4 h-4" />
                             <span>Sources</span>
                         </button>
                         <button
                             onClick={() => setChatCollapsed(!chatCollapsed)}
-                            className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all flex items-center gap-2 ${!chatCollapsed ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-gray-400 hover:text-indigo-400'}`}
+                            className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all flex items-center gap-2 ${!chatCollapsed ? 'bg-white text-fuchsia-600 shadow-sm transform scale-105 border border-fuchsia-100/50' : 'text-violet-900/40 hover:text-fuchsia-600 hover:bg-white/50'}`}
                         >
                             <span>Tutor</span>
                             <PanelRight className="w-4 h-4" />
@@ -197,20 +211,44 @@ const SubjectDetail = () => {
                 }
                 rightPanel={
                     <ChatPanel
-                        messages={chatMessages}
+                        // Messages & state
+                        chatMessages={chatMessages}
                         currentQuestion={currentQuestion}
                         setCurrentQuestion={setCurrentQuestion}
+                        isStreaming={isStreaming}
+                        isThinking={isThinking}
+                        chatError={chatError}
+                        chatEndRef={chatEndRef}
+                        contextInfo={selectedUploads.length > 0 ? 'Grounded in selected context' : 'Using all subject documents'}
+
+                        // Chat actions
                         handleChat={handleChat}
-                        handleVoiceInput={() => listen((transcript) => setCurrentQuestion(transcript))}
-                        handleTTS={speak}
+                        handleNewChat={handleNewChat}
+                        handleSwitchSession={handleSwitchSession}
+                        stopGeneration={stopGeneration}
+                        handleFeedback={handleFeedback}
+                        handleBookmark={handleBookmark}
+                        handleCopyMessage={handleCopyMessage}
+                        handleEditAndResend={handleEditAndResend}
+                        handleRegenerate={handleRegenerate}
+
+                        // Voice
+                        handleVoiceInput={handleVoiceInput}
+                        handleTTS={handleTTS}
+                        isListening={isListening}
                         isSpeaking={isSpeaking}
                         stopSpeaking={stopSpeaking}
-                        isThinking={isThinking}
-                        isListening={isListening}
-                        chatEndRef={chatEndRef}
-                        contextInfo={selectedUploads.length > 0 ? 'Grounded in selected context' : 'Using all subject data'}
-                        chatError={chatError}
-                        onClearChat={() => setChatMessages([])}
+
+                        // Sessions
+                        sessions={sessions}
+                        activeSessionId={activeSessionId}
+                        sessionsLoading={sessionsLoading}
+                        savedMessages={savedMessages}
+                        savedLoading={savedLoading}
+                        renameSession={renameSession}
+                        deleteSession={deleteSession}
+
+                        // Layout
                         onCollapse={() => setChatCollapsed(true)}
                     />
                 }

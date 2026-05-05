@@ -1,5 +1,5 @@
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from uuid import UUID
 from sqlalchemy import select
 import time
@@ -22,6 +22,7 @@ def retrieve_chunks_by_topic(
     session: Session,
     subject_id: UUID,
     topic: Optional[str] = None,
+    material_ids: Optional[List[UUID]] = None,
     top_k: int = 5,
     job_id: Optional[str] = None,
     rerank: bool = True,
@@ -29,8 +30,10 @@ def retrieve_chunks_by_topic(
 ) -> List[tuple]:
     """
     Retrieve the top_k most relevant chunks for a given topic within a subject.
+    Optionally filter by material_ids (UUIDs).
     Returns a list of (Chunk, similarity_score) tuples.
     """
+
     # ... (same UUID normalization logic)
     normalized_subject_id = subject_id
     if isinstance(subject_id, str):
@@ -43,7 +46,7 @@ def retrieve_chunks_by_topic(
     log = get_job_logger(job_id, "engine-retrieval")
 
     if not topic:
-        chunks = session.query(Chunk).join(Document)\
+        chunks = session.query(Chunk).options(joinedload(Chunk.document)).join(Document)\
             .filter(Document.subject_id == normalized_subject_id)\
             .order_by(Chunk.created_at.desc(), Chunk.id.desc())\
             .limit(safe_top_k)\
@@ -64,21 +67,35 @@ def retrieve_chunks_by_topic(
     if topic_embedding:
         # Calculate cosine distance and convert to similarity (1 - distance)
         distance_col = Chunk.embedding.cosine_distance(topic_embedding)
-        results = session.query(Chunk, (1 - distance_col).label("similarity"))\
+        
+        query = session.query(Chunk, (1 - distance_col).label("similarity"))\
+            .options(joinedload(Chunk.document))\
             .join(Document)\
             .filter(Document.subject_id == normalized_subject_id)\
-            .order_by(distance_col)\
+            .filter(Chunk.embedding.isnot(None))
+
+        if material_ids:
+            query = query.filter(Document.material_id.in_(material_ids))
+            
+        results = query.order_by(distance_col)\
             .limit(safe_top_k)\
             .all()
         
-        chunks_with_scores = [(r[0], float(r[1])) for r in results]
+        chunks_with_scores = [(r[0], float(r[1])) for r in results if r[1] is not None]
+
+
     else:
-        chunks = session.query(Chunk).join(Document)\
-            .filter(Document.subject_id == normalized_subject_id)\
-            .order_by(Chunk.created_at.desc(), Chunk.id.desc())\
+        query = session.query(Chunk).options(joinedload(Chunk.document)).join(Document)\
+            .filter(Document.subject_id == normalized_subject_id)
+
+        if material_ids:
+            query = query.filter(Document.material_id.in_(material_ids))
+
+        chunks = query.order_by(Chunk.created_at.desc(), Chunk.id.desc())\
             .limit(safe_top_k)\
             .all()
         chunks_with_scores = [(c, 0.0) for c in chunks]
+
 
     log.info(f"STEP: RETRIEVAL SUCCESS for subject {subject_id} (duration: {time.perf_counter() - start_time:.2f}s, retrieved: {len(chunks_with_scores)})")
     return chunks_with_scores

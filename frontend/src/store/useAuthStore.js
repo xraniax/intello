@@ -117,5 +117,53 @@ export const useAuthStore = create((set) => ({
             }));
         },
 
+        verifyEmail: async (otp) => {
+            const uiActions = useUIStore.getState().actions;
+            uiActions.setLoading('auth', true, 'Verifying code...', false);
+            uiActions.clearError('auth');
+            set({ error: null });
+            try {
+                // Ensure auth store api has this endpoint, we'll need to add it to AuthService if not there
+                const { authService } = await import('@/features/auth/services/AuthService');
+                const res = await authService.verifyEmail(otp);
+                
+                // Update local user state to ACTIVE
+                set((state) => ({
+                    ...state,
+                    error: null,
+                    data: {
+                        ...state.data,
+                        user: { ...state.data.user, status: 'ACTIVE' }
+                    }
+                }));
+                toast.success('Email verified successfully!');
+                return res.data;
+            } catch (err) {
+                const message = err.message || 'Verification failed';
+                set({ error: message });
+                uiActions.setError('auth', message);
+                throw { message };
+            } finally {
+                uiActions.setLoading('auth', false);
+            }
+        },
+
+        resendVerification: async () => {
+            const uiActions = useUIStore.getState().actions;
+            uiActions.setLoading('auth', true, 'Sending new code...', false);
+            try {
+                const { authService } = await import('@/features/auth/services/AuthService');
+                const res = await authService.resendVerification();
+                toast.success('New code sent securely to your email.');
+                return res.data;
+            } catch (err) {
+                const message = err.message || 'Failed to resend code';
+                toast.error(message);
+                throw { message };
+            } finally {
+                uiActions.setLoading('auth', false);
+            }
+        },
+
     }
 }));

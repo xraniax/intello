@@ -3,7 +3,7 @@ import { useMaterialStore } from '@/store/useMaterialStore';
 import { useUIStore } from '@/store/useUIStore';
 import { useSubjectStore } from '@/store/useSubjectStore';
 import { MaterialService } from '@/services/MaterialService';
-import { Cloud, X, AlertCircle, FileText, CheckCircle2, Loader2 } from 'lucide-react';
+import { Cloud, X, AlertCircle, FileText, CheckCircle2, Loader2, Image as ImageIcon } from 'lucide-react';
 import { validateRequired } from '@/utils/validators';
 
 const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline = false }) => {
@@ -15,9 +15,10 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
     const [titleError, setTitleError] = useState('');
     const [subjectId, setSubjectId] = useState(initialSubjectId || '');
     const [validationErrors, setValidationErrors] = useState({});
+    const [imagePreview, setImagePreview] = useState(null);
     const [systemLimits, setSystemLimits] = useState({ 
         max_file_size_mb: 10, 
-        allowed_types: ['application/pdf'] 
+        allowed_types: ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'] 
     });
 
     const uploadMaterial = useMaterialStore((state) => state.actions.uploadMaterial);
@@ -53,7 +54,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
         // Fallback to defaults if the DB contains empty or undefined allowed_types
         const allowedTypes = (systemLimits.allowed_types && systemLimits.allowed_types.length > 0) 
             ? systemLimits.allowed_types 
-            : ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+            : ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 
         const isMimeAllowed = allowedTypes.includes(selected.type);
         const isPdfFallback = ext === 'pdf' && allowedTypes.includes('application/pdf');
@@ -72,6 +73,14 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
 
         setFileError('');
         setFile(selected);
+        // Generate preview for images
+        if (selected.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (ev) => setImagePreview(ev.target.result);
+            reader.readAsDataURL(selected);
+        } else {
+            setImagePreview(null);
+        }
         if (!title) {
             const newTitle = selected.name.replace(`.${ext}`, '');
             setTitle(newTitle);
@@ -203,9 +212,15 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     >
                         {file ? (
                             <div className="flex flex-col items-center text-center">
-                                <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-indigo-500 mb-3 border border-indigo-100">
-                                    <FileText className="w-6 h-6" />
-                                </div>
+                                {imagePreview ? (
+                                    <div className="w-full max-w-[200px] aspect-square rounded-2xl overflow-hidden mb-3 shadow-md border border-indigo-100">
+                                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                                    </div>
+                                ) : (
+                                    <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-indigo-500 mb-3 border border-indigo-100">
+                                        <FileText className="w-6 h-6" />
+                                    </div>
+                                )}
                                 <span className="text-sm font-bold text-gray-900 mb-1">{file.name}</span>
                                 <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
                                     {(file.size / (1024 * 1024)).toFixed(2)} MB • Ready
@@ -213,11 +228,16 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                             </div>
                         ) : (
                             <div className="flex flex-col items-center text-center">
-                                <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 mb-3 border border-gray-100 group-hover:text-indigo-500 group-hover:scale-110 transition-all">
-                                    <Cloud className="w-6 h-6" />
+                                <div className="flex gap-3 mb-3">
+                                    <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 border border-gray-100 group-hover:text-indigo-500 group-hover:scale-110 transition-all">
+                                        <Cloud className="w-6 h-6" />
+                                    </div>
+                                    <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 border border-gray-100 group-hover:text-fuchsia-500 group-hover:scale-110 transition-all">
+                                        <ImageIcon className="w-6 h-6" />
+                                    </div>
                                 </div>
                                 <span className="text-sm font-bold text-gray-700">Drop file here or click to browse</span>
-                                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mt-1">Up to {systemLimits.max_file_size_mb}MB</span>
+                                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mt-1">PDF & Images • Up to {systemLimits.max_file_size_mb}MB</span>
                             </div>
                         )}
                     </label>

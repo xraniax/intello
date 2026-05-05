@@ -288,8 +288,14 @@ const MaterialsPanel = ({
                         <button
                             onClick={onGenerate}
                             disabled={isGenerating}
-                            className="w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed text-white shadow-lg shadow-purple-200 hover:shadow-xl hover:shadow-purple-300 hover:scale-[1.01]"
-                            style={{ background: 'linear-gradient(135deg, #7C5CFC, #4F46E5)' }}
+                            className="w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed border hover:scale-[1.01]"
+                            style={{ 
+                                background: 'rgba(255, 255, 255, 0.65)', 
+                                backdropFilter: 'blur(12px)',
+                                borderColor: 'rgba(124, 58, 237, 0.3)',
+                                color: '#5B21B6',
+                                boxShadow: '0 4px 16px rgba(124, 58, 237, 0.1), inset 0 1px 0 rgba(255, 255, 255, 1)'
+                            }}
                         >
                             {isGenerating ? (
                                 <>

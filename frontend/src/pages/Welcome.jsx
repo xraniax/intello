@@ -123,7 +123,7 @@ const Welcome = () => {
                     >
                         <motion.div whileTap={{ scale: 0.94 }}>
                             <Link
-                                to="/register"
+                                to="/dashboard"
                                 className="btn btn-lg btn-solid flex items-center gap-2.5 group"
                                 style={{ padding: '0 32px' }}
                             >

@@ -1,5 +1,6 @@
 import React from 'react';
-import { BookOpen, Cloud, Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BookOpen, Cloud, Sparkles, AlertTriangle, Trash2 } from 'lucide-react';
 import { BASE_URL } from '@/services/api';
 import Skeleton from '@/components/ui/Skeleton';
 import MaterialErrorBoundary from './MaterialErrorBoundary';
@@ -68,6 +69,33 @@ const TabContent = ({
 
     const material = tab.material;
 
+    // Banner for deleted materials
+    const DeletedBanner = tab.isDeleted ? (
+        <div className="flex-shrink-0 px-4 py-3 border-b" style={{ background: 'var(--c-danger-light)', borderColor: 'rgba(239,68,68,0.2)' }}>
+            <div className="flex items-center gap-3 max-w-5xl mx-auto">
+                <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.15)' }}>
+                    <AlertTriangle className="w-4 h-4" style={{ color: 'var(--c-danger)' }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: 'var(--c-danger)' }}>
+                        This material has been moved to trash
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--c-text-muted)' }}>
+                        You can recover it from the Trash page
+                    </p>
+                </div>
+                <Link
+                    to="/trash"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-[1.02]"
+                    style={{ background: 'var(--c-danger)', color: 'white' }}
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Visit Trash
+                </Link>
+            </div>
+        </div>
+    ) : null;
+
     if (!material) {
         return (
             <div className="flex-1 flex items-center justify-center p-12">
@@ -93,13 +121,16 @@ const TabContent = ({
 
             if (isMemory && material.status !== 'FAILED') {
                 return (
-                    <div className="flex-1 h-full flex flex-col items-center justify-center p-8 text-center" style={{ background: 'var(--c-surface-alt)', color: 'var(--c-text-muted)' }}>
-                        <div className="relative mb-6">
-                            <div className="w-16 h-16 rounded-full border-4 border-dashed animate-spin" style={{ borderColor: 'var(--c-primary-light)', borderTopColor: 'var(--c-primary)' }} />
-                            <Cloud className="w-6 h-6 absolute inset-0 m-auto opacity-50" />
+                    <div className="flex-1 h-full flex flex-col" style={{ background: 'var(--c-surface-alt)' }}>
+                        {DeletedBanner}
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center" style={{ color: 'var(--c-text-muted)' }}>
+                            <div className="relative mb-6">
+                                <div className="w-16 h-16 rounded-full border-4 border-dashed animate-spin" style={{ borderColor: 'var(--c-primary-light)', borderTopColor: 'var(--c-primary)' }} />
+                                <Cloud className="w-6 h-6 absolute inset-0 m-auto opacity-50" />
+                            </div>
+                            <h3 className="text-lg font-bold mb-2">Syncing with Cloud...</h3>
+                            <p className="text-sm max-w-xs mx-auto">We're moving your document to Google Drive for permanent storage. This will only take a moment.</p>
                         </div>
-                        <h3 className="text-lg font-bold mb-2">Syncing with Cloud...</h3>
-                        <p className="text-sm max-w-xs mx-auto">We're moving your document to Google Drive for permanent storage. This will only take a moment.</p>
                     </div>
                 );
             }
@@ -107,8 +138,10 @@ const TabContent = ({
             if (material.file_path.toLowerCase().endsWith('.pdf') || isDrive) {
                 return (
                     <div className="flex-1 h-full w-full flex flex-col" style={{ background: 'var(--c-canvas)' }}>
+                        {DeletedBanner}
                         <iframe
-                            src={isDrive ? (fileUrl.includes('?') ? `${fileUrl}&rm=minimal` : `${fileUrl}?rm=minimal`) : `${fileUrl}#view=Fit&zoom=page-fit`}
+                            key={tab.requestedPage ? `${fileUrl}-${tab.requestedPage}` : fileUrl}
+                            src={isDrive ? (fileUrl.includes('?') ? `${fileUrl}&rm=minimal` : `${fileUrl}?rm=minimal`) : `${fileUrl}#page=${tab.requestedPage || 1}&view=Fit&zoom=page-fit`}
                             className="w-full flex-1 border-none"
                             title={tab.title}
                             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
@@ -118,32 +151,41 @@ const TabContent = ({
             }
 
             return (
-                <div className="flex-1 h-full flex flex-col items-center justify-center p-8 text-center" style={{ background: 'var(--c-surface-alt)', color: 'var(--c-text-muted)' }}>
-                    <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-50" style={{ color: 'var(--c-primary)' }} />
-                    <h3 className="text-lg font-bold mb-2">{tab.title}</h3>
-                    <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="mt-4 px-4 py-2 font-bold text-sm transition-colors rounded-lg" style={{ background: 'var(--c-primary-light)', color: 'var(--c-primary)' }}>
-                        Download File
-                    </a>
+                <div className="flex-1 h-full flex flex-col" style={{ background: 'var(--c-surface-alt)' }}>
+                    {DeletedBanner}
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center" style={{ color: 'var(--c-text-muted)' }}>
+                        <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-50" style={{ color: 'var(--c-primary)' }} />
+                        <h3 className="text-lg font-bold mb-2">{tab.title}</h3>
+                        <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="mt-4 px-4 py-2 font-bold text-sm transition-colors rounded-lg" style={{ background: 'var(--c-primary-light)', color: 'var(--c-primary)' }}>
+                            Download File
+                        </a>
+                    </div>
                 </div>
             );
         }
 
         if (hasContent) {
             return (
-                <div className={`mx-auto ${isExpanded ? 'max-w-6xl py-16' : 'max-w-4xl py-8 md:py-12'} px-6 transition-all duration-500`}>
-                    <div className="border rounded-[1.5rem] p-8 shadow-sm leading-relaxed text-sm whitespace-pre-wrap font-mono" style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border-soft)', color: 'var(--c-text)' }}>
-                        {typeof material.content === 'object' ? JSON.stringify(material.content, null, 2) : (material.content || 'No content')}
+                <div className="flex-1 h-full flex flex-col overflow-y-auto">
+                    {DeletedBanner}
+                    <div className={`mx-auto ${isExpanded ? 'max-w-6xl py-16' : 'max-w-4xl py-8 md:py-12'} px-6 transition-all duration-500`}>
+                        <div className="border rounded-[1.5rem] p-8 shadow-sm leading-relaxed text-sm whitespace-pre-wrap font-mono" style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border-soft)', color: 'var(--c-text)' }}>
+                            {typeof material.content === 'object' ? JSON.stringify(material.content, null, 2) : (material.content || 'No content')}
+                        </div>
                     </div>
                 </div>
             );
         }
 
         return (
-            <div className="flex-1 h-full flex items-center justify-center p-8 text-center" style={{ background: 'var(--c-surface-alt)', color: 'var(--c-text-muted)' }}>
-                <div>
-                    <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <h3 className="text-lg font-bold mb-2">{tab.title}</h3>
-                    <p className="text-sm">Document preview is not available.</p>
+            <div className="flex-1 h-full flex flex-col" style={{ background: 'var(--c-surface-alt)' }}>
+                {DeletedBanner}
+                <div className="flex-1 flex items-center justify-center p-8 text-center" style={{ color: 'var(--c-text-muted)' }}>
+                    <div>
+                        <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                        <h3 className="text-lg font-bold mb-2">{tab.title}</h3>
+                        <p className="text-sm">Document preview is not available.</p>
+                    </div>
                 </div>
             </div>
         );
@@ -162,66 +204,86 @@ const TabContent = ({
 
     if (tab.type === 'quiz' || material.type === 'quiz') {
         return (
-            <div className="flex-1 h-full overflow-y-auto bg-transparent">
-                <MaterialErrorBoundary type="quiz">
-                    <QuizView key={tab.id} quizMode="static" quizData={parsedContent} isExpanded={isExpanded} subjectId={subjectId} topic={subjectName || null} language="en" />
-                </MaterialErrorBoundary>
+            <div className="flex-1 h-full flex flex-col overflow-y-auto bg-transparent">
+                {DeletedBanner}
+                <div className="flex-1">
+                    <MaterialErrorBoundary type="quiz">
+                        <QuizView key={tab.id} quizMode="static" quizData={parsedContent} isExpanded={isExpanded} subjectId={subjectId} topic={subjectName || null} language="en" />
+                    </MaterialErrorBoundary>
+                </div>
             </div>
         );
     }
 
     if (tab.type === 'flashcards' || material.type === 'flashcards') {
         return (
-            <div className="flex-1 h-full overflow-y-auto bg-transparent">
-                <MaterialErrorBoundary type="flashcards">
-                    <FlashcardsView flashcardsData={parsedContent} subjectId={subjectId} isExpanded={isExpanded} />
-                </MaterialErrorBoundary>
+            <div className="flex-1 h-full flex flex-col overflow-y-auto bg-transparent">
+                {DeletedBanner}
+                <div className="flex-1">
+                    <MaterialErrorBoundary type="flashcards">
+                        <FlashcardsView flashcardsData={parsedContent} subjectId={subjectId} isExpanded={isExpanded} />
+                    </MaterialErrorBoundary>
+                </div>
             </div>
         );
     }
 
     if (tab.type === 'exam_session') {
         return (
-            <div className="flex-1 h-full overflow-y-auto bg-transparent">
-                <MaterialErrorBoundary type="exam">
-                    <ExamView examData={material.ai_generated_content} examId={material.id} subjectId={subjectId} isExpanded={isExpanded} />
-                </MaterialErrorBoundary>
+            <div className="flex-1 h-full flex flex-col overflow-y-auto bg-transparent">
+                {DeletedBanner}
+                <div className="flex-1">
+                    <MaterialErrorBoundary type="exam">
+                        <ExamView examData={material.ai_generated_content} examId={material.id} subjectId={subjectId} isExpanded={isExpanded} />
+                    </MaterialErrorBoundary>
+                </div>
             </div>
         );
     }
 
     if (tab.type === 'exam' || material.type === 'exam') {
         return (
-            <div className="flex-1 h-full overflow-y-auto bg-transparent">
-                <MaterialErrorBoundary type="exam">
-                    <ExamView key={material.id} examData={parsedContent} examId={material.id} subjectId={subjectId} isExpanded={isExpanded} />
-                </MaterialErrorBoundary>
+            <div className="flex-1 h-full flex flex-col overflow-y-auto bg-transparent">
+                {DeletedBanner}
+                <div className="flex-1">
+                    <MaterialErrorBoundary type="exam">
+                        <ExamView key={material.id} examData={parsedContent} examId={material.id} subjectId={subjectId} isExpanded={isExpanded} />
+                    </MaterialErrorBoundary>
+                </div>
             </div>
         );
     }
 
     if (tab.type === 'summary' || material.type === 'summary') {
         return (
-            <MaterialErrorBoundary type="summary">
-                <SummaryView summaryData={parsedContent} title={tab.title} isExpanded={isExpanded} />
-            </MaterialErrorBoundary>
+            <div className="flex-1 h-full flex flex-col overflow-y-auto">
+                {DeletedBanner}
+                <div className="flex-1">
+                    <MaterialErrorBoundary type="summary">
+                        <SummaryView summaryData={parsedContent} title={tab.title} isExpanded={isExpanded} />
+                    </MaterialErrorBoundary>
+                </div>
+            </div>
         );
     }
 
     const displayContent = typeof parsedContent === 'object' ? JSON.stringify(parsedContent, null, 2) : String(parsedContent);
 
     return (
-        <div className={`flex-1 h-full overflow-y-auto ${isExpanded ? 'p-12' : 'p-6 md:p-12'} bg-transparent transition-all duration-500`}>
-            <div className={`${isExpanded ? 'max-w-5xl space-y-10' : 'max-w-5xl space-y-8'} mx-auto animate-in fade-in duration-500 transition-all`}>
-                <div className="flex items-center gap-3 mb-2">
-                    <div className={`rounded-lg flex items-center justify-center transition-all ${isExpanded ? 'w-10 h-10' : 'w-8 h-8'}`} style={{ background: 'var(--c-primary-light)' }}>
-                        <Sparkles className={`${isExpanded ? 'w-5 h-5' : 'w-4 h-4'}`} style={{ color: 'var(--c-primary)' }} />
+        <div className="flex-1 h-full flex flex-col overflow-y-auto">
+            {DeletedBanner}
+            <div className={`flex-1 ${isExpanded ? 'p-12' : 'p-6 md:p-12'} bg-transparent transition-all duration-500`}>
+                <div className={`${isExpanded ? 'max-w-5xl space-y-10' : 'max-w-5xl space-y-8'} mx-auto animate-in fade-in duration-500 transition-all`}>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className={`rounded-lg flex items-center justify-center transition-all ${isExpanded ? 'w-10 h-10' : 'w-8 h-8'}`} style={{ background: 'var(--c-primary-light)' }}>
+                            <Sparkles className={`${isExpanded ? 'w-5 h-5' : 'w-4 h-4'}`} style={{ color: 'var(--c-primary)' }} />
+                        </div>
+                        <h3 className={`${isExpanded ? 'text-2xl' : 'text-lg'} font-black tracking-tight capitalize transition-all`} style={{ color: 'var(--c-text)' }}>{tab.type.replace('_', ' ')} Insight</h3>
                     </div>
-                    <h3 className={`${isExpanded ? 'text-2xl' : 'text-lg'} font-black tracking-tight capitalize transition-all`} style={{ color: 'var(--c-text)' }}>{tab.type.replace('_', ' ')} Insight</h3>
-                </div>
-                <div className={`border rounded-[2.5rem] shadow-xl text-gray-800 leading-relaxed transition-all duration-500 relative overflow-hidden group ${isExpanded ? 'p-12 text-base' : 'p-8 text-sm'}`} style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border-soft)' }}>
-                    <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-[4rem] group-hover:scale-110 transition-transform opacity-30" style={{ background: 'var(--c-primary-light)' }}></div>
-                    {displayContent}
+                    <div className={`border rounded-[2.5rem] shadow-xl text-gray-800 leading-relaxed transition-all duration-500 relative overflow-hidden group ${isExpanded ? 'p-12 text-base' : 'p-8 text-sm'}`} style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border-soft)' }}>
+                        <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-[4rem] group-hover:scale-110 transition-transform opacity-30" style={{ background: 'var(--c-primary-light)' }}></div>
+                        {displayContent}
+                    </div>
                 </div>
             </div>
         </div>

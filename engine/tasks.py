@@ -398,6 +398,7 @@ def task_process_document(
     original_filename: str,
     subject_id: str,
     user_id: str,
+    material_id: Optional[str] = None,
     request_id: Optional[str] = None,
 ):
     """Background celery task for document extraction, chunking, embedding, and DB persistence."""
@@ -460,6 +461,7 @@ def task_process_document(
                 file_path=tmp_path,
                 user_id=user_id,
                 subject_id=subject_id,
+                material_id=material_id,
                 original_filename=original_filename,
                 source_uri=f"https://drive.google.com/file/d/{drive_file_id}/view",
                 request_id=request_id,
@@ -515,6 +517,7 @@ def task_process_document_local(
     original_filename: str,
     subject_id: str,
     user_id: str,
+    material_id: Optional[str] = None,
     request_id: Optional[str] = None,
 ):
     """Background celery task: process a document from a local file path (Drive-free fallback)."""
@@ -540,6 +543,7 @@ def task_process_document_local(
             file_path=local_file_path,
             user_id=user_id,
             subject_id=subject_id,
+            material_id=material_id,
             original_filename=original_filename,
             request_id=request_id,
         )

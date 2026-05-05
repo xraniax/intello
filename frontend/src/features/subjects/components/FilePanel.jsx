@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2, Lock, Layers, BrainCircuit, ChevronDown, Edit2, Upload } from 'lucide-react';
+import { Trash2, Sparkles, PanelLeftClose, FileText, CheckCircle2, Lock, Layers, BrainCircuit, ChevronDown, Edit2, Upload, Image as ImageIcon } from 'lucide-react';
 import { PROCESSING, normalizeStatus } from '@/constants/statusConstants';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { requireAuth } from '@/utils/requireAuth';
@@ -91,12 +91,12 @@ const FilePanel = ({
     return (
         <div className="panel-inner h-full flex flex-col" style={{ background: 'var(--c-canvas)' }}>
             {/* Panel Header */}
-            <div className="panel-header flex-shrink-0 px-6 py-5 bg-white/80 backdrop-blur-md sticky top-0 z-10 transition-all border-b-2 border-indigo-50 shadow-sm">
+            <div className="panel-header flex-shrink-0 px-6 py-5 bg-white/80 backdrop-blur-md sticky top-0 z-10 transition-all border-b-2 border-fuchsia-50 shadow-sm">
                 <div className="flex items-center justify-between w-full">
                     <span className="panel-title font-black uppercase tracking-[0.2em] text-[10px] text-gray-400">Subject Materials</span>
                     <button
                         onClick={onCollapse}
-                        className="p-2 rounded-2xl transition-all hover:bg-indigo-50 text-indigo-400 hover:text-indigo-600 hover:scale-110 active:scale-90"
+                        className="p-2 rounded-2xl transition-all hover:bg-fuchsia-50 text-fuchsia-400 hover:text-fuchsia-600 hover:scale-110 active:scale-90"
                         title="Hide panel"
                     >
                         <PanelLeftClose className="w-5 h-5" />
@@ -105,16 +105,16 @@ const FilePanel = ({
             </div>
 
             {/* Quick Upload Action */}
-            <div className="px-5 py-5 border-b-2 border-indigo-50/50 bg-indigo-50/20">
+            <div className="px-5 py-5 border-b-2 border-fuchsia-50/50 bg-fuchsia-50/20">
                 <button
-                    className="w-full py-6 px-4 bg-white border-4 border-white rounded-[2rem] flex flex-col items-center justify-center gap-1 group transition-all duration-300 shadow-sm hover:shadow-xl hover:shadow-purple-900/5 hover:-translate-y-1 active:scale-95"
+                    className="w-full py-6 px-4 bg-white border-4 border-white rounded-[2rem] flex flex-col items-center justify-center gap-1 group transition-all duration-300 shadow-sm hover:shadow-xl hover:shadow-rose-900/5 hover:-translate-y-1 active:scale-95"
                     onClick={() => requireAuth(onOpenUpload)}
                 >
-                    <div className="w-14 h-14 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform bg-gradient-to-br from-purple-100 to-indigo-100 text-purple-600 shadow-inner">
+                    <div className="w-14 h-14 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform bg-gradient-to-br from-fuchsia-100 to-rose-100 text-fuchsia-600 shadow-inner">
                         {(isPublic && !user) ? <Lock className="w-6 h-6" /> : <Upload className="w-6 h-6" />}
                     </div>
-                    <span className="text-xs font-black uppercase tracking-[0.2em] mt-3 bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Upload Source</span>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 opacity-60">Add PDF or Text Content</span>
+                    <span className="text-xs font-black uppercase tracking-[0.2em] mt-3 bg-gradient-to-r from-fuchsia-600 to-rose-600 bg-clip-text text-transparent">Upload Source</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 opacity-60">Add PDF, Images, or Text</span>
                 </button>
             </div>
 
@@ -158,12 +158,12 @@ const FilePanel = ({
                                                     animate={{ opacity: 1, y: 0, transition: { delay: index * 0.05 } }}
                                                     exit={{ opacity: 0, height: 0 }}
                                                     className={`group relative p-5 transition-all duration-300 cursor-pointer mb-4 flex items-start gap-4 rounded-[2rem] border-4 ${isNew
-                                                        ? 'border-purple-400 shadow-lg shadow-purple-200'
+                                                        ? 'border-fuchsia-400 shadow-lg shadow-fuchsia-200'
                                                         : isSelected
-                                                            ? 'border-purple-500 bg-purple-50 shadow-lg shadow-purple-900/5'
+                                                            ? 'border-fuchsia-500 bg-fuchsia-50 shadow-lg shadow-fuchsia-900/5'
                                                             : isProcessing
                                                                 ? 'cursor-wait opacity-80 border-transparent bg-gray-50'
-                                                                : 'border-white bg-white hover:border-purple-200 hover:shadow-xl hover:shadow-purple-900/5 hover:-translate-y-1'
+                                                                : 'border-white bg-white hover:border-fuchsia-200 hover:shadow-xl hover:shadow-fuchsia-900/5 hover:-translate-y-1'
                                                         }`}
                                                     onClick={() => !isProcessing && window.dispatchEvent(new CustomEvent('open-material', { detail: { id: m.id, type: m.type } }))}
                                                 >

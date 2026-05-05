@@ -203,7 +203,8 @@ async def process_document_route(
             )
         job = task_process_document_local.delay(
             local_file_path=local_path, original_filename=file.filename,
-            subject_id=normalized_subject_id, user_id=normalized_user_id, request_id=request_id,
+            subject_id=normalized_subject_id, user_id=normalized_user_id,
+            material_id=document_id, request_id=request_id,
         )
         logger.info("[PIPELINE] local_fallback_queued request_id=%s job_id=%s path=%s", request_id, job.id, local_path)
         return {"status": "accepted", "stage": "processing", "job_id": job.id,
@@ -211,13 +212,30 @@ async def process_document_route(
 
     job = task_process_document.delay(
         drive_file_id=google_file_id, original_filename=file.filename,
-        subject_id=normalized_subject_id, user_id=normalized_user_id, request_id=request_id,
+        subject_id=normalized_subject_id, user_id=normalized_user_id,
+        material_id=document_id, request_id=request_id,
     )
+
     logger.info("[PIPELINE] celery_queued request_id=%s job_id=%s drive_file_id=%s", request_id, job.id, google_file_id)
     return {
         "status": "accepted", "stage": "processing", "job_id": job.id, "filename": file.filename,
+        "drive_file_id": google_file_id,
         "message": "Document uploaded to Google Drive. AI processing and embedding generation has started in the background.",
     }
+
+
+@router.post("/drive/delete")
+async def delete_drive_file_route(payload: dict):
+    """Delete a file from Google Drive by ID."""
+    file_id = payload.get("file_id")
+    if not file_id:
+        return _stage_error_response("drive_delete", "Missing file_id", status_code=400)
+    try:
+        from ..google_drive import delete_file_from_drive
+        success = delete_file_from_drive(file_id)
+        return {"status": "success" if success else "error", "deleted": success}
+    except Exception as e:
+        return _stage_error_response("drive_delete", "Failed to delete file", details=str(e), status_code=500)
 
 
 @router.get("/drive/files")

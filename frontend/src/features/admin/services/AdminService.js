@@ -21,6 +21,9 @@ export const adminService = {
     updateSettings: (settings) => api.put('/admin/settings', settings),
     cleanupStorage: () => api.post('/admin/storage/cleanup'),
     getQuotaImpact: (limitMb) => api.get('/admin/quota-impact', { params: { limitMb } }),
+    getAnalytics: () => api.get('/admin/analytics'),
+    getSecurityAnalytics: () => api.get('/admin/analytics/security'),
+    getStats: () => api.get('/admin/stats'),
 
     // Logs - now returns { data, pagination }
     getLogs: (params = {}) => api.get('/admin/logs', { params }),

@@ -52,8 +52,9 @@ export const MaterialService = {
 
     chat: (materialIds, question) => api.post('/materials/chat-combined', { materialIds, question }),
 
-    unifiedChat: (subjectId, question, history) => 
-        api.post('/chat', { subjectId, question, conversation_history: history }),
+    unifiedChat: (subjectId, question, history, materialIds = []) => 
+        api.post('/chat', { subjectId, question, conversation_history: history, materialIds }),
+
 
     /**
      * streamMaterial — Standardized cancellable async primitive for AI streams.

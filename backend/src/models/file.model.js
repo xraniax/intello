@@ -115,6 +115,17 @@ class File {
     }
 
     /**
+     * Update the drive_file_id for an existing file (e.g., after async upload to Drive).
+     */
+    static async updateDriveFileId(fileId, driveFileId) {
+        const result = await query(
+            'UPDATE files SET drive_file_id = $2 WHERE id = $1 RETURNING *',
+            [fileId, driveFileId]
+        );
+        return result.rows[0];
+    }
+
+    /**
      * Get total count of files for pagination.
      */
     static async getTotalCount(filters = {}) {

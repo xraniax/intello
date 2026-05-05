@@ -4,6 +4,7 @@ import User from '../models/user.model.js';
 import LoginAttempt from '../models/login_attempt.model.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import sendEmail from '../utils/services/email.service.js';
+import dns from 'dns/promises';
 import SettingsService from '../services/settings.service.js';
 import { normalizeStatus } from '../constants/status.enum.js';
 
@@ -36,28 +37,38 @@ class AuthController {
             throw new Error('Email already registered');
         }
 
+        // Validate DNS MX records for the domain
+        const domain = email.split('@')[1];
+        try {
+            const records = await dns.resolveMx(domain);
+            if (!records || records.length === 0) {
+                console.warn(`[AUTH] Registration failed: Domain ${domain} has no MX records.`);
+                res.status(400);
+                throw new Error('The email domain provided appears invalid or cannot receive emails.');
+            }
+        } catch (error) {
+            console.warn(`[AUTH] Registration failed: DNS resolution failed for domain ${domain}.`, error.message);
+            res.status(400);
+            // Don't throw the raw error message to the user, give a clean validation error
+            throw new Error('The email domain provided appears invalid or cannot receive emails.');
+        }
+
         const user = await User.create(email, password, name);
         console.log(`[AUTH] Registration successful for email: ${email}, id: ${user.id}`);
 
         const firstName = user.name.split(' ')[0];
-        const welcomeMessage = `Hi ${firstName},
+        const otp = await User.createVerificationToken(user.id);
+        
+        const verificationMessage = `Hi ${firstName},
 
 Welcome to **Cognify** <3
-
 We’re excited to have you join our learning community.
 
-Your account has been successfully created, and your personalized learning space is now ready. From here, you can:
+To complete your registration and activate your account, please use the following 6-digit verification code:
 
-• Access your courses and learning materials
-• Take quizzes, review flashcards, explore summaries, and complete mock exams while tracking your progress
-• Interact with AI-powered learning tools
-• Stay organized with a workspace built for focus and growth
+# **${otp}**
 
-At Cognify, learning is designed to feel **engaging, intelligent, and enjoyable** — helping you build skills at your own pace.
-
-Your account details:
-**Email:** ${user.email}
-**Role:** ${user.role}
+This code is valid for 24 hours.
 
 If you ever need help, our team is here to support you.
 
@@ -65,11 +76,12 @@ We’re glad you’re here,
 **The Cognify Team**
 
 *Learn smarter. Grow confidently.* 🌱`;
+
         sendEmail({
             email: user.email,
-            subject: 'Welcome to Cognify <3',
-            message: welcomeMessage
-        }).catch(err => console.error('[AUTH] Failed to send welcome email:', err.message));
+            subject: 'Verify your Cognify account',
+            message: verificationMessage
+        }).catch(err => console.error('[AUTH] Failed to send verification email:', err.message));
 
         res.status(201).json({
             status: 'success',
@@ -102,6 +114,58 @@ We’re glad you’re here,
 
         const handleFailedLogin = async (userObj) => {
             const record = await LoginAttempt.trackFailure(email, ip_address, user_agent_hash, user_agent);
+            
+            // Check aggregate failures for this email across all devices/IPs
+            const totalFailures = await LoginAttempt.getTotalFailuresByEmail(email);
+            
+            if (totalFailures >= 10 && userObj && normalizeStatus(userObj.status) === 'ACTIVE') {
+                // Automated Security Lockdown
+                await User.adminUpdate(userObj.id, { status: 'SUSPENDED' });
+                
+                // Log as a critical security event
+                // Dynamic import to avoid circular dependency if Log depends on AuthService elsewhere
+                const { default: Log } = await import('../models/log.model.js');
+                await Log.create(null, 'SECURITY_LOCKOUT', 'users', userObj.id, {
+                    reason: 'Automated suspension due to 10+ failed login attempts',
+                    ip_address,
+                    total_failures: totalFailures,
+                    email
+                });
+
+                console.warn(`[AUTH] ACCOUNT LOCKED: Email ${email} suspended after ${totalFailures} total failures.`);
+
+                // Send Lockout Email
+                const firstName = userObj.name.split(' ')[0];
+                const lockoutMessage = `Hi ${firstName},
+                
+For your protection, your **Cognify** account has been **temporarily locked**.
+
+We detected more than 10 unsuccessful attempts to sign in to your account from multiple locations or devices. To prevent unauthorized access, we have suspended all sign-in activity for this email.
+
+### How to unlock your account
+
+To regain access, please contact your platform administrator or respond to this email. An administrator will need to verify your identity and manually reactivate your account.
+
+**Security details:**
+• Reason: Excessive failed login attempts
+• Total failures: ${totalFailures}
+• Last attempt from: ${ip_address}
+• Time: ${new Date().toUTCString()}
+
+If this activity was not you, your password may have been compromised. We recommend updating your passwords for other services once your Cognify account is restored.
+
+Your security is our priority.
+
+**The Cognify Security Team**`;
+
+                await sendEmail({
+                    email: userObj.email,
+                    subject: 'URGENT: Your Cognify account has been locked',
+                    message: lockoutMessage
+                }).catch(err => console.error('[AUTH] Failed to send lockout email:', err.message));
+
+                return; // Stop further processing for this failure
+            }
             
             if (record.attempt_count >= 5) {
                 await LoginAttempt.lockTuple(email, ip_address, user_agent_hash);
@@ -214,6 +278,67 @@ Stay safe,
         res.json({
             status: 'success',
             data: user,
+        });
+    });
+
+    /**
+     * POST /auth/verify-email
+     * Validates the OTP and activates the account.
+     */
+    static verifyEmail = asyncHandler(async (req, res) => {
+        const { otp } = req.body;
+        
+        // Use ID from the authenticated token (since UNVERIFIED users can still get a token during signup, we just block them at middleware / dashboard)
+        // Alternatively, if they are not logged in, we'd need email + OTP. Let's assume we require the token.
+        const userId = req.user.id; 
+        
+        const success = await User.verifyEmailToken(userId, otp);
+        if (!success) {
+            res.status(400);
+            throw new Error('Invalid or expired verification code.');
+        }
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Email verified successfully. Your account is now active.'
+        });
+    });
+
+    /**
+     * POST /auth/resend-verification
+     * Generates a new OTP and emails it.
+     */
+    static resendOTP = asyncHandler(async (req, res) => {
+        const userId = req.user.id;
+        const user = await User.findById(userId);
+
+        if (!user || user.status === 'ACTIVE') {
+            res.status(400);
+            throw new Error('Account is already verified or does not exist.');
+        }
+
+        const otp = await User.createVerificationToken(userId);
+        const firstName = user.name.split(' ')[0];
+        
+        const message = `Hi ${firstName},
+
+Your new verification code is:
+
+# **${otp}**
+
+This code will expire in 24 hours.
+
+**The Cognify Team**`;
+
+        await sendEmail({
+            email: user.email,
+            subject: 'Your new Cognify verification code',
+            message
+        });
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Verification code resent successfully.'
         });
     });
 

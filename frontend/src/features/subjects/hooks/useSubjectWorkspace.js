@@ -50,7 +50,11 @@ export const useSubjectWorkspace = (subjectId) => {
     const panels = useWorkspacePanels({ subjectId, materials });
 
     // 2. Chat
-    const chat = useWorkspaceChat({ subjectId: normalizedId });
+    const chat = useWorkspaceChat({ 
+        subjectId: normalizedId, 
+        selectedUploads: panels.selectedUploads 
+    });
+
 
     // 3. Generation Control
     // Holds the user's selected generator mode ('summary', 'flashcards', 'mock_exam')

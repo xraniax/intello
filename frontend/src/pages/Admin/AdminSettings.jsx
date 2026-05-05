@@ -260,7 +260,7 @@ const AdminSettings = () => {
 
     if (loading) {
         return (
-            <div className="max-w-4xl mx-auto px-4 py-10">
+            <div className="w-full px-4 py-10">
                 <div className="bg-white rounded-[2.5rem] border border-gray-100 p-20 text-center shadow-sm">
                     <p className="text-gray-400 font-bold uppercase tracking-widest text-sm animate-pulse">Loading configuration...</p>
                 </div>
@@ -269,12 +269,21 @@ const AdminSettings = () => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-8 py-10 animate-in fade-in duration-500">
+        <div className="w-full px-4 sm:px-6 md:px-12 py-10 animate-in fade-in duration-500 relative overflow-hidden">
+            {/* Ambient decorative orb */}
+            <div className="fixed bottom-[-10%] right-[-5%] w-[500px] h-[500px] bg-amber-200/20 blur-[120px] rounded-full -z-10 animate-pulse pointer-events-none" />
+            
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
                 <div>
-                    <h1 className="text-4xl font-black text-gray-900 tracking-tight mb-2">System Rules</h1>
-                    <p className="text-gray-500 font-medium">Configure global storage limits, access policies, and platform behaviour.</p>
+                    <div className="flex items-center gap-2 font-black text-[10px] uppercase tracking-[0.2em] mb-4 text-amber-500">
+                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 anim-pulse"></div>
+                        <span>Core Parameters</span>
+                    </div>
+                    <h1 className="text-5xl font-black text-gray-900 tracking-tight mb-2">
+                        System <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-600 to-orange-500">Rules</span>
+                    </h1>
+                    <p className="text-gray-500 font-medium">Fine-tune global storage quotas and cluster restrictions.</p>
                 </div>
                 <button
                     type="button"

@@ -50,6 +50,35 @@ class SubjectController {
         }
         res.status(200).json({ status: 'success', message: 'Subject deleted successfully' });
     });
+
+    static getTrash = asyncHandler(async (req, res) => {
+        const { page, limit, offset } = parsePagination(req.query);
+        const result = await SubjectService.getTrash(req.user.id, { limit, offset });
+        if (result && result.trash) {
+            const paginatedResponse = buildPaginatedResponse(result.trash, result.total, { page, limit });
+            res.status(200).json({ status: 'success', ...paginatedResponse });
+        } else {
+            res.status(200).json({ status: 'success', data: result });
+        }
+    });
+
+    static restore = asyncHandler(async (req, res) => {
+        const restored = await SubjectService.restoreSubject(req.user.id, req.params.id);
+        if (!restored) {
+            res.status(404);
+            throw new Error('Subject not found or not in trash');
+        }
+        res.status(200).json({ status: 'success', message: 'Subject restored successfully' });
+    });
+
+    static permanentDelete = asyncHandler(async (req, res) => {
+        const deleted = await SubjectService.permanentDeleteSubject(req.user.id, req.params.id);
+        if (!deleted) {
+            res.status(404);
+            throw new Error('Subject not found or not in trash');
+        }
+        res.status(200).json({ status: 'success', message: 'Subject permanently deleted' });
+    });
 }
 
 export default SubjectController;

@@ -38,10 +38,11 @@ const AnalyticsService = {
         return data.data;
     },
 
-    async getConcepts(subjectId, { sort = 'crs', order = 'desc', state = null, minInteractions = 0 } = {}) {
-        const params = { sort, order, minInteractions };
+    async getConcepts(subjectId, { sort = 'crs', order = 'desc', state = null, minInteractions = 0, page = 1, limit = 20 } = {}) {
+        const params = { sort, order, minInteractions, page, limit };
         if (state) params.state = state;
         const { data } = await api.get(`/analytics/${subjectId}/concepts`, { params });
+        // Returns { concepts, pagination, distribution, subject_id }
         return data.data;
     },
 
@@ -89,9 +90,10 @@ const AnalyticsService = {
         return data.data;
     },
 
-    async getSubjectsList() {
-        const { data } = await api.get('/analytics/global/subjects');
-        return data.data;
+    async getSubjectsList({ page = 1, limit = 20 } = {}) {
+        const { data } = await api.get('/analytics/global/subjects', { params: { page, limit } });
+        // Returns { data, pagination }
+        return data;
     },
 
     async getActivityHeatmap(days = 365) {
@@ -99,11 +101,12 @@ const AnalyticsService = {
         return data.data;
     },
 
-    async getInsights({ limit = 5, type = null } = {}) {
-        const params = { limit };
+    async getInsights({ page = 1, limit = 20, type = null } = {}) {
+        const params = { page, limit };
         if (type) params.type = type;
         const { data } = await api.get('/analytics/insights', { params });
-        return data.data;
+        // Returns { data, pagination }
+        return data;
     },
 
     async dismissInsight(insightId) {

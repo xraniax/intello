@@ -254,6 +254,45 @@ class AdminController {
             res.status(500).json({ success: false, message: 'Failed to delete alert' });
         }
     }
+
+    /**
+     * Get system health/monitoring stats
+     */
+    static async getSystemStats(req, res) {
+        try {
+            const stats = await AdminService.getSystemStats();
+            res.json({ success: true, data: stats });
+        } catch (error) {
+            console.error('Admin Fetch System Stats Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch system stats' });
+        }
+    }
+
+    /**
+     * Get user behavior analytics (aggregated)
+     */
+    static async getAnalytics(req, res) {
+        try {
+            const analytics = await AdminService.getUserBehaviorAnalytics();
+            res.json({ success: true, data: analytics });
+        } catch (error) {
+            console.error('Admin Fetch Analytics Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch user behavior analytics' });
+        }
+    }
+
+    /**
+     * Get security analytics (lockouts, etc.)
+     */
+    static async getSecurity(req, res) {
+        try {
+            const analytics = await AdminService.getSecurityAnalytics();
+            res.json({ success: true, data: analytics });
+        } catch (error) {
+            console.error('Admin Fetch Security Error:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch security analytics' });
+        }
+    }
 }
 
 export default AdminController;

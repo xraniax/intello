@@ -20,13 +20,13 @@
   --c-text-muted:       #706C8A;
   --c-text-placeholder: #A8A4BC;
 
-  /* Brand — vibrant purple (Crisper, a bit darker indigo) */
-  --c-primary:          #635BFF;
-  --c-primary-hover:    #554EE6;
-  --c-primary-active:   #4640CC;
-  --c-primary-light:    #EAE9FF;
-  --c-primary-ultra:    #F5F5FF;
-  --c-primary-muted:    #D1CFFF;
+  /* Brand — elegant soft violet */
+  --c-primary:          #7C3AED; /* Violet-600 */
+  --c-primary-hover:    #6D28D9; /* Violet-700 */
+  --c-primary-active:   #5B21B6; /* Violet-800 */
+  --c-primary-light:    #EDE9FE; /* Violet-100 */
+  --c-primary-ultra:    #F5F3FF; /* Violet-50 */
+  --c-primary-muted:    #C4B5FD; /* Violet-300 */
 
   /* Accent palette — vibrant, purposeful */
   --c-coral:            #FF6B6B;
@@ -59,15 +59,15 @@
   --c-accent-light:     var(--c-rose-light);
 
   /* ── Gradients — first-class design primitives ── */
-  --grad-primary:    linear-gradient(135deg, #7C5CFC 0%, #C084FC 100%);
-  --grad-hero:       linear-gradient(135deg, #7C5CFC 0%, #F43F5E 55%, #FFB020 100%);
+  --grad-primary:    linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
+  --grad-hero:       linear-gradient(135deg, #8B5CF6 0%, #F43F5E 55%, #FFB020 100%);
   --grad-warm:       linear-gradient(135deg, #FF6B6B 0%, #FFB020 100%);
   --grad-cool:       linear-gradient(135deg, #3BAAFF 0%, #0EB8D5 100%);
   --grad-success:    linear-gradient(135deg, #00C896 0%, #10B981 100%);
   --grad-sunset:     linear-gradient(135deg, #F59E0B 0%, #EF4444 100%);
-  --grad-ocean:      linear-gradient(135deg, #7C5CFC 0%, #3BAAFF 100%);
+  --grad-ocean:      linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
   --grad-candy:      linear-gradient(135deg, #F43F5E 0%, #D946EF 100%);
-  --grad-aurora:     linear-gradient(135deg, #00C896 0%, #7C5CFC 100%);
+  --grad-aurora:     linear-gradient(135deg, #00C896 0%, #8B5CF6 100%);
   --grad-peach:      linear-gradient(135deg, #FF6B6B 0%, #D946EF 100%);
   --grad-sky:        linear-gradient(135deg, #3BAAFF 0%, #0EB8D5 100%);
   --grad-gold:       linear-gradient(135deg, #FFB020 0%, #FF6B6B 100%);
@@ -104,7 +104,7 @@
   --shadow-2xl:  0 16px 48px rgba(0,0,0,0.08), 0 32px 80px rgba(0,0,0,0.06);
 
   /* ── Colored shadows — tactile, per-element ── */
-  --shadow-primary:  0 4px 24px rgba(124, 92, 252, 0.38), 0 2px 6px rgba(124, 92, 252, 0.18);
+  --shadow-primary:  0 4px 24px rgba(124, 58, 237, 0.28), 0 2px 6px rgba(124, 58, 237, 0.12);
   --shadow-coral:    0 4px 24px rgba(255, 107, 107, 0.38);
   --shadow-teal:     0 4px 24px rgba(14, 184, 213, 0.38);
   --shadow-amber:    0 4px 24px rgba(255, 176, 32, 0.38);
@@ -114,10 +114,10 @@
   --shadow-sky:      0 4px 24px rgba(59, 170, 255, 0.38);
 
   /* Brand focus ring */
-  --shadow-brand:    0 0 0 3px rgba(124, 92, 252, 0.20);
+  --shadow-brand:    0 0 0 3px rgba(124, 58, 237, 0.15);
   --shadow-brand-md: var(--shadow-primary);
-  --shadow-brand-lg: 0 8px 40px rgba(124, 92, 252, 0.42);
-  --shadow-glow:     0 0 48px rgba(124, 92, 252, 0.50);
+  --shadow-brand-lg: 0 8px 40px rgba(124, 58, 237, 0.30);
+  --shadow-glow:     0 0 48px rgba(124, 58, 237, 0.40);
 
   /* Legacy */
   --shadow-card:       var(--shadow-sm);
@@ -204,7 +204,7 @@
 
   /* Solid - tactile, elegant */
   .btn-solid {
-    background: linear-gradient(180deg, var(--c-primary) 0%, var(--c-primary-hover) 100%);
+    background: var(--c-primary);
     color: white;
     border: 1px solid var(--c-primary-active);
     box-shadow: inset 0 1px 1px rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.05), var(--shadow-primary);
@@ -767,9 +767,11 @@
   border-radius: var(--radius-lg); font-size: 0.875rem; line-height: 1.55;
 }
 .chat-message--user .chat-bubble {
-  background: var(--grad-primary);
-  color: white; border-bottom-right-radius: 4px;
-  box-shadow: var(--shadow-primary);
+  background: var(--c-surface-alt);
+  color: var(--c-text); 
+  border: 1px solid var(--c-border);
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 .chat-message--ai .chat-bubble {
   background: var(--c-surface-alt); border: 1.5px solid var(--c-border-soft);

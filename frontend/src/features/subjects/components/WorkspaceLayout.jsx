@@ -41,16 +41,16 @@ const Separator = ({ idx, activeIdx, onMouseDown }) => {
                 style={{
                     width: 20,
                     height: 48,
-                    background: lit ? 'var(--c-primary)' : 'var(--c-border)',
+                    background: lit ? 'var(--grad-primary)' : 'var(--c-border)',
                     color: lit ? '#fff' : 'var(--c-text-muted)',
-                    opacity: lit ? 1 : 0.5,
-                    transform: isActive ? 'scaleX(1.1)' : 'scaleX(1)',
+                    opacity: lit ? 1 : 0.6,
+                    transform: isActive ? 'scaleX(1.1) scaleY(1.05)' : 'scaleX(1)',
                     boxShadow: isActive
-                        ? '0 0 0 3px color-mix(in srgb, var(--c-primary) 20%, transparent)'
+                        ? '0 0 0 4px rgba(124, 92, 252, 0.25), 0 0 12px rgba(124, 92, 252, 0.4)'
                         : hovered
-                        ? '0 0 0 2px color-mix(in srgb, var(--c-primary) 10%, transparent)'
+                        ? '0 0 0 2px rgba(124, 92, 252, 0.15)'
                         : 'none',
-                    transition: 'all 0.15s ease',
+                    transition: 'all 0.2s var(--ease-spring)',
                 }}
             >
                 <GripDots />
@@ -160,8 +160,8 @@ const WorkspaceLayout = ({
     return (
         <div
             ref={containerRef}
-            className="flex-1 flex overflow-hidden select-none pb-20 md:pb-0"
-            style={{ background: 'var(--c-canvas)' }}
+            className="flex-1 flex overflow-hidden select-none pb-20 md:pb-0 relative z-10"
+            style={{ background: 'transparent' }}
         >
             {/* ── Left panel ── */}
             <div
@@ -172,7 +172,9 @@ const WorkspaceLayout = ({
                     width:        isMobile ? '100%' : `${lw}%`,
                     opacity:      leftPanelCollapsed && !isMobile ? 0 : 1,
                     pointerEvents: leftPanelCollapsed ? 'none' : 'auto',
-                    borderRight:  leftPanelCollapsed ? 'none' : '1px solid var(--c-border-soft)',
+                    borderRight:  leftPanelCollapsed ? 'none' : '1px solid rgba(244, 63, 94, 0.15)',
+                    background:   'rgba(255, 255, 255, 0.55)',
+                    backdropFilter:'blur(20px)',
                     transition:   PANEL_TRANSITION,
                 }}
             >
@@ -195,9 +197,10 @@ const WorkspaceLayout = ({
                     ${isMobile ? (activePanel === 'content' ? 'flex' : 'hidden') : 'flex'}`}
                 style={{
                     width:             isMobile ? '100%' : `${mw}%`,
-                    background:        'var(--c-surface)',
+                    background:        'rgba(255, 255, 255, 0.85)',
+                    backdropFilter:    'blur(24px)',
                     borderTopLeftRadius: '32px',
-                    boxShadow:         '-4px 0 32px rgba(0,0,0,0.03)',
+                    boxShadow:         '-12px 0 40px rgba(244, 63, 94, 0.08), inset 1px 0 0 rgba(255, 255, 255, 0.5)',
                     zoom:              1.1,
                     fontSize:          '20px',
                     transition:        PANEL_TRANSITION,
@@ -218,14 +221,14 @@ const WorkspaceLayout = ({
             {/* ── Right panel ── */}
             <div
                 ref={rightRef}
-                className={`h-full overflow-hidden flex-shrink-0
+                className={`h-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-white/70 to-fuchsia-50/70
                     ${isMobile ? (activePanel === 'tutor' ? 'flex' : 'hidden') : 'flex'}`}
                 style={{
                     width:        isMobile ? '100%' : `${rw}%`,
                     opacity:      rightPanelCollapsed && !isMobile ? 0 : 1,
                     pointerEvents: rightPanelCollapsed ? 'none' : 'auto',
-                    borderLeft:   rightPanelCollapsed ? 'none' : '1px solid var(--c-border-soft)',
-                    background:   'var(--c-surface)',
+                    borderLeft:   rightPanelCollapsed ? 'none' : '1px solid rgba(217, 70, 239, 0.15)',
+                    backdropFilter:'blur(20px)',
                     transition:   PANEL_TRANSITION,
                 }}
             >

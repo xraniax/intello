@@ -34,22 +34,22 @@ const AddCard = ({ onClick }) => {
             onClick={onClick}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
-            className="flex flex-col items-center justify-center gap-3 rounded-[24px] border border-dashed transition-all group min-h-[180px]"
+            className="flex flex-col items-center justify-center gap-3 rounded-[24px] border-2 border-dashed transition-all group min-h-[180px]"
             style={{ borderColor: 'var(--c-border-strong)', background: 'var(--c-canvas)' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-surface)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-surface)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)'; }}
             onFocus={e => { e.currentTarget.style.borderColor = 'var(--c-primary)'; e.currentTarget.style.background = 'var(--c-surface)'; }}
             onBlur={e => { e.currentTarget.style.borderColor = 'var(--c-border-strong)'; e.currentTarget.style.background = 'var(--c-canvas)'; e.currentTarget.style.boxShadow = 'none'; }}
         >
             <motion.div
                 ref={iconRef}
                 className="w-12 h-12 rounded-[14px] flex items-center justify-center"
-                style={{ background: 'var(--c-surface)', color: 'var(--c-text-muted)', border: '1px solid var(--c-border-soft)', boxShadow: 'var(--shadow-xs)' }}
-                whileHover={{ rotate: 90, scale: 1.05 }}
+                style={{ background: 'var(--c-primary)', boxShadow: '0 4px 12px rgba(124,92,252,0.3)' }}
+                whileHover={{ rotate: 90, scale: 1.1 }}
                 transition={{ type: 'spring', damping: 14, stiffness: 200 }}
             >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-5 h-5 text-white" />
             </motion.div>
-            <span className="text-sm font-semibold tracking-tight" style={{ color: 'var(--c-text-secondary)' }}>Create new subject</span>
+            <span className="text-sm font-semibold tracking-tight text-indigo-600">Create new subject</span>
         </motion.button>
     );
 };

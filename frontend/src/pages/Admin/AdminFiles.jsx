@@ -124,21 +124,21 @@ const AdminFiles = () => {
     const usagePercent = Math.min((usedBytes / totalCapacity) * 100, 100);
 
     return (
-        <div className="relative min-h-[calc(100vh-64px)] p-6 md:p-10 max-w-7xl mx-auto overflow-hidden">
+        <div className="relative min-h-[calc(100vh-64px)] p-6 md:p-12 w-full overflow-hidden">
             {/* Ambient Decorative Orbs */}
-            <div className="ambient-orb ambient-orb-lg ambient-orb-1 top-[-10%] right-[-5%] bg-purple-200/30"></div>
-            <div className="ambient-orb ambient-orb-md ambient-orb-2 bottom-[10%] left-[-5%] bg-indigo-200/20"></div>
+            <div className="ambient-orb ambient-orb-lg ambient-orb-1 top-[-10%] right-[-5%] bg-sky-200/30"></div>
+            <div className="ambient-orb ambient-orb-md ambient-orb-2 bottom-[10%] left-[-5%] bg-blue-200/20"></div>
 
             <div className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 {/* Header */}
                     <div className="flex justify-between items-start">
                         <div className="group">
-                            <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-[0.2em] mb-2 text-indigo-500">
-                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 anim-pulse"></div>
-                                <span>Command Center</span>
+                            <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-[0.2em] mb-2 text-sky-500">
+                                <div className="w-1.5 h-1.5 rounded-full bg-sky-500 anim-pulse"></div>
+                                <span>Nexus Storage</span>
                             </div>
                             <h1 className="text-5xl md:text-6xl font-black tracking-tighter mb-3">
-                                File <span className="text-gradient-hero">Explorer</span>
+                                File <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-600 to-blue-500">Explorer</span>
                             </h1>
                             <p className="font-medium text-lg text-gray-500/80 max-w-2xl">
                                 Audit active uploads, manage storage assets, and scan cluster volumes.
@@ -146,7 +146,7 @@ const AdminFiles = () => {
                         </div>
                         <button 
                             onClick={() => fetchData(true)}
-                            className="p-4 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-[1.5rem] transition-all shadow-sm hover:shadow-md border border-transparent hover:border-gray-100 mt-8"
+                            className="p-4 text-gray-400 hover:text-sky-600 hover:bg-white rounded-[1.5rem] transition-all shadow-sm hover:shadow-md border border-transparent hover:border-gray-100 mt-8"
                             title="Refresh Storage Metrics"
                         >
                             <RefreshCw className={`w-6 h-6 ${loading ? 'animate-spin' : ''}`} />

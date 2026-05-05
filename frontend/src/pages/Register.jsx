@@ -86,7 +86,7 @@ const Register = () => {
 
         try {
             await registerAction(formData);
-            navigate('/dashboard');
+            navigate('/verify-email');
         } catch (err) {
             if (err.fieldErrors) {
                 setFieldErrors(prev => ({ ...prev, ...err.fieldErrors }));

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, LayoutDashboard, UserCircle, LogOut, Shield, Sparkles, Zap, Trash2 } from 'lucide-react';
+import { Menu, X, LayoutDashboard, UserCircle, LogOut, Shield, Sparkles, Zap, Trash2, Target } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 
@@ -26,6 +26,7 @@ const Navbar = () => {
 
     const navLinks = [
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+        { label: 'Goals', path: '/goals', icon: Target },
         { label: 'Trash', path: '/trash', icon: Trash2 },
     ];
 

@@ -3,10 +3,10 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-    LayoutDashboard, Users, HardDrive, 
+    LayoutDashboard, Users, HardDrive, Settings,
     LogOut, ChevronLeft, ChevronRight,
     Bell, Menu, X, CheckCircle2,
-    FileText, AlertTriangle, AlertOctagon, Info, CheckCheck, RefreshCw
+    FileText, AlertTriangle, AlertOctagon, Info, CheckCheck, RefreshCw, Activity
 } from 'lucide-react';
 import { adminService } from '@/features/admin/services/AdminService';
 import { formatDistanceToNow } from 'date-fns';
@@ -19,24 +19,22 @@ const AdminLayout = ({ children }) => {
     const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
-    const [activeSection, setActiveSection] = useState('overview');
-    const [sectionsCompleted, setSectionsCompleted] = useState([]);
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
     const [notifSeen, setNotifSeen] = useState(false);
     const [resolvingId, setResolvingId] = useState(null);
     
-    const scrollContainerRef = useRef(null);
     const notifRef = useRef(null);
 
     const navigation = [
         {
             group: 'ADMINISTRATION',
             items: [
-                { name: 'Dashboard', id: 'overview', icon: LayoutDashboard },
-                { name: 'Users', id: 'users', icon: Users },
-                { name: 'Files', id: 'files', icon: HardDrive },
-                { name: 'Logs', id: 'logs', icon: FileText }
+                { name: 'Dashboard', path: '/admin', id: 'overview', icon: LayoutDashboard, color: 'indigo' },
+                { name: 'Users', path: '/admin/users', id: 'users', icon: Users, color: 'fuchsia' },
+                { name: 'Files', path: '/admin/files', id: 'files', icon: HardDrive, color: 'sky' },
+                { name: 'Monitoring', path: '/admin/logs', id: 'logs', icon: Activity, color: 'emerald' },
+                { name: 'System Rules', path: '/admin/settings', id: 'settings', icon: Settings, color: 'amber' }
             ]
         }
     ];
@@ -90,66 +88,21 @@ const AdminLayout = ({ children }) => {
         user_quota_exceeded: 'text-rose-600 bg-rose-50 border-rose-200',
     };
 
-    useEffect(() => {
-
-        const container = scrollContainerRef.current;
-        if (!container || location.pathname !== '/admin') return;
-
-        const handleScroll = () => {
-            const total = container.scrollHeight - container.clientHeight;
-            if (total <= 0) return;
-            const progress = (container.scrollTop / total) * 100;
-            container.style.setProperty('--scroll-progress', `${progress}%`);
-        };
-
-        const observerOptions = {
-            root: container,
-            rootMargin: '-20% 0px -70% 0px',
-            threshold: 0
-        };
-
-        const observerCallback = (entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const sectionId = entry.target.id;
-                    setActiveSection(sectionId);
-                    
-                    const items = navigation[0].items;
-                    const sectionIdx = items.findIndex(item => item.id === sectionId);
-                    if (sectionIdx !== -1) {
-                        setSectionsCompleted(items.slice(0, sectionIdx).map(i => i.id));
-                    }
-                }
-            });
-        };
-
-        const observer = new IntersectionObserver(observerCallback, observerOptions);
-        navigation[0].items.forEach(item => {
-            const el = document.getElementById(item.id);
-            if (el) observer.observe(el);
-        });
-
-        container.addEventListener('scroll', handleScroll);
-        // Initial call
-        handleScroll();
-
-        return () => {
-            observer.disconnect();
-            container.removeEventListener('scroll', handleScroll);
-        };
+    const navItem = useCallback((item) => {
+        const isActive = location.pathname === item.path || (location.pathname === '/admin' && item.path === '/admin');
+        if (item.path !== '/admin' && location.pathname === '/admin') return false; // Handled below
+        if (location.pathname !== '/admin' && location.pathname.startsWith(item.path) && item.path !== '/admin') return true;
+        return location.pathname === item.path;
     }, [location.pathname]);
 
-    const scrollToSection = (id) => {
-        const element = document.getElementById(id);
-        if (element && scrollContainerRef.current) {
-            scrollContainerRef.current.scrollTo({
-                top: element.offsetTop,
-                behavior: 'smooth'
-            });
-        } else {
-            navigate('/admin', { state: { scrollTo: id } });
-        }
+    const activeIndex = navigation[0].items.findIndex(i => navItem(i));
+
+    const handleNavigate = (path) => {
+        navigate(path);
+        setMobileMenuOpen(false);
     };
+
+
 
     return (
         <div className="flex flex-1 h-screen bg-white overflow-hidden font-sans selection:bg-indigo-100 selection:text-indigo-900 text-gray-900">
@@ -181,9 +134,15 @@ const AdminLayout = ({ children }) => {
                             )}
                             {/* Animated Liquid Progress Line */}
                             {!isSidebarCollapsed && (
-                                <div 
-                                    className="absolute left-7 top-4 bg-gray-900 rounded-full w-1 origin-top shadow-[0_0_15px_rgba(0,0,0,0.1)] transition-[height] duration-200"
-                                    style={{ height: 'var(--scroll-progress, 0%)' }}
+                                <motion.div 
+                                    className="absolute left-7 top-4 bg-gray-900 rounded-full w-1 origin-top shadow-[0_0_15px_rgba(0,0,0,0.1)] transition-all duration-500"
+                                    style={{ 
+                                        height: 'var(--scroll-progress, 0%)',
+                                        backgroundColor: navigation[0].items[activeIndex]?.color === 'fuchsia' ? '#d946ef' :
+                                                       navigation[0].items[activeIndex]?.color === 'sky' ? '#0ea5e9' :
+                                                       navigation[0].items[activeIndex]?.color === 'emerald' ? '#10b981' :
+                                                       navigation[0].items[activeIndex]?.color === 'amber' ? '#f59e0b' : '#111827'
+                                    }}
                                 />
                             )}
 
@@ -198,24 +157,27 @@ const AdminLayout = ({ children }) => {
                                     <nav className="space-y-8">
                                         {group.items.map((item) => {
                                             const Icon = item.icon;
-                                            const isActive = activeSection === item.id;
-                                            const isDone = sectionsCompleted.includes(item.id);
+                                            const isActive = navItem(item);
+                                            const itemIndex = navigation[0].items.findIndex(i => i.id === item.id);
+                                            const isDone = itemIndex < activeIndex;
 
                                             return (
                                                 <button
                                                     key={item.id}
-                                                    onClick={() => scrollToSection(item.id)}
+                                                    onClick={() => handleNavigate(item.path)}
                                                     className={`flex items-center w-full group transition-all duration-300 relative
                                                         ${isSidebarCollapsed ? 'justify-center' : 'px-4'}
                                                         ${isActive ? 'scale-105' : 'hover:translate-x-1'}
-                                                    `}
-                                                >
+                                                    `}>
                                                     {/* Step Indicator */}
-                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 border-4 z-10 shrink-0
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-500 border-4 z-10 shrink-0
                                                         ${isActive 
-                                                            ? 'bg-gray-900 border-white shadow-2xl scale-110 text-white' 
+                                                            ? `${item.color === 'fuchsia' ? 'bg-fuchsia-500 border-fuchsia-100 shadow-fuchsia-200' : 
+                                                                 item.color === 'sky' ? 'bg-sky-500 border-sky-100 shadow-sky-200' :
+                                                                 item.color === 'emerald' ? 'bg-emerald-500 border-emerald-100 shadow-emerald-200' :
+                                                                 item.color === 'amber' ? 'bg-amber-500 border-amber-100 shadow-amber-200' : 'bg-gray-900 border-white shadow-indigo-200'} scale-110 text-white shadow-2xl` 
                                                             : isDone
-                                                                ? 'bg-white border-gray-900 text-gray-900'
+                                                                ? `bg-white border-gray-900 text-gray-900`
                                                                 : 'bg-white border-gray-50 text-gray-200'
                                                         }
                                                     `}>
@@ -232,7 +194,12 @@ const AdminLayout = ({ children }) => {
                                                     {isActive && !isSidebarCollapsed && (
                                                         <motion.div 
                                                             layoutId="sidebar-active-glow"
-                                                            className="absolute inset-0 bg-gray-50 rounded-2xl -z-10 border border-gray-100/50"
+                                                            className={`absolute inset-0 rounded-2xl -z-10 border transition-colors duration-500
+                                                                ${item.color === 'fuchsia' ? 'bg-fuchsia-50 border-fuchsia-100/50' : 
+                                                                  item.color === 'sky' ? 'bg-sky-50 border-sky-100/50' :
+                                                                  item.color === 'emerald' ? 'bg-emerald-50 border-emerald-100/50' :
+                                                                  item.color === 'amber' ? 'bg-amber-50 border-amber-100/50' : 'bg-gray-50 border-gray-100/50'}
+                                                            `}
                                                             transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
                                                         />
                                                     )}
@@ -394,7 +361,7 @@ const AdminLayout = ({ children }) => {
                                         {/* Footer */}
                                         <div className="px-5 py-3 border-t border-gray-50 text-center">
                                             <button
-                                                onClick={() => { setShowNotifications(false); document.getElementById('logs')?.scrollIntoView({ behavior: 'smooth' }); }}
+                                                onClick={() => { setShowNotifications(false); navigate('/admin/logs'); }}
                                                 className="text-[10px] font-black text-indigo-500 hover:text-indigo-700 uppercase tracking-widest transition-colors"
                                             >
                                                 View Full Audit Stream
@@ -409,10 +376,14 @@ const AdminLayout = ({ children }) => {
                 </header>
 
                 <main 
-                    ref={scrollContainerRef}
-                    className="flex-1 overflow-y-auto w-full relative scroll-smooth narrative-viewport"
+                    className="flex-1 overflow-y-auto w-full relative scroll-smooth bg-gray-50/20"
                 >
                     <div className="w-full relative min-h-full">
+                        {/* More vibrant global ambient orbs */}
+                        <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-fuchsia-400/10 blur-[120px] rounded-full -z-10 animate-pulse pointer-events-none" />
+                        <div className="fixed bottom-0 left-0 w-[600px] h-[600px] bg-sky-400/10 blur-[150px] rounded-full -z-10 pointer-events-none" />
+                        <div className="fixed top-[20%] left-[10%] w-[300px] h-[300px] bg-emerald-400/5 blur-[100px] rounded-full -z-10 pointer-events-none" />
+                        
                         {children}
                     </div>
                 </main>
@@ -439,8 +410,8 @@ const AdminLayout = ({ children }) => {
                                 {navigation[0].items.map(item => (
                                     <button 
                                         key={item.id} 
-                                        onClick={() => { scrollToSection(item.id); setMobileMenuOpen(false); }}
-                                        className="flex items-center gap-4 w-full p-4 rounded-2xl hover:bg-gray-50 transition-colors"
+                                        onClick={() => handleNavigate(item.path)}
+                                        className={`flex items-center gap-4 w-full p-4 rounded-2xl transition-colors ${navItem(item) ? 'bg-gray-100 text-gray-900' : 'hover:bg-gray-50'}`}
                                     >
                                         <div className="w-10 h-10 rounded-2xl bg-gray-900 flex items-center justify-center text-white">
                                             <item.icon className="w-5 h-5" />

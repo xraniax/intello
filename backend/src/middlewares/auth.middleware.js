@@ -64,6 +64,17 @@ const protect = async (req, res, next) => {
             });
         }
 
+        // We allow UNVERIFIED users to hit the verify endpoints ONLY
+        // Identify verification endpoints using req.path or req.originalUrl
+        const isVerificationEndpoint = req.path.includes('verify-email') || req.path.includes('resend-verification');
+        if (normalizeStatus(user.status) === 'UNVERIFIED' && !isVerificationEndpoint) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Please verify your email address to continue.',
+                code: 'ACCOUNT_UNVERIFIED'
+            });
+        }
+
         req.user = user;
 
         // Throttled last_active_at update

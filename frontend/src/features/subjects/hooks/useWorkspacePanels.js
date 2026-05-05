@@ -44,28 +44,39 @@ export const useWorkspacePanels = ({ subjectId, materials }) => {
     const enhancedTabs = useMemo(() => tabs.map(tab => {
         if (tab.id === 'generator') return { ...tab, isDeleted: false };
         const material = (materials || []).find(m => String(m.id) === String(tab.id));
-        return { 
-            ...tab, 
-            isDeleted: !material && !tab.material, 
-            material: material || tab.material 
+        return {
+            ...tab,
+            isDeleted: !material,
+            material: material || tab.material
         };
     }), [tabs, materials]);
 
     // ── Global Tab Open Listener ──────────────────────────────────────────────
     useEffect(() => {
-        const handleOpen = (e) => {
-            const { id, type } = e.detail;
-            const material = (materials || []).find(m => String(m.id) === String(id));
-            if (!material) return;
+        const openTab = (material, id, type, page) => {
             setTabs(prev => {
-                if (prev.some(t => String(t.id) === String(id))) return prev;
-                return [...prev, { id: String(id), title: material.title, type, material }];
+                const existing = prev.find(t => String(t.id) === String(id));
+                if (existing) {
+                    return prev.map(t => String(t.id) === String(id) ? { ...t, requestedPage: page } : t);
+                }
+                return [...prev, { id: String(id), title: material.title, type, material, requestedPage: page }];
             });
             setActiveTabId(String(id));
         };
+
+        const handleOpen = async (e) => {
+            const { id, type, page } = e.detail;
+            let material = (materials || []).find(m => String(m.id) === String(id));
+            if (!material) {
+                const refreshed = await fetchMaterials().catch(() => []);
+                material = (refreshed || []).find(m => String(m.id) === String(id));
+            }
+            if (!material) return;
+            openTab(material, id, type, page);
+        };
         window.addEventListener('open-material', handleOpen);
         return () => window.removeEventListener('open-material', handleOpen);
-    }, [materials, setTabs, setActiveTabId]);
+    }, [materials, fetchMaterials, setTabs, setActiveTabId]);
 
     // ── Selection ─────────────────────────────────────────────────────────────
     const [selectedUploads, setSelectedUploads] = useState([]);

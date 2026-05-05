@@ -18,7 +18,9 @@ class Document(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     subject_id = Column(UUID(as_uuid=True), ForeignKey("subjects.id"), nullable=False, index=True)
+    material_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     filename = Column(String, nullable=False)
+
     file_path = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

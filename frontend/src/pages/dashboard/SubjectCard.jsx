@@ -28,47 +28,47 @@ const SubjectCard = React.memo(({ subject, onDelete, onRename }) => {
             layout
             className="group relative flex flex-col rounded-[24px] overflow-hidden cursor-pointer transition-all duration-300"
             style={{
-                background: 'var(--c-surface)',
-                border: '1px solid var(--c-border-strong)',
-                boxShadow: 'var(--shadow-xs)',
+                background: 'white',
+                border: `2px solid ${accent.hex}15`,
+                boxShadow: `0 4px 12px rgba(0,0,0,0.05)`,
                 transformStyle: 'preserve-3d',
                 willChange: 'transform',
             }}
             onMouseMove={onMouseMove}
             onMouseLeave={(e) => {
                 onMouseLeave(e);
-                e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
-                e.currentTarget.style.borderColor = 'var(--c-border-strong)';
+                e.currentTarget.style.boxShadow = `0 4px 12px rgba(0,0,0,0.05)`;
+                e.currentTarget.style.borderColor = `${accent.hex}15`;
             }}
             onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = `0 12px 30px ${accent.hex}15, var(--shadow-md)`;
-                e.currentTarget.style.borderColor = accent.hex + '40';
+                e.currentTarget.style.boxShadow = `0 12px 32px ${accent.hex}20`;
+                e.currentTarget.style.borderColor = `${accent.hex}40`;
             }}
             whileTap={{ scale: 0.98 }}
             onClick={() => navigate(`/subjects/${subject.id}`)}
         >
-            <div className="glow-overlay" />
-            <div className="h-[4px] w-full flex-shrink-0" style={{ background: accent.bg }} />
+            {/* Clean top accent bar */}
+            <div className="h-1 w-full flex-shrink-0" style={{ background: accent.bg }} />
 
             <div className="flex flex-col flex-1 p-5 gap-4">
                 <div className="flex items-start justify-between gap-2">
                     <motion.div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+                        className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
                         style={{ background: accent.light }}
                         whileHover={{
-                            rotate: [0, -8, 8, -4, 0],
-                            scale: 1.15,
-                            transition: { duration: 0.5, type: 'spring', damping: 10 }
+                            rotate: [0, -10, 10, 0],
+                            scale: 1.1,
                         }}
                     >
-                        <BookOpen className="w-6 h-6" style={{ color: accent.text }} />
+                        <BookOpen className="w-5 h-5" style={{ color: accent.text }} />
                     </motion.div>
 
                     <div ref={menuRef} className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
                         <motion.button
-                            whileTap={{ scale: 0.88 }}
+                            whileHover={{ scale: 1.08 }}
+                            whileTap={{ scale: 0.92 }}
                             onClick={() => setMenu(v => !v)}
-                            className="w-8 h-8 rounded-xl flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
                             style={{ color: 'var(--c-text-muted)', background: 'var(--c-surface-alt)' }}
                         >
                             <MoreHorizontal className="w-4 h-4" />
@@ -143,7 +143,9 @@ const SubjectCard = React.memo(({ subject, onDelete, onRename }) => {
 
             <motion.div
                 className="absolute bottom-4 right-4 w-7 h-7 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ background: accent.bg, boxShadow: `0 4px 12px ${accent.hex}50` }}
+                style={{ background: accent.bg, boxShadow: `0 4px 12px ${accent.hex}40` }}
+                animate={{ x: [0, 3, 0] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
             >
                 <ChevronRight className="w-3.5 h-3.5 text-white" />
             </motion.div>

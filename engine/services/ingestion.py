@@ -171,6 +171,7 @@ def ingest_file(
     file_path: str,
     user_id: str,
     subject_id: str,
+    material_id: Optional[str] = None,
     original_filename: Optional[str] = None,
     source_uri: Optional[str] = None,
     request_id: Optional[str] = None,
@@ -193,9 +194,11 @@ def ingest_file(
 
     doc = Document(
         subject_id=resolved_subject_id,
+        material_id=material_id,
         filename=original_filename or os.path.basename(file_path),
         file_path=source_uri or file_path,
     )
+
     session.add(doc)
     session.commit()
     session.refresh(doc)

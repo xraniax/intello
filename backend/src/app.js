@@ -155,6 +155,7 @@ import examRoutes from './routes/exam.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
 import quizRoutes from './routes/quiz.routes.js';
 import chatRoutes from './routes/chat.routes.js';
+import goalRoutes from './routes/goal.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
@@ -165,6 +166,7 @@ app.use('/api/exams', examRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/goals', goalRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Cognify Backend API', version: '1.0.0', endpoints: { auth: '/api/auth', materials: '/api/materials', subjects: '/api/subjects', health: '/health' } });

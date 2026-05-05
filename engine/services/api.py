@@ -14,7 +14,7 @@ from .embeddings import ollama_tags_url
 from .generation import OLLAMA_GENERATE_URL, OLLAMA_GENERATION_MODEL
 from .google_client import log_google_drive_config_mode
 from .ollama_config import get_engine_env_source, get_ollama_base_url
-from .routes import chat, documents, generation, health, jobs, quiz
+from .routes import chat, documents, generation, health, jobs, quiz, goals
 from gpu_detector import detect_gpu_and_ollama
 from core.normalization.status_normalizer import normalize_status
 
@@ -36,6 +36,7 @@ app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(generation.router)
 app.include_router(quiz.router)
+app.include_router(goals.router)
 
 
 @app.on_event("startup")

@@ -156,64 +156,82 @@ const Trash = () => {
     }).length;
 
     return (
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-10 animate-in fade-in duration-500">
+        <div className="relative min-h-screen w-full bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 px-4 py-10 sm:px-6 md:px-8 animate-in fade-in duration-500 overflow-hidden">
+            <div className="pointer-events-none absolute inset-0 opacity-80">
+                <div className="absolute -left-28 top-24 h-56 w-56 rounded-full bg-rose-300/25 blur-3xl" />
+                <div className="absolute right-0 top-40 h-72 w-72 rounded-full bg-indigo-300/20 blur-3xl" />
+                <div className="absolute left-1/2 top-[18rem] h-72 w-72 -translate-x-1/2 rounded-full bg-amber-200/20 blur-3xl" />
+                <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-slate-200/70 to-transparent" />
+            </div>
 
-            {/* Back */}
-            <button
-                onClick={() => navigate('/dashboard')}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-100 rounded-xl text-xs font-bold text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-100 transition-all shadow-sm mb-8 active:scale-95"
-            >
-                <ArrowLeft className="w-4 h-4" />
-                Back to Dashboard
-            </button>
+            <div className="relative mx-auto flex w-full max-w-[1920px] flex-col gap-6 sm:flex-row sm:items-end sm:justify-between mb-10">
+                <div className="space-y-5 rounded-[2rem] border border-slate-200/80 bg-white/80 p-6 shadow-[0_30px_60px_-40px_rgba(15,23,42,0.36)] backdrop-blur-xl">
+                    <button
+                        onClick={() => navigate('/dashboard')}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-indigo-700 hover:shadow-md active:scale-95"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        Back to dashboard
+                    </button>
 
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-5 mb-10">
-                <div>
-                    <div className="flex items-center gap-2 text-rose-500 font-bold text-[11px] uppercase tracking-[0.2em] mb-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                        System Archive
+                    <div className="space-y-3">
+                        <div className="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.24em] text-rose-700 shadow-sm shadow-rose-100/70">
+                            <span className="inline-flex h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                            System archive
+                        </div>
+                        <div className="space-y-3">
+                            <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-slate-900">
+                                <span className="bg-gradient-to-r from-rose-500 via-fuchsia-500 to-indigo-600 bg-clip-text text-transparent">Trash</span>
+                            </h1>
+                            <p className="max-w-2xl text-sm leading-7 text-slate-600">
+                                Deleted materials remain in trash for{' '}
+                                <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-900 border border-slate-200">
+                                    {ttlDays} days
+                                </span>{' '}
+                                before permanent removal.
+                            </p>
+                        </div>
                     </div>
-                    <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight">
-                        My <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-orange-500 drop-shadow-sm">Trash</span>
-                    </h1>
-                    <p className="text-gray-400 font-medium mt-2 text-sm max-w-sm leading-relaxed">
-                        Materials are permanently deleted after{' '}
-                        <span className="font-bold text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded-md border border-gray-100">{ttlDays} days</span> in trash.
-                    </p>
                 </div>
 
                 {trashItems.length > 0 && (
-                    <button
-                        onClick={() => setModal({ type: 'all' })}
-                        disabled={emptyingTrash}
-                        className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl font-bold text-sm bg-white text-rose-600 border border-rose-100 shadow-[0_2px_10px_-3px_rgba(225,29,72,0.1)] hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all disabled:opacity-50 shrink-0 hover:-translate-y-0.5 active:scale-95"
-                    >
-                        {emptyingTrash ? (
-                            <div className="w-4 h-4 border-2 border-rose-300 border-t-white rounded-full animate-spin" />
-                        ) : (
-                            <Trash2 className="w-4 h-4" />
-                        )}
-                        Empty Trash
-                    </button>
+                    <div className="flex flex-col gap-3 sm:items-end">
+                        <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm">
+                            {trashItems.length} item{trashItems.length !== 1 ? 's' : ''} in trash
+                        </div>
+                        <button
+                            onClick={() => setModal({ type: 'all' })}
+                            disabled={emptyingTrash}
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-bold text-rose-600 border border-rose-100 shadow-sm transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                        >
+                            {emptyingTrash ? (
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-rose-300 border-t-transparent" />
+                            ) : (
+                                <Trash2 className="w-4 h-4" />
+                            )}
+                            Empty trash
+                        </button>
+                    </div>
                 )}
             </div>
 
             {/* Urgent warning banner */}
             <AnimatePresence>
                 {urgentCount > 0 && (
-                    <motion.div 
+                    <motion.div
                         initial={{ opacity: 0, height: 0, marginBottom: 0 }}
                         animate={{ opacity: 1, height: 'auto', marginBottom: 24 }}
                         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
                         className="overflow-hidden"
                     >
-                        <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-amber-50 to-amber-100/50 border border-amber-200 rounded-2xl text-amber-800 shadow-sm relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-200/40 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-                            <Clock className="w-5 h-5 shrink-0 text-amber-500" />
-                            <p className="text-sm font-bold">
-                                {urgentCount} item{urgentCount !== 1 ? 's' : ''} will be permanently deleted soon — restore them now if you need them.
-                            </p>
+                        <div className="relative overflow-hidden rounded-3xl border border-amber-200/80 bg-gradient-to-r from-amber-50/90 via-amber-100 to-rose-50/90 px-5 py-4 shadow-sm">
+                            <div className="pointer-events-none absolute inset-y-0 right-0 w-32 bg-amber-200/40 blur-3xl" />
+                            <div className="relative flex items-center gap-3 text-amber-900">
+                                <Clock className="h-5 w-5 shrink-0 text-amber-700" />
+                                <p className="text-sm font-semibold leading-6">
+                                    {urgentCount} item{urgentCount !== 1 ? 's' : ''} will be permanently deleted soon — restore them now if you need them.
+                                </p>
+                            </div>
                         </div>
                     </motion.div>
                 )}
@@ -221,32 +239,26 @@ const Trash = () => {
 
             {/* Content */}
             {loading ? (
-                <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-24 flex flex-col items-center">
-                    <div className="w-12 h-12 border-4 border-rose-100 border-t-rose-500 rounded-full animate-spin mb-5" />
-                    <p className="text-sm font-black text-gray-400 uppercase tracking-widest">Scanning Archive</p>
+                <div className="rounded-[2rem] border border-slate-200 bg-white p-24 text-center shadow-sm">
+                    <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-rose-500" />
+                    <p className="text-sm font-black uppercase tracking-[0.28em] text-slate-400">Scanning archive</p>
                 </div>
             ) : trashItems.length === 0 ? (
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="w-full py-28 bg-white border border-gray-100 rounded-[2rem] text-center shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col items-center"
+                    className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-rose-50 p-20 text-center shadow-sm"
                 >
-                    <div className="relative mb-8 group">
-                        <div className="absolute inset-0 bg-gradient-to-t from-gray-100/50 to-transparent blur-2xl rounded-full scale-150 transition-transform group-hover:scale-[1.7] duration-500" />
-                        <div className="relative w-24 h-24 bg-gradient-to-br from-white to-gray-50 border border-gray-100 shadow-xl shadow-gray-200/50 rounded-[2rem] flex items-center justify-center text-gray-300 transition-transform group-hover:-translate-y-2 duration-500">
-                            <Trash2 className="w-10 h-10 drop-shadow-sm" />
-                        </div>
+                    <div className="relative mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-[2rem] border border-slate-200 bg-slate-50 text-rose-500 shadow-inner">
+                        <Trash2 className="h-11 w-11" />
                     </div>
-                    <h3 className="text-2xl font-black text-gray-800 tracking-tight mb-2">Trash is completely empty</h3>
-                    <p className="text-sm text-gray-400 font-bold max-w-[260px] leading-relaxed">
-                        Nothing to see here right now. Deleted items will be stored here temporarily.
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Trash is empty</h3>
+                    <p className="mx-auto max-w-[26rem] text-sm leading-7 text-slate-600">
+                        There is nothing in trash right now. Deleted items will appear here for a limited time before they are permanently removed.
                     </p>
                 </motion.div>
             ) : (
-                <motion.div 
-                    layout
-                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
-                >
+                <motion.div layout className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                     <AnimatePresence>
                         {trashItems.map((item) => {
                             const busy = actionId === item.id;
@@ -258,72 +270,68 @@ const Trash = () => {
                                     layout
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
+                                    exit={{ opacity: 0, scale: 0.95, filter: 'blur(4px)' }}
                                     transition={{ duration: 0.25 }}
                                     key={item.id}
-                                    className={`relative group bg-white border rounded-3xl p-5 flex flex-col transition-all duration-300 ${
-                                        rowUrgent 
-                                        ? 'border-red-100 shadow-[0_8px_20px_-6px_rgba(239,68,68,0.1)] hover:border-red-200 hover:shadow-[0_8px_25px_-4px_rgba(239,68,68,0.15)]' 
-                                        : 'border-gray-100 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.03)] hover:border-gray-200 hover:shadow-[0_12px_25px_-4px_rgba(0,0,0,0.05)]'
+                                    className={`group relative flex flex-col overflow-hidden rounded-3xl border bg-white p-5 transition duration-300 ${
+                                        rowUrgent
+                                            ? 'border-rose-100 shadow-[0_10px_30px_-15px_rgba(239,68,68,0.18)] hover:border-rose-200'
+                                            : 'border-slate-200 shadow-[0_8px_24px_-16px_rgba(15,23,42,0.08)] hover:border-slate-300'
                                     } hover:-translate-y-1.5`}
                                 >
-                                    {/* Card Header: Icon and Expiry */}
-                                    <div className="flex items-start justify-between mb-5">
-                                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-sm transition-transform group-hover:scale-105 duration-300 ${
-                                            rowUrgent 
-                                            ? 'bg-gradient-to-br from-red-50 to-red-100/50 text-red-500 border-red-100' 
-                                            : 'bg-gradient-to-br from-gray-50 to-gray-100/50 text-gray-500 border-gray-100'
+                                    <div className="flex items-start justify-between gap-3 mb-5">
+                                        <div className={`flex h-12 w-12 items-center justify-center rounded-3xl border shadow-sm transition ${
+                                            rowUrgent
+                                                ? 'border-rose-100 bg-red-50 text-rose-500'
+                                                : 'border-slate-200 bg-slate-50 text-slate-500'
                                         }`}>
-                                            <FileIcon className="w-5 h-5" />
+                                            <FileIcon className="h-5 w-5" />
                                         </div>
                                         {item.expires_at && <ExpiryBadge expiresAt={item.expires_at} />}
                                     </div>
-                                    
-                                    {/* Card Content: Title and Subject */}
+
                                     <div className="flex-1 min-h-0 mb-6">
-                                        <h3 className="text-[17px] font-black text-gray-800 mb-2 line-clamp-2 leading-snug" title={item.title}>
+                                        <h3 className="line-clamp-2 text-[17px] font-black leading-tight text-slate-900" title={item.title}>
                                             {item.title}
                                         </h3>
-                                        <div className="flex flex-wrap text-sm gap-2 mt-auto">
-                                            <span className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50/80 border border-gray-100 rounded-lg text-[10px] font-black text-gray-500 uppercase tracking-widest text-nowrap shrink-0">
+                                        <div className="mt-4 flex flex-wrap gap-2 text-sm">
+                                            <span className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">
                                                 {item.type}
                                             </span>
                                             {item.subject_name && (
-                                                <span className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50/50 border border-indigo-50 rounded-lg text-[10px] font-black text-indigo-500 uppercase tracking-widest truncate max-w-full">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                                                <span className="inline-flex max-w-full items-center gap-1.5 truncate rounded-2xl border border-indigo-100 bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.28em] text-indigo-600">
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
                                                     <span className="truncate">{item.subject_name}</span>
                                                 </span>
                                             )}
                                         </div>
                                     </div>
-                                    
-                                    {/* Card Footer: Actions */}
-                                    <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between gap-3">
-                                        <div className="flex flex-col">
-                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Deleted At</span>
-                                            <span className="text-[11px] font-bold text-gray-600">
+
+                                    <div className="mt-auto flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                                        <div className="space-y-1">
+                                            <p className="text-[9px] font-black uppercase tracking-[0.28em] text-slate-400">Deleted at</p>
+                                            <p className="text-sm font-semibold text-slate-700">
                                                 {item.deleted_at ? format(new Date(item.deleted_at), 'MMM dd, yyyy') : '—'}
-                                            </span>
+                                            </p>
                                         </div>
-                                        
-                                        <div className="flex gap-2">
+                                        <div className="flex w-full gap-2 sm:w-auto">
                                             <button
                                                 onClick={() => setModal({ type: 'item', id: item.id, title: item.title })}
                                                 disabled={busy}
-                                                className="w-10 h-10 rounded-xl bg-white border border-gray-100 text-gray-400 flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 hover:border-rose-100 transition-all disabled:opacity-40 shadow-sm"
-                                                title="Delete Forever"
+                                                title="Delete forever"
+                                                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
                                             >
-                                                <X className="w-4 h-4" />
+                                                <X className="h-4 w-4" />
                                             </button>
                                             <button
                                                 onClick={() => handleRestore(item.id, item.title)}
                                                 disabled={busy}
-                                                className="flex items-center justify-center gap-2 px-4 h-10 rounded-xl bg-indigo-500 text-white font-bold text-xs shadow-[0_4px_12px_-4px_rgba(99,102,241,0.4)] hover:bg-indigo-600 hover:shadow-[0_6px_15px_-4px_rgba(99,102,241,0.5)] transition-all disabled:opacity-40 flex-1 hover:-translate-y-0.5"
+                                                className="inline-flex min-w-[110px] items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 text-xs font-bold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                                             >
                                                 {busy ? (
-                                                    <div className="w-3.5 h-3.5 border-2 border-indigo-200 border-t-white rounded-full animate-spin shrink-0" />
+                                                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-200 border-t-white" />
                                                 ) : (
-                                                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                                                    <RotateCcw className="h-3.5 w-3.5" />
                                                 )}
                                                 Restore
                                             </button>
@@ -338,14 +346,10 @@ const Trash = () => {
 
             {/* Global Context Footer */}
             {trashItems.length > 0 && !loading && (
-                <div className="mt-8 relative py-4 flex flex-col sm:flex-row items-center justify-center gap-4 animate-in fade-in fill-mode-both delay-300">
-                    <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                        <div className="w-full border-t border-gray-100/60 border-dashed" />
-                    </div>
-                    <div className="relative px-6 bg-gray-50 flex items-center gap-3">
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-3 py-1 bg-white rounded-full border border-gray-100 shadow-sm">
-                            {trashItems.length} item{trashItems.length !== 1 ? 's' : ''} in trash
-                        </p>
+                <div className="mt-8 relative py-4">
+                    <div className="absolute inset-x-0 top-1/2 h-px bg-slate-200/80" aria-hidden="true" />
+                    <div className="relative mx-auto inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500 shadow-sm">
+                        {trashItems.length} item{trashItems.length !== 1 ? 's' : ''} in trash
                     </div>
                 </div>
             )}

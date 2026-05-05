@@ -25,6 +25,9 @@ router.delete('/files/:id', AdminController.deleteFile);
 // System Settings & Maintenance
 router.get('/settings', AdminController.getSettings);
 router.put('/settings', AdminController.updateSettings);
+router.get('/stats', AdminController.getSystemStats);
+router.get('/analytics', AdminController.getAnalytics);
+router.get('/analytics/security', AdminController.getSecurity);
 router.get('/quota-impact', AdminController.getQuotaImpact);
 router.put('/users/:userId/storage-limit', AdminController.updateStorageLimit);
 router.post('/storage/cleanup', AdminController.cleanupStorage);

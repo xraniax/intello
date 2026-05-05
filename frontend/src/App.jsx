@@ -6,6 +6,7 @@ import { Toaster } from 'react-hot-toast';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import Welcome from '@/pages/Welcome';
+import VerifyEmail from '@/pages/VerifyEmail';
 import Dashboard from '@/pages/Dashboard';
 import Upload from '@/pages/Upload';
 import History from '@/pages/History';
@@ -20,6 +21,7 @@ import AdminLayout from '@/components/Admin/AdminLayout';
 import SubjectDetail from '@/pages/SubjectDetail';
 import Analytics from '@/pages/Analytics';
 import AnalyticsSubject from '@/pages/AnalyticsSubject';
+import Goals from '@/pages/Goals';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import LoadingOverlay from '@/components/ui/LoadingOverlay';
@@ -28,6 +30,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useMaterialStore } from '@/store/useMaterialStore';
 import { useUIStore } from '@/store/useUIStore';
 import AuthModal from '@/components/Auth/AuthModal';
+import GuestGate from '@/components/Auth/GuestGate';
 
 const RouteLoadingState = () => (
   <div className="flex-1 flex items-center justify-center bg-white">
@@ -39,7 +42,7 @@ const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
   if (loading) return <RouteLoadingState />;
-  if (!user) return <Navigate to="/login" />;
+  if (!user) return <GuestGate />;
 
   return children;
 };
@@ -58,8 +61,18 @@ const StudentRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
   if (loading) return <RouteLoadingState />;
-  if (!user) return <Navigate to="/login" />;
+  if (!user) return <GuestGate />;
   if (user.role === 'admin') return <Navigate to="/admin" />;
+
+  return children;
+};
+
+const GuestOrStudentRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) return <RouteLoadingState />;
+  // Allow guests (no user) through
+  if (user && user.role === 'admin') return <Navigate to="/admin" />;
 
   return children;
 };
@@ -81,12 +94,14 @@ const AppContent = () => {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
-          <Route path="/dashboard" element={<StudentRoute><Dashboard /></StudentRoute>} />
+          <Route path="/dashboard" element={<GuestOrStudentRoute><Dashboard /></GuestOrStudentRoute>} />
           <Route path="/subjects/:id" element={<StudentRoute><SubjectDetail /></StudentRoute>} />
           <Route path="/analytics" element={<StudentRoute><Analytics /></StudentRoute>} />
           <Route path="/analytics/subjects/:subjectId" element={<StudentRoute><AnalyticsSubject /></StudentRoute>} />
+          <Route path="/goals" element={<StudentRoute><Goals /></StudentRoute>} />
           <Route path="/upload" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

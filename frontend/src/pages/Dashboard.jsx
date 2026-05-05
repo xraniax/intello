@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Plus, Search, Sparkles, LayoutDashboard, LogOut,
-    Zap, X, Shield, FileText, FolderOpen, BarChart2, Brain, ChevronRight, BookMarked, Trash2,
+    Zap, X, Shield, FileText, FolderOpen, BarChart2, Brain, ChevronRight, BookMarked, Trash2, Target
 } from 'lucide-react';
 import { useSubjectStore } from '@/store/useSubjectStore';
 import { useUIStore } from '@/store/useUIStore';
@@ -29,6 +29,9 @@ const Dashboard = () => {
     const updateSubject  = useSubjectStore(s => s.actions.updateSubject);
     const loadingState   = useUIStore(s => s.data.loadingStates['subjects']);
     const loading        = loadingState?.loading ?? false;
+    const setModal       = useUIStore(s => s.actions.setModal);
+
+    const isGuest = !user;
 
     const [search, setSearch]            = useState('');
     const [showAdd, setShowAdd]          = useState(false);
@@ -40,7 +43,7 @@ const Dashboard = () => {
     const addInputRef                    = useRef(null);
     const sidebarRef                     = useRef(null);
 
-    useEffect(() => { fetchSubjects(); }, [fetchSubjects]);
+    useEffect(() => { if (!isGuest) fetchSubjects(); }, [fetchSubjects, isGuest]);
     useEffect(() => { if (showAdd) setTimeout(() => addInputRef.current?.focus(), 80); }, [showAdd]);
 
     const filtered = subjects.filter(s =>
@@ -71,7 +74,15 @@ const Dashboard = () => {
 
     const initials = user?.name
         ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-        : '?';
+        : '✦';
+
+    const requireAuth = (action) => {
+        if (isGuest) {
+            setModal('authPrompt');
+            return true;
+        }
+        return false;
+    };
 
     const isActivePath = (p) => window.location.pathname === p;
     const totalMaterials = subjects.reduce((a, s) => a + (s.material_count ?? 0), 0);
@@ -138,12 +149,12 @@ const Dashboard = () => {
                             </motion.div>
                             <div className="min-w-0">
                                 <p className="text-[16px] font-extrabold truncate leading-tight group-hover/user:text-indigo-600 transition-colors" style={{ color: 'var(--c-text)' }}>
-                                    {user?.name || 'Student'}
+                                    {user?.name || 'Guest Explorer'}
                                 </p>
                                 <div className="flex items-center gap-1.5 mt-0.5">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+                                    <div className={`w-1.5 h-1.5 rounded-full ${isGuest ? 'bg-amber-400' : 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]'}`} />
                                     <p className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: 'var(--c-text-muted)' }}>
-                                        Online
+                                        {isGuest ? 'Guest' : 'Online'}
                                     </p>
                                 </div>
                             </div>
@@ -155,6 +166,7 @@ const Dashboard = () => {
                 <nav className="px-3 mt-2 flex flex-col gap-1 relative z-10">
                     {[
                         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, accent: ACCENTS[0] },
+                        { label: 'Goals', path: '/goals', icon: Target, accent: ACCENTS[1] },
                         { label: 'Analytics', path: '/analytics',  icon: BarChart2, accent: ACCENTS[2] },
                         { label: 'Trash', path: '/trash', icon: Trash2, accent: ACCENTS[5] },
                     ].map(item => {
@@ -286,18 +298,20 @@ const Dashboard = () => {
                     {/* Hero greeting banner */}
                     <motion.div
                         {...slideDown}
-                        className="relative rounded-[32px] overflow-hidden mb-12 px-12 py-14 flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white group"
+                        className="relative rounded-[32px] overflow-hidden mb-12 px-12 py-14 flex flex-col md:flex-row md:items-center justify-between gap-8 group"
                         style={{
-                            border: '1px solid var(--c-border-strong)',
-                            boxShadow: 'var(--shadow-sm)',
+                            background: 'linear-gradient(135deg, rgba(124,92,252,0.08) 0%, rgba(168,85,247,0.06) 50%, rgba(59,130,246,0.08) 100%)',
+                            border: '1.5px solid rgba(124,92,252,0.2)',
+                            boxShadow: '0 8px 32px rgba(124,92,252,0.1), inset 0 1px 0 rgba(255,255,255,0.4)',
+                            backdropFilter: 'blur(12px)',
                         }}
                     >
                         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none">
                             <div className="absolute inset-[-1px] rounded-[32px] border border-transparent"
-                                 style={{ background: 'var(--grad-primary)', mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', maskComposite: 'exclude', padding: '1px' }} />
+                                 style={{ background: 'linear-gradient(135deg, #7c5cfc, #a855f7, #3b82f6)', mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', maskComposite: 'exclude', padding: '1px' }} />
                         </div>
-                        <div className="ambient-orb ambient-orb-md ambient-orb-1" style={{ background: 'var(--c-primary)', top: '-40px', right: '0px', opacity: 0.15 }} />
-                        <div className="ambient-orb ambient-orb-sm ambient-orb-2" style={{ background: 'var(--c-coral)', bottom: '-20px', left: '10%', opacity: 0.12 }} />
+                        <div className="ambient-orb ambient-orb-md ambient-orb-1" style={{ background: 'linear-gradient(135deg, #7c5cfc, #a855f7)', top: '-40px', right: '0px', opacity: 0.2 }} />
+                        <div className="ambient-orb ambient-orb-sm ambient-orb-2" style={{ background: 'linear-gradient(135deg, #f59e0b, #ef4444)', bottom: '-20px', left: '10%', opacity: 0.15 }} />
 
                         <div className="relative z-10">
                             <AnimatedGreeting greeting={getGreeting()} isDark={false} />
@@ -308,39 +322,44 @@ const Dashboard = () => {
                                 className="text-sm font-medium mt-1"
                                 style={{ color: 'var(--c-text-secondary)' }}
                             >
-                                {subjects.length > 0
-                                    ? `You have ${subjects.length} subject${subjects.length !== 1 ? 's' : ''} in your workspace.`
-                                    : 'Create your first subject to begin building your workspace.'}
+                                {isGuest
+                                    ? 'Sign up to create subjects, upload materials, and unlock AI-powered learning.'
+                                    : subjects.length > 0
+                                        ? `You have ${subjects.length} subject${subjects.length !== 1 ? 's' : ''} in your workspace.`
+                                        : 'Create your first subject to begin building your workspace.'}
                             </motion.p>
                         </div>
 
                         <motion.div
                             className="relative z-10 w-16 h-16 rounded-[20px] hidden md:flex items-center justify-center flex-shrink-0"
-                            style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border-strong)', boxShadow: 'var(--shadow-sm)' }}
-                            animate={{ rotate: [0, 5, -5, 0], y: [0, -4, 0] }}
+                            style={{ background: 'linear-gradient(135deg, #7c5cfc, #a855f7)', border: '1px solid rgba(124,92,252,0.3)', boxShadow: '0 8px 24px rgba(124,92,252,0.3)' }}
+                            animate={{ rotate: [0, 8, -8, 0], y: [0, -6, 0], scale: [1, 1.05, 1] }}
                             transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
                         >
-                            <Brain className="w-8 h-8" style={{ color: 'var(--c-primary)' }} />
+                            <Brain className="w-8 h-8 text-white" />
                         </motion.div>
                     </motion.div>
 
                     {/* Toolbar */}
                     <motion.div {...slideDown} transition={{ delay: 0.05 }} className="flex items-center gap-3 mb-6">
-                        <div className="relative flex-1 max-w-xs">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--c-text-placeholder)' }} />
+                        <div className="relative flex-1 max-w-xs group">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none transition-colors group-focus-within:text-indigo-500" style={{ color: 'var(--c-text-placeholder)' }} />
                             <input
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                                 placeholder="Search subjects…"
-                                className="input-field pl-9 h-9 text-[13px]"
+                                className="input-field pl-9 h-9 text-[13px] transition-all group-focus-within:ring-2 group-focus-within:ring-indigo-400"
                             />
                         </div>
                         <div className="flex-1" />
                         <motion.button
+                            whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.94 }}
-                            onClick={() => setShowAdd(v => !v)}
-                            className="btn btn-md btn-solid flex items-center gap-2"
+                            onClick={() => { if (!requireAuth()) setShowAdd(v => !v); }}
+                            className="btn btn-md btn-solid flex items-center gap-2 relative overflow-hidden group"
+                            style={{ background: 'linear-gradient(135deg, #7c5cfc 0%, #a855f7 100%)', boxShadow: '0 4px 15px rgba(124,92,252,0.3)' }}
                         >
+                            <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
                             <motion.span animate={{ rotate: showAdd ? 45 : 0 }} transition={{ type: 'spring', damping: 14, stiffness: 220 }}>
                                 <Plus className="w-4 h-4" />
                             </motion.span>
@@ -359,18 +378,25 @@ const Dashboard = () => {
                                 className="overflow-hidden"
                             >
                                 <div
-                                    className="rounded-3xl p-5"
+                                    className="rounded-3xl p-5 relative overflow-hidden"
                                     style={{
-                                        background: 'var(--c-surface)',
-                                        border: '2px solid var(--c-primary-light)',
-                                        boxShadow: 'var(--shadow-brand)',
+                                        background: 'linear-gradient(135deg, rgba(124,92,252,0.08) 0%, rgba(168,85,247,0.06) 100%)',
+                                        border: '2px solid rgba(124,92,252,0.3)',
+                                        boxShadow: '0 8px 32px rgba(124,92,252,0.15)',
+                                        backdropFilter: 'blur(8px)',
                                     }}
                                 >
-                                    <div className="flex items-center justify-between mb-4">
+                                    <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-purple-400/20 to-transparent rounded-full blur-3xl pointer-events-none" />
+                                    <div className="flex items-center justify-between mb-4 relative z-10">
                                         <div className="flex items-center gap-2">
-                                            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--grad-primary)', boxShadow: 'var(--shadow-primary)' }}>
+                                            <motion.div
+                                                className="w-8 h-8 rounded-xl flex items-center justify-center"
+                                                style={{ background: 'linear-gradient(135deg, #7c5cfc, #a855f7)', boxShadow: '0 4px 12px rgba(124,92,252,0.4)' }}
+                                                animate={{ rotate: [0, 360] }}
+                                                transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+                                            >
                                                 <Sparkles className="w-4 h-4 text-white" />
-                                            </div>
+                                            </motion.div>
                                             <span className="text-[14px] font-bold" style={{ color: 'var(--c-text)' }}>Create Subject</span>
                                         </div>
                                         <button
@@ -383,27 +409,30 @@ const Dashboard = () => {
                                             <X className="w-4 h-4" />
                                         </button>
                                     </div>
-                                    <div className="flex gap-3">
+                                    <div className="flex gap-3 relative z-10">
                                         <input
                                             ref={addInputRef}
                                             value={newName}
                                             onChange={e => setNewName(e.target.value)}
                                             onKeyDown={e => e.key === 'Enter' && handleCreate()}
                                             placeholder="Subject name (e.g. Organic Chemistry)"
-                                            className="input-field flex-1"
+                                            className="input-field flex-1 focus:ring-indigo-400"
                                         />
                                         <input
                                             value={newDesc}
                                             onChange={e => setNewDesc(e.target.value)}
                                             placeholder="Short description (optional)"
-                                            className="input-field flex-1"
+                                            className="input-field flex-1 focus:ring-indigo-400"
                                         />
                                         <motion.button
+                                            whileHover={{ scale: 1.05 }}
                                             whileTap={{ scale: 0.93 }}
                                             onClick={handleCreate}
                                             disabled={!newName.trim() || creating}
-                                            className="btn btn-md btn-solid flex-shrink-0 flex items-center gap-2"
+                                            className="btn btn-md btn-solid flex-shrink-0 flex items-center gap-2 relative overflow-hidden group"
+                                            style={{ background: 'linear-gradient(135deg, #7c5cfc, #a855f7)', boxShadow: '0 4px 15px rgba(124,92,252,0.3)' }}
                                         >
+                                            <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
                                             {creating ? (
                                                 <motion.div
                                                     animate={{ rotate: 360 }}
@@ -464,7 +493,7 @@ const Dashboard = () => {
                                     onRename={s => setRenameTarget(s)}
                                 />
                             ))}
-                            {!search && <AddCard onClick={() => setShowAdd(true)} />}
+                            {!search && <AddCard onClick={() => { if (!requireAuth()) setShowAdd(true); }} />}
                         </motion.div>
                     )}
 
@@ -472,26 +501,33 @@ const Dashboard = () => {
                     {!loading && subjects.length === 0 && (
                         <motion.div {...bounceUp} className="flex flex-col items-center justify-center text-center py-20">
                             <motion.div
-                                className="w-24 h-24 rounded-3xl flex items-center justify-center mb-6 relative group"
-                                style={{ background: 'var(--c-canvas)', border: '1px solid var(--c-border-strong)' }}
-                                animate={{ y: [0, -6, 0] }}
+                                className="w-24 h-24 rounded-3xl flex items-center justify-center mb-6 relative group overflow-hidden"
+                                style={{ background: 'linear-gradient(135deg, rgba(124,92,252,0.1), rgba(168,85,247,0.1))', border: '1.5px solid rgba(124,92,252,0.2)', boxShadow: '0 8px 32px rgba(124,92,252,0.1)' }}
+                                animate={{ y: [0, -8, 0], scale: [1, 1.02, 1] }}
                                 transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
                             >
-                                <BookMarked className="w-10 h-10" style={{ color: 'var(--c-text-muted)' }} />
+                                <div className="absolute inset-0 bg-gradient-to-br from-purple-400/20 via-transparent to-indigo-400/20" />
+                                <motion.div animate={{ rotate: [0, 360] }} transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}>
+                                    <BookMarked className="w-10 h-10" style={{ color: 'var(--c-primary)' }} />
+                                </motion.div>
                             </motion.div>
-                            <h2 className="text-[26px] font-black mb-2 font-serif" style={{ color: 'var(--c-text)', letterSpacing: '-0.02em' }}>
+                            <h2 className="text-[26px] font-black mb-2 font-serif bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent" style={{ letterSpacing: '-0.02em' }}>
                                 Your learning space awaits
                             </h2>
                             <p className="text-sm mb-8 max-w-sm leading-relaxed" style={{ color: 'var(--c-text-secondary)' }}>
                                 Create your first subject to start uploading materials and generating AI-powered study tools.
                             </p>
                             <motion.button
-                                whileHover={{ scale: 1.02 }}
+                                whileHover={{ scale: 1.05, y: -2 }}
                                 whileTap={{ scale: 0.96 }}
                                 onClick={() => setShowAdd(true)}
-                                className="btn btn-lg btn-solid flex items-center gap-2"
+                                className="btn btn-lg btn-solid flex items-center gap-2 relative overflow-hidden group"
+                                style={{ background: 'linear-gradient(135deg, #7c5cfc, #a855f7)', boxShadow: '0 8px 24px rgba(124,92,252,0.3)' }}
                             >
-                                <Sparkles className="w-4 h-4" />
+                                <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <motion.span animate={{ rotate: [0, 360] }} transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}>
+                                    <Sparkles className="w-4 h-4" />
+                                </motion.span>
                                 Create your first subject
                             </motion.button>
                         </motion.div>

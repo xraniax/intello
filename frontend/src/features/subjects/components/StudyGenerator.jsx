@@ -203,10 +203,12 @@ const StudyGenerator = ({
                     disabled={isGenerating || selectedCount === 0}
                     className="w-full py-3 rounded-xl font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
-                        background: selectedCount === 0 || isGenerating ? undefined : 'linear-gradient(135deg, var(--c-primary), #4F46E5)',
-                        backgroundColor: selectedCount === 0 || isGenerating ? '#e5e7eb' : undefined,
-                        color: selectedCount === 0 || isGenerating ? '#9ca3af' : 'white',
-                        boxShadow: selectedCount > 0 && !isGenerating ? '0 4px 14px -2px rgba(99, 102, 241, 0.4)' : 'none',
+                        background: selectedCount === 0 || isGenerating ? '#e5e7eb' : 'rgba(255, 255, 255, 0.65)',
+                        backdropFilter: selectedCount === 0 || isGenerating ? undefined : 'blur(12px)',
+                        color: selectedCount === 0 || isGenerating ? '#9ca3af' : '#5B21B6',
+                        borderColor: selectedCount > 0 && !isGenerating ? 'rgba(124, 58, 237, 0.3)' : 'transparent',
+                        borderWidth: '1px',
+                        boxShadow: selectedCount > 0 && !isGenerating ? '0 4px 16px rgba(124, 58, 237, 0.1), inset 0 1px 0 rgba(255, 255, 255, 1)' : 'none',
                     }}
                 >
                     {isGenerating ? (

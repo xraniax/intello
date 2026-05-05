@@ -1081,15 +1081,6 @@ async def generate_structured_chat(
         supported = bool(parsed.get("supported", False))
         evidence = parsed.get("evidence", [])
 
-        # Strict validation: If not supported or no evidence provided for a "True" claim, refuse.
-        if not supported or not evidence:
-            return {
-                "answer": "I couldn't find that information in the selected material.",
-                "cited_ids": [],
-                "confidence": 0.0,
-                "fallback": False
-            }
-
         cited_ids: List[int] = []
         for eid in (evidence if isinstance(evidence, list) else []):
             try:
@@ -1097,12 +1088,27 @@ async def generate_structured_chat(
             except (TypeError, ValueError):
                 pass
 
+        # The retrieval similarity threshold is the primary grounding gate.
+        # The LLM's `supported` flag is a secondary signal; local models
+        # often return supported=false even when they produce a correct answer.
+        if not answer or answer.lower().startswith("i couldn't find") or answer.lower().startswith("i could not find"):
+            return {
+                "answer": "I couldn't find that information in the selected material.",
+                "cited_ids": [],
+                "confidence": 0.0,
+                "fallback": False
+            }
+
+        if not supported or not cited_ids:
+            logger.info("LLM said supported=%s evidence=%s but answer has content; trusting retrieval gate", supported, evidence)
+
         return {
             "answer": answer,
             "cited_ids": cited_ids,
-            "confidence": 1.0 if supported and cited_ids else 0.0,
+            "confidence": 1.0 if supported and cited_ids else 0.7,
             "fallback": False
         }
+
 
     except Exception as e:
         logger.warning("Structured chat failed: %s", e)

@@ -11,6 +11,8 @@ const googleOAuthEnabled = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.G
 const githubOAuthEnabled = Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 
 router.post('/register', validate(registerSchema), AuthController.register);
+router.post('/verify-email', protect, AuthController.verifyEmail);
+router.post('/resend-verification', protect, AuthController.resendOTP);
 router.post('/login', authLimiter, validate(loginSchema), AuthController.login);
 router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), AuthController.forgotPassword);
 router.get('/reset-password/:token', authLimiter, AuthController.validateResetToken);

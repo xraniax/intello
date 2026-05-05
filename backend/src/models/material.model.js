@@ -206,6 +206,17 @@ class Material {
     }
 
     /**
+     * Soft-delete all active materials in a subject.
+     */
+    static async deleteBySubject(subjectId, userId) {
+        const result = await query(
+            'UPDATE materials SET deleted_at = NOW() WHERE subject_id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING id',
+            [subjectId, userId]
+        );
+        return result.rows;
+    }
+
+    /**
      * Restore a soft-deleted material.
      */
     static async restore(id, userId) {
@@ -217,6 +228,17 @@ class Material {
     }
 
     /**
+     * Restore all deleted materials for a subject.
+     */
+    static async restoreBySubject(subjectId, userId) {
+        const result = await query(
+            'UPDATE materials SET deleted_at = NULL WHERE subject_id = $1 AND user_id = $2 AND deleted_at IS NOT NULL RETURNING id',
+            [subjectId, userId]
+        );
+        return result.rows;
+    }
+
+    /**
      * Permanently hard-delete a single material (must already be soft-deleted).
      */
     static async permanentDelete(id, userId) {
@@ -225,6 +247,17 @@ class Material {
             [id, userId]
         );
         return result.rowCount > 0;
+    }
+
+    /**
+     * Permanently hard-delete all soft-deleted materials in a subject.
+     */
+    static async permanentDeleteBySubject(subjectId, userId) {
+        const result = await query(
+            'DELETE FROM materials WHERE subject_id = $1 AND user_id = $2 AND deleted_at IS NOT NULL RETURNING id',
+            [subjectId, userId]
+        );
+        return result.rows;
     }
 
     /**

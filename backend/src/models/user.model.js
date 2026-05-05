@@ -17,9 +17,10 @@ class User {
             hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
         }
 
+        const status = authProvider === 'local' ? 'UNVERIFIED' : 'ACTIVE';
         const result = await query(
-            'INSERT INTO users (email, password_hash, name, role, auth_provider, provider_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, role, status, last_login_at, created_at, avatar_url, settings, achievements',
-            [email, hashedPassword, name, role, authProvider, providerId]
+            'INSERT INTO users (email, password_hash, name, role, auth_provider, provider_id, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, name, role, status, last_login_at, created_at, avatar_url, settings, achievements',
+            [email, hashedPassword, name, role, authProvider, providerId, status]
         );
         return result.rows[0];
     }
@@ -150,6 +151,42 @@ class User {
             'UPDATE users SET password_hash = $1, reset_token_hash = NULL, reset_token_expires = NULL WHERE id = $2',
             [hashedPassword, id]
         );
+    }
+
+    /**
+     * Create a 6-digit verification OTP.
+     */
+    static async createVerificationToken(id) {
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const tokenHash = crypto.createHash('sha256').update(otp).digest('hex');
+        
+        // Valid for 24 hours
+        const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        await query(
+            'UPDATE users SET verification_token_hash = $1, verification_token_expires = $2 WHERE id = $3',
+            [tokenHash, expires, id]
+        );
+        return otp;
+    }
+
+    /**
+     * Verify the OTP and activate the account.
+     */
+    static async verifyEmailToken(id, otp) {
+        const tokenHash = crypto.createHash('sha256').update(otp).digest('hex');
+        const user = await query(
+            'SELECT * FROM users WHERE id = $1 AND verification_token_hash = $2 AND verification_token_expires > NOW()',
+            [id, tokenHash]
+        );
+
+        if (!user.rows[0]) return false;
+
+        await query(
+            "UPDATE users SET status = 'ACTIVE', verification_token_hash = NULL, verification_token_expires = NULL WHERE id = $1",
+            [id]
+        );
+        return true;
     }
 
     /**
