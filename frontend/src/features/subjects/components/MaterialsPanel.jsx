@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Layout, FileText, CheckCircle2, RotateCcw, BrainCircuit, Minus, Plus, ClipboardList, ArrowLeft, Info, HelpCircle } from 'lucide-react';
+import { Sparkles, Layout, FileText, CheckCircle2, RotateCcw, BrainCircuit, Minus, Plus, ClipboardList, ArrowLeft, Info, HelpCircle, Flame, Volume2, VolumeX, Keyboard, Key, Zap, Brain, Target, Heart, GraduationCap, Lightbulb } from 'lucide-react';
 import Skeleton from '@/components/ui/Skeleton';
 import GenerationLoadingOverlay from '@/components/ui/GenerationLoadingOverlay';
 import SummaryView from './SummaryView';
@@ -31,6 +31,48 @@ const EXAM_QUESTION_TYPES = [
     { id: 'matching',        label: 'Matching'        },
 ];
 
+const SUMMARY_MODES = [
+    { id: 'key_concepts', title: 'Key Concepts', icon: Key, description: 'Essential points and definitions', color: 'bg-blue-50 text-blue-600 border-blue-100' },
+    { id: 'concise_summary', title: 'Concise Summary', icon: Zap, description: 'Balanced compression of content', color: 'bg-amber-50 text-amber-600 border-amber-100' },
+    { id: 'detailed_explanation', title: 'Detailed Explanation', icon: Brain, description: 'Step-by-step reasoning and context', color: 'bg-purple-50 text-purple-600 border-purple-100' },
+    { id: 'exam_ready_notes', title: 'Exam Ready Notes', icon: Target, description: 'Optimized for rapid revision', color: 'bg-rose-50 text-rose-600 border-rose-100' },
+    { id: 'teach_me_mode', title: 'Teach Me Mode', icon: Heart, description: 'Analogies and simple language', color: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+];
+
+const playSuccessSound = () => {
+    // Attempt to play the MP3 first
+    const audio = new Audio('/sounds/success.mp3');
+    audio.volume = 0.4;
+    
+    audio.play().catch(() => {
+        // Fallback: Synthesize a soft "success" tone using Web Audio API
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.type = 'sine';
+            const now = ctx.currentTime;
+            
+            // "Ding" sound: 880Hz (A5) -> 1320Hz (E6)
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.exponentialRampToValueAtTime(1320, now + 0.1);
+            
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+
+            osc.start(now);
+            osc.stop(now + 0.5);
+            console.log('[Audio] Fallback synthesized tone played');
+        } catch (e) {
+            console.warn('[Audio] Fallback also failed:', e);
+        }
+    });
+};
+
 const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -53,6 +95,7 @@ const MaterialsPanel = ({
     const [genOptions, setGenOptions] = useState({
         count: 10,
         difficulty: 'adaptive',
+        summary_mode: 'concise_summary',
         topics: '',
         examTypes: ['single_choice', 'multiple_select', 'short_answer'],
         timeLimit: 30,
@@ -73,8 +116,7 @@ const MaterialsPanel = ({
 
     const onGenerate = () => {
         if (isGenerating) return;
-        // Adaptive quizzes don't strictly require sources if they can pull from subject knowledge, 
-        // but we'll follow the redis-fix logic: if not adaptive quiz, require sources.
+        // Adaptive quizzes don't strictly require sources if they can pull from subject knowledge.
         if (selectedCount === 0 && !isAdaptiveQuiz) {
             setShowAlert(true);
             clearTimeout(alertTimer.current);
@@ -84,6 +126,22 @@ const MaterialsPanel = ({
         setShowAlert(false);
         handleGenerate(genType, null, genOptions);
     };
+
+    const lastSuccessfulGenRef = useRef(null);
+
+    useEffect(() => {
+        // We only trigger if:
+        // 1. Generation JUST finished (isGenerating: true -> false)
+        // 2. We have a valid result
+        // 3. This specific result hasn't been notified yet
+        if (!isGenerating && genResult && genResult !== lastSuccessfulGenRef.current && generationStartTime) {
+            const duration = Date.now() - generationStartTime;
+            if (duration > 1500) { 
+                playSuccessSound();
+                lastSuccessfulGenRef.current = genResult;
+            }
+        }
+    }, [isGenerating, genResult, generationStartTime]);
 
     useEffect(() => () => clearTimeout(alertTimer.current), []);
 
@@ -160,29 +218,67 @@ const MaterialsPanel = ({
                         </div>
                     </div>
 
-                    {/* Difficulty */}
+                    {/* Difficulty or Mode */}
                     <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">Difficulty</p>
-                        <div className="grid grid-cols-2 gap-1.5">
-                            {DIFFICULTIES.map(({ id, label, badge }) => (
-                                <button
-                                    key={id}
-                                    onClick={() => setGenOptions(prev => ({ ...prev, difficulty: id }))}
-                                    className={`relative py-2 rounded-xl text-[11px] font-bold border-2 transition-all ${
-                                        genOptions.difficulty === id
-                                            ? 'bg-purple-600 border-purple-600 text-white shadow-sm'
-                                            : 'bg-white border-gray-100 text-gray-500 hover:border-purple-200'
-                                    }`}
-                                >
-                                    {label}
-                                    {badge && (
-                                        <span className="absolute -top-1 -right-1 text-[7px] font-black bg-blue-500 text-white px-1.5 py-0.5 rounded-full shadow-sm">
-                                            {badge}
-                                        </span>
-                                    )}
-                                </button>
-                            ))}
-                        </div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">
+                            {genType === 'summary' ? 'Summary Mode' : 'Difficulty'}
+                        </p>
+                        
+                        {genType === 'summary' ? (
+                            <div className="grid grid-cols-1 gap-2.5">
+                                {SUMMARY_MODES.map(({ id, title, icon: Icon, description, color }) => {
+                                    const active = genOptions.summary_mode === id;
+                                    return (
+                                        <button
+                                            key={id}
+                                            onClick={() => setGenOptions(prev => ({ ...prev, summary_mode: id }))}
+                                            className={`group flex items-center gap-4 p-4 rounded-[1.5rem] border-2 text-left transition-all duration-300 ${
+                                                active
+                                                    ? 'border-indigo-400 bg-indigo-50 shadow-lg shadow-indigo-200/20'
+                                                    : 'border-gray-100 bg-white hover:border-indigo-200 hover:shadow-md'
+                                            }`}
+                                        >
+                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+                                                active 
+                                                    ? `bg-indigo-600 text-white scale-110 shadow-lg shadow-indigo-200` 
+                                                    : `bg-gray-50 text-gray-400 group-hover:${color.split(' ')[0]} group-hover:${color.split(' ')[1]}`
+                                            }`}>
+                                                <Icon className="w-5 h-5" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <p className={`text-[13px] font-black tracking-tight ${active ? 'text-indigo-900' : 'text-gray-700'}`}>{title}</p>
+                                                <p className={`text-[11px] font-medium mt-0.5 leading-tight ${active ? 'text-indigo-500' : 'text-gray-400'}`}>{description}</p>
+                                            </div>
+                                            {active && (
+                                                <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-1.5">
+                                {DIFFICULTIES.map(({ id, label, badge }) => (
+                                    <button
+                                        key={id}
+                                        onClick={() => setGenOptions(prev => ({ ...prev, difficulty: id }))}
+                                        className={`relative py-2 rounded-xl text-[11px] font-bold border-2 transition-all ${
+                                            genOptions.difficulty === id
+                                                ? 'bg-purple-600 border-purple-600 text-white shadow-sm'
+                                                : 'bg-white border-gray-100 text-gray-500 hover:border-purple-200'
+                                        }`}
+                                    >
+                                        {label}
+                                        {badge && (
+                                            <span className="absolute -top-1 -right-1 text-[7px] font-black bg-blue-500 text-white px-1.5 py-0.5 rounded-full shadow-sm">
+                                                {badge}
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        
                         {genOptions.difficulty === 'adaptive' && genType === 'quiz' && (
                             <p className="text-[10px] text-purple-400 mt-2 italic font-medium">Questions will adapt to your performance level in a live session.</p>
                         )}

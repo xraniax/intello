@@ -121,6 +121,7 @@ const SubjectDetail = () => {
         );
     }
 
+
     return (
         <div className="subject-page flex-1 min-h-0 flex flex-col animate-in fade-in duration-700 pb-20 md:pb-0 relative bg-[var(--c-canvas)] isolate">
             {/* Background Layer isolated from flex */}

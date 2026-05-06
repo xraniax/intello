@@ -29,13 +29,14 @@ venv/
 ########################
 .env
 *.env
+.env.staging
 backend/.env
 engine/.env
 engine/.env.docker
 engine/.env.local
 db.env
 
-# Allow ONLY examples
+# Allow ONLY examples and the staging overlay (no secrets in these)
 !.env.example
 !backend/.env.example
 !engine/.env.example

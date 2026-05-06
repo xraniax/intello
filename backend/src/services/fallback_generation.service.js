@@ -18,7 +18,7 @@ class FallbackGenerationService {
 
             // 2. Call Ollama directly
             const response = await axios.post(OLLAMA_URL, {
-                model: 'qwen2.5:7b-instruct',
+                model: MODEL,
                 prompt: prompt,
                 stream: false,
                 options: { temperature: 0.1 } // Very deterministic for fallback

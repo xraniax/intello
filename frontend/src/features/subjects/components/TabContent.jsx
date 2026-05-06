@@ -255,12 +255,18 @@ const TabContent = ({
     }
 
     if (tab.type === 'summary' || material.type === 'summary') {
+        const summaryMode = material.ai_generated_content?.metadata?.summary_mode || material.ai_generated_content?.summary_mode;
         return (
             <div className="flex-1 h-full flex flex-col overflow-y-auto">
                 {DeletedBanner}
                 <div className="flex-1">
                     <MaterialErrorBoundary type="summary">
-                        <SummaryView summaryData={parsedContent} title={tab.title} isExpanded={isExpanded} />
+                        <SummaryView 
+                            summaryData={parsedContent} 
+                            title={tab.title} 
+                            isExpanded={isExpanded} 
+                            summaryMode={summaryMode}
+                        />
                     </MaterialErrorBoundary>
                 </div>
             </div>

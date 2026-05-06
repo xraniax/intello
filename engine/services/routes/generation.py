@@ -12,7 +12,8 @@ from streaming.stream_core import stream_llm_response
 from tasks import task_generate_material
 from .._route_utils import _stage_error_response, get_db
 from ..generation import generate_study_material_stream
-from ..retrieval import retrieve_chunks_by_topic
+from ..summary_pipeline import generate_summary_stream, MAP_MAX_CHUNKS
+from ..retrieval import retrieve_chunks_by_topic, retrieve_sequential_chunks
 from ..schemas import GenerateRequest
 
 router = APIRouter()
@@ -45,6 +46,8 @@ async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
             "user_id": str(body.user_id) if body.user_id else None,
             "options": request_options,
             "chunks": body.chunks,
+            "source_filenames": body.source_filenames,
+            "material_ids": [str(mid) for mid in body.material_ids] if body.material_ids else None,
         })
         return {
             "status": "SUCCESS", "stage": "generation", "job_id": task.id,
@@ -76,8 +79,20 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
     try:
         if body.chunks and isinstance(body.chunks, list) and len(body.chunks) > 0:
             chunk_texts = body.chunks
+        elif material_type == "summary":
+            # Direct alignment with task_generate_material logic (S-1 fix)
+            chunks_with_scores = retrieve_sequential_chunks(
+                db, body.subject_id, limit=MAP_MAX_CHUNKS,
+                source_filenames=body.source_filenames or [],
+                material_ids=body.material_ids
+            )
+            chunk_texts = [c.content for c in chunks_with_scores if c.content]
         else:
-            chunks_with_scores = retrieve_chunks_by_topic(db, str(body.subject_id), topic, body.top_k)
+            chunks_with_scores = retrieve_chunks_by_topic(
+                db, str(body.subject_id), topic, body.top_k, 
+                source_filenames=body.source_filenames,
+                material_ids=body.material_ids
+            )
             chunk_texts = [c.content for c, _ in chunks_with_scores if c.content]
     except Exception as e:
         logger.exception("Generation stream retrieval failed")
@@ -88,14 +103,33 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
                                      "No document chunks found for the given subject or topic.", status_code=404)
 
     async def generation_async_generator():
-        async for piece in generate_study_material_stream(chunk_texts, material_type, topic, language, options=request_options):
-            if piece is None:
-                continue
-            text = str(piece)
-            if text.startswith("[ERROR]"):
-                raise RuntimeError(text[7:].strip() or "Generation stream failed")
-            yield text
-            await asyncio.sleep(0)
+        if material_type == "summary":
+            # Direct alignment with task_generate_material logic (S-2)
+            # Passes summary_mode from request_options to the dedicated pipeline
+            summary_mode = body.summary_mode or request_options.get("summary_mode")
+            # difficulty = body.generation_options.get("difficulty", "intermediate") if body.generation_options else "intermediate"
+            # Using body.generation_options.get("difficulty") can be redundant since we have difficulty-like options in request_options
+            difficulty = request_options.get("difficulty") or "intermediate"
+            
+            async for piece in generate_summary_stream(
+                chunk_texts, topic, language, difficulty, summary_mode
+            ):
+                if piece is None:
+                    continue
+                text = str(piece)
+                if text.startswith("[ERROR]"):
+                    raise RuntimeError(text[7:].strip() or "Summary stream failed")
+                yield text
+                await asyncio.sleep(0)
+        else:
+            async for piece in generate_study_material_stream(chunk_texts, material_type, topic, language, options=request_options):
+                if piece is None:
+                    continue
+                text = str(piece)
+                if text.startswith("[ERROR]"):
+                    raise RuntimeError(text[7:].strip() or "Generation stream failed")
+                yield text
+                await asyncio.sleep(0)
 
     return StreamingResponse(
         stream_llm_response(generation_async_generator(), source="generation"),

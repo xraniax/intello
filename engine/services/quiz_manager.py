@@ -66,7 +66,6 @@ def _fetch_chunk_texts(
     db: Session, subject_id: str, topic: Optional[str], top_k: int
 ) -> List[str]:
     from .retrieval import retrieve_chunks_by_topic
-
     chunks_with_scores = retrieve_chunks_by_topic(db, subject_id, topic, int(top_k))
     texts = [c.content for c, _ in chunks_with_scores if c.content]
     if not texts:

@@ -78,6 +78,7 @@ export const buttonTap = {
 
 // List stagger container
 export const staggerContainer = {
+    initial: {},
     animate: {
         transition: { staggerChildren: 0.06, delayChildren: 0.04 },
     },
@@ -85,6 +86,7 @@ export const staggerContainer = {
 
 // Fast stagger — for smaller items
 export const staggerContainerFast = {
+    initial: {},
     animate: {
         transition: { staggerChildren: 0.035, delayChildren: 0.02 },
     },
@@ -176,6 +178,7 @@ export const listItemSlide = {
 
 // Slow stagger — for large grids
 export const staggerContainerSlow = {
+    initial: {},
     animate: {
         transition: { staggerChildren: 0.10, delayChildren: 0.06 },
     },
@@ -183,6 +186,7 @@ export const staggerContainerSlow = {
 
 // Text reveal — container and word-level items
 export const textRevealContainer = {
+    initial: {},
     animate: {
         transition: { staggerChildren: 0.04, delayChildren: 0.02 },
     },

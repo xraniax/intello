@@ -5,6 +5,16 @@ import File from '../models/file.model.js';
 import { query } from '../utils/config/db.js';
 import QuotaService from '../services/quota.service.js';
 
+const isValidUrl = (value) => {
+    if (typeof value !== 'string' || value.trim().length === 0) return false;
+    try {
+        new URL(value);
+        return true;
+    } catch {
+        return false;
+    }
+};
+
 class ProfileController {
     /**
      * @route   GET /api/profile
@@ -102,9 +112,26 @@ class ProfileController {
         const { name, avatar_url, settings } = req.body;
 
         const updates = {};
-        if (name !== undefined) updates.name = name;
-        if (avatar_url !== undefined) updates.avatar_url = avatar_url;
-        if (settings !== undefined) updates.settings = settings;
+
+        if (name !== undefined) {
+            if (typeof name !== 'string' || name.trim().length === 0) {
+                res.status(400);
+                throw new Error('Name is required');
+            }
+            updates.name = name.trim();
+        }
+
+        if (avatar_url !== undefined) {
+            if (!isValidUrl(avatar_url)) {
+                res.status(400);
+                throw new Error('Invalid avatar URL');
+            }
+            updates.avatar_url = avatar_url;
+        }
+
+        if (settings !== undefined) {
+            updates.settings = settings;
+        }
 
         if (Object.keys(updates).length > 0) {
             await User.adminUpdate(userId, updates); // Reusing adminUpdate which builds dynamic queries
@@ -119,6 +146,45 @@ class ProfileController {
                 avatar_url: updatedUser.avatar_url,
                 settings: updatedUser.settings || {}
             }
+        });
+    });
+
+    static changePassword = asyncHandler(async (req, res) => {
+        const userId = req.user.id;
+        const { current_password, new_password, confirm_password } = req.body;
+
+        if (!current_password || !new_password || !confirm_password) {
+            res.status(400);
+            throw new Error('Current password, new password, and confirmation are required');
+        }
+
+        if (new_password.length < 8) {
+            res.status(400);
+            throw new Error('Password must be at least 8 characters long');
+        }
+
+        if (new_password !== confirm_password) {
+            res.status(400);
+            throw new Error('New passwords do not match');
+        }
+
+        const user = await User.findByIdWithPassword(userId);
+        if (!user) {
+            res.status(404);
+            throw new Error('User not found');
+        }
+
+        const passwordMatches = await User.comparePassword(current_password, user.password_hash);
+        if (!passwordMatches) {
+            res.status(400);
+            throw new Error('Current password is incorrect');
+        }
+
+        await User.updatePassword(userId, new_password);
+
+        res.json({
+            success: true,
+            message: 'Password changed successfully'
         });
     });
 

@@ -10,7 +10,8 @@ import SettingsService from './settings.service.js';
 import QuotaService from './quota.service.js';
 import FallbackGenerationService from './fallback_generation.service.js';
 import AlertService from './alert.service.js';
-import { query } from '../utils/config/db.js';
+import { query, withTransaction } from '../utils/config/db.js';
+import { enforceGenerationConstraintsForPersistence } from '../utils/generationConstraints.js';
 import {
     COMPLETED,
     FAILED,
@@ -178,39 +179,41 @@ class MaterialService {
                 if (engineStatus === SUCCESS && result) {
                     if (result.material_type) {
                         const persistedConstraints = generationConstraintByMaterialId.get(String(materialId)) || {};
+
                         const contentStr = result.content ? (typeof result.content === 'object' ? JSON.stringify(result.content) : result.content) : null;
                         const aiContentStr = result.ai_generated_content ? (typeof result.ai_generated_content === 'string' ? result.ai_generated_content : JSON.stringify(result.ai_generated_content)) : null;
                         
                         const now = new Date().toISOString();
 
-                        // Merged logic for saving result
-                        if (result.content && result.ai_generated_content) {
-                            await query(
-                                'UPDATE materials SET content = $2, ai_generated_content = $3, status = $4, completed_at = $5, processed_at = $6 WHERE id = $1 AND user_id = $7',
-                                [materialId, contentStr, aiContentStr, COMPLETED, now, now, userId]
-                            );
-                        } else if (result.content) {
-                            await query(
-                                'UPDATE materials SET content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
-                                [materialId, contentStr, COMPLETED, now, now, userId]
-                            );
-                        } else if (result.ai_generated_content) {
-                            await query(
-                                'UPDATE materials SET ai_generated_content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
-                                [materialId, aiContentStr, COMPLETED, now, now, userId]
-                            );
-                        }
-
-                        // Also use updateAIResult for standard metadata update
-                        await Material.updateAIResult(
-                            materialId,
-                            userId,
+                        const nowIso = new Date().toISOString();
+                        const finalAiContent = enforceGenerationConstraintsForPersistence(
                             result.ai_generated_content,
-                            {
-                                materialType: result.material_type,
-                                ...persistedConstraints,
-                            }
+                            { materialType: result.material_type, ...persistedConstraints }
                         );
+
+                        await withTransaction(async (client) => {
+                            if (result.content && result.ai_generated_content) {
+                                await client.query(
+                                    'UPDATE materials SET content = $2, ai_generated_content = $3, status = $4, completed_at = $5, processed_at = $6 WHERE id = $1 AND user_id = $7',
+                                    [materialId, contentStr, aiContentStr, COMPLETED, nowIso, nowIso, userId]
+                                );
+                            } else if (result.content) {
+                                await client.query(
+                                    'UPDATE materials SET content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
+                                    [materialId, contentStr, COMPLETED, nowIso, nowIso, userId]
+                                );
+                            } else if (result.ai_generated_content) {
+                                await client.query(
+                                    'UPDATE materials SET ai_generated_content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
+                                    [materialId, aiContentStr, COMPLETED, nowIso, nowIso, userId]
+                                );
+                            }
+
+                            await client.query(
+                                'UPDATE materials SET ai_generated_content = $2, processed_at = NOW(), completed_at = NOW(), status = $4 WHERE id = $1 AND user_id = $3 AND deleted_at IS NULL',
+                                [materialId, finalAiContent, userId, COMPLETED]
+                            );
+                        });
                         generationConstraintByMaterialId.delete(String(materialId));
                     } else {
                         const extractedText = result.extracted_text;
@@ -232,6 +235,7 @@ class MaterialService {
                     return await Material.findById(materialId, userId);
                 }
 
+                // ENGINE_STATUS (not DB status) — result.status comes from Celery task payload
                 const errorMsg = error || result?.error || (result?.status === 'FAILED' ? result?.error : null) || 'AI Generation Failed';
 
                 if (engineStatus === FAILURE || result?.status === 'FAILED') {
@@ -388,6 +392,7 @@ class MaterialService {
      * Streaming generation — proxies engine's SSE directly to the caller.
      */
     static async generateStream(userId, materialIds, taskType, subjectId, genOptions = {}) {
+        const startMs = Date.now();
         const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const safeIds = (Array.isArray(materialIds) ? materialIds : [])
             .filter(id => typeof id === 'string' && UUID_PATTERN.test(id));
@@ -410,8 +415,14 @@ class MaterialService {
             .map(d => d.content)
             .filter(c => c && typeof c === 'string' && c.trim() !== '');
 
-        if (chunks.length === 0) {
-            throw new Error('Context is not enough: No readable text found in the selected documents.');
+        // Extract basenames of stored files so the engine can filter its documents table
+        const sourceFilenames = sourceDocuments
+            .filter(d => d.status === COMPLETED && d.file_path)
+            .map(d => d.file_path.split('/').pop())
+            .filter(f => f && f.length > 0);
+
+        if (chunks.length === 0 && sourceFilenames.length === 0) {
+            throw new Error('Context is not enough: No readable text or files found in the selected documents.');
         }
 
         const finalSubjectId = subjectId || (sourceDocuments.length > 0 ? sourceDocuments[0].subject_id : null);
@@ -419,21 +430,32 @@ class MaterialService {
 
         const materialType = TASK_TYPE_TO_MATERIAL_TYPE[taskType] || 'summary';
 
+        // Build GPS so difficulty reaches the engine prompt builder
+        const gps = this._buildGPS(taskType, genOptions);
+
         const enginePayload = {
             subject_id: finalSubjectId,
             material_type: materialType,
             topic: (genOptions || {}).topic,
             language: (genOptions || {}).language || 'en',
+            summary_mode: (genOptions || {}).summary_mode,
             top_k: 20,
             user_id: userId,
-            options: genOptions,
-            chunks: sourceDocuments.map(d => d.content)
+            generation_options: gps,
+            material_ids: safeIds,
+            ...(sourceFilenames.length > 0 && { source_filenames: sourceFilenames }),
         };
 
-        return engineClient.post('/generate/stream', enginePayload, {
+        console.log('[TRACE][BACKEND_SVC_ENGINE_REQ] type=%s subject=%s files=%d elapsed_ms=%d payload_keys=%s',
+            materialType, finalSubjectId, sourceFilenames.length, Date.now() - startMs, Object.keys(enginePayload).join(','));
+
+        const resp = await engineClient.post('/generate/stream', enginePayload, {
             responseType: 'stream',
-            timeout: 300000,
+            timeout: 600000,  // 10 minutes — matches frontend GENERATION_TIMEOUT_MS
         });
+
+        console.log('[TRACE][BACKEND_SVC_ENGINE_RESP] status=%d elapsed_ms=%d', resp.status, Date.now() - startMs);
+        return resp;
     }
 
     /**
@@ -474,20 +496,29 @@ class MaterialService {
             PENDING_JOB
         );
 
+        const sourceFilenames = sourceDocuments
+            .filter(d => d.file_path)
+            .map(d => d.file_path.split('/').pop())
+            .filter(f => f && f.length > 0);
+
         const enginePayload = {
             subject_id: finalSubjectId,
             material_type: materialType,
             chunks: chunks,
             topic: genOptions.topic,
             language: genOptions.language || 'en',
+            summary_mode: (genOptions || {}).summary_mode,
             generation_options: gps,
             user_id: userId,
-            options: genOptions
+            material_ids: safeIds,
+            ...(sourceFilenames.length > 0 && { source_filenames: sourceFilenames }),
         };
 
         try {
             console.log(`[MaterialService] Routing to Primary Path (Python Engine) for Material ${materialRecord.id}`);
-            const response = await engineClient.post('/generate', enginePayload, { timeout: 300000 });
+            const response = await engineClient.post('/generate', enginePayload, {
+                timeout: 300000
+            });
             const result = response.data;
             
             await Material.updateStatus(materialRecord.id, userId, PROCESSING, result.job_id);
@@ -497,9 +528,22 @@ class MaterialService {
         } catch (error) {
             console.error(`[MaterialService] Primary Path Failed: ${error.message}. Triggering Fallback Path.`);
             try {
-                const context = chunks.join('\n\n');
-                await FallbackGenerationService.generateSync(userId, materialRecord.id, materialType, gps, context);
-                return { status: 'success', material_id: materialRecord.id, is_fallback: true };
+                const context = chunks.length > 0
+                    ? chunks.join('\n\n').substring(0, 8000)
+                    : sourceDocuments.map(d => d.content || '').filter(Boolean).join('\n\n').substring(0, 8000);
+                const fallbackResult = await FallbackGenerationService.generateSync(
+                    userId, 
+                    materialRecord.id, 
+                    materialType, 
+                    gps, 
+                    context
+                );
+                
+                return {
+                    status: 'success',
+                    material_id: materialRecord.id,
+                    is_fallback: true
+                };
             } catch (fallbackError) {
                 console.error(`[MaterialService] Critical Failure: Both paths failed.`, fallbackError);
                 await Material.recordFailure(materialRecord.id, userId, `All paths failed: ${fallbackError.message}`);
@@ -511,11 +555,14 @@ class MaterialService {
 
     static _buildGPS(taskType, options) {
         const difficultyMap = { 'Intro': 'introductory', 'Inter': 'intermediate', 'Adv': 'advanced' };
+        
+        // Base GPS (Difficulty-based for Quiz/Exam)
         const gps = {
             total_count: Math.max(1, parseInt(options.count) || 5),
             difficulty: difficultyMap[options.difficulty] || 'intermediate',
             distribution: [],
-            config_version: 1
+            config_version: 1,
+            summary_mode: options.summary_mode // Also include in generation_options for redundancy
         };
 
         if (taskType === 'mock_exam') {
@@ -551,7 +598,12 @@ class MaterialService {
         try {
             const existingFile = await File.findByMaterialId(materialId);
             if (existingFile) {
-                if (fs.existsSync(existingFile.path)) fs.unlinkSync(existingFile.path);
+                try {
+                    await fs.promises.access(existingFile.path);
+                    fs.unlinkSync(existingFile.path);
+                } catch {
+                    // file already gone — nothing to delete
+                }
                 // Delete from Google Drive if drive_file_id exists
                 if (existingFile.drive_file_id) {
                     try {

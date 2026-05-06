@@ -1,9 +1,48 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { BookOpen, Lightbulb, ChevronRight, FileDown } from 'lucide-react';
+import { BookOpen, Lightbulb, ChevronRight, FileDown, Key, Zap, Brain, Target, Heart, GraduationCap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
+import React, { useMemo, useRef, useState, memo } from 'react';
+
 import { ExportService } from '@/services/ExportService';
 import pdfStyles from '@/assets/styles/pdf-v1.css?inline';
+
+const MODE_CONFIG = {
+    key_concepts: {
+        label: 'Key Concepts',
+        icon: Key,
+        color: 'from-blue-500 to-indigo-600',
+        lightColor: 'bg-blue-50 text-blue-700',
+        borderColor: 'border-blue-200'
+    },
+    concise_summary: {
+        label: 'Concise Summary',
+        icon: Zap,
+        color: 'from-amber-400 to-orange-600',
+        lightColor: 'bg-amber-50 text-amber-700',
+        borderColor: 'border-amber-200'
+    },
+    detailed_explanation: {
+        label: 'Detailed Explanation',
+        icon: Brain,
+        color: 'from-purple-500 to-fuchsia-600',
+        lightColor: 'bg-purple-50 text-purple-700',
+        borderColor: 'border-purple-200'
+    },
+    exam_ready_notes: {
+        label: 'Exam Ready Notes',
+        icon: Target,
+        color: 'from-rose-500 to-red-600',
+        lightColor: 'bg-rose-50 text-rose-700',
+        borderColor: 'border-rose-200'
+    },
+    teach_me_mode: {
+        label: 'Teach Me Mode',
+        icon: Heart,
+        color: 'from-emerald-500 to-teal-600',
+        lightColor: 'bg-emerald-50 text-emerald-700',
+        borderColor: 'border-emerald-200'
+    }
+};
 
 // ─── Inline Markdown Parser ───────────────────────────────────────────────────
 function parseInline(text, key = 0) {
@@ -115,8 +154,10 @@ function parseBlocks(raw) {
     return blocks;
 }
 
-// ─── UI ───────────────────────────────────────────────────────────────────────
-function BlockRenderer({ block, idx, isExpanded }) {
+// ─── Block Renderer (memoized) ────────────────────────────────────────────────
+// Memoized so that previously-rendered blocks are not re-created when new
+// blocks arrive at the end of the list during streaming.
+const BlockRenderer = React.memo(function BlockRenderer({ block, idx, isExpanded }) {
     switch (block.type) {
         case 'h1':
             return (
@@ -165,9 +206,21 @@ function BlockRenderer({ block, idx, isExpanded }) {
                 </p>
             );
     }
+});
+
+// ─── Stable block identity ────────────────────────────────────────────────────
+// During streaming, blocks are rebuilt on each flush.  We give each block a
+// content-based key so React can reuse DOM nodes for blocks whose content
+// hasn't changed — only the final (in-progress) block re-renders.
+function blockKey(block, idx) {
+    const sig = block.type + ':' + (block.text || (block.items && block.items.join('|')) || '');
+    return sig.length > 120 ? sig.slice(0, 120) : sig;
 }
 
-const SummaryView = ({ summaryData, title, isExpanded = false }) => {
+const SummaryView = ({ summaryData, title, isExpanded = false, summaryMode = 'concise_summary' }) => {
+    const activeMode = MODE_CONFIG[summaryMode] || MODE_CONFIG.concise_summary;
+    const ModeIcon = activeMode.icon;
+
     const rawText = useMemo(() => {
         if (!summaryData) return '';
         if (typeof summaryData === 'string') return summaryData;
@@ -194,6 +247,32 @@ const SummaryView = ({ summaryData, title, isExpanded = false }) => {
         () => blocks.filter(b => b.type !== 'h1'),
         [blocks]
     );
+
+    // Group content blocks into sections: each h2/h3 heading starts a new
+    // section, and all blocks until the next heading belong to it.
+    // Blocks before the first heading form an "intro" section (no heading).
+    // This avoids rendering every paragraph as a separate card.
+    const sections = useMemo(() => {
+        const result = [];
+        let current = { heading: null, blocks: [] };
+
+        for (const block of contentBlocks) {
+            if (block.type === 'h2' || block.type === 'h3') {
+                // Push the previous section if it has any content.
+                if (current.heading || current.blocks.length > 0) {
+                    result.push(current);
+                }
+                current = { heading: block, blocks: [] };
+            } else {
+                current.blocks.push(block);
+            }
+        }
+        // Push the final section.
+        if (current.heading || current.blocks.length > 0) {
+            result.push(current);
+        }
+        return result;
+    }, [contentBlocks]);
 
     const summaryRef = useRef(null);
     const [isExporting, setIsExporting] = useState(false);
@@ -237,23 +316,29 @@ const SummaryView = ({ summaryData, title, isExpanded = false }) => {
     return (
         <div className="flex-1 h-full overflow-y-auto bg-transparent custom-scrollbar">
             <div ref={summaryRef} className="max-w-4xl mx-auto px-8 py-12 printable-summary-container">
+                {/* ── Hero Header ── */}
                 <div className="relative group mb-12">
                     <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-[3rem] blur-2xl opacity-20 group-hover:opacity-30 transition-opacity" />
                     <div className="relative rounded-[3rem] border-8 border-white bg-white shadow-2xl p-10 overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+                        <div className={`absolute top-0 left-0 w-full h-3 bg-gradient-to-r ${activeMode.color}`} />
                         <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
                             <div className="flex-1">
                                 <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center border-2 border-white shadow-sm">
-                                        <BookOpen className="w-5 h-5 text-indigo-600" />
+                                    <div className={`w-10 h-10 rounded-2xl ${activeMode.lightColor} flex items-center justify-center border-2 border-white shadow-sm`}>
+                                        <ModeIcon className="w-5 h-5" />
                                     </div>
-                                    <span className="text-indigo-400 text-[10px] font-black uppercase tracking-[0.3em]">Smart Summary</span>
+                                    <div className="flex flex-col">
+                                        <span className={`${activeMode.lightColor.split(' ')[1]} text-[10px] font-black uppercase tracking-[0.3em]`}>
+                                            {activeMode.label}
+                                        </span>
+                                        <span className="text-gray-400 text-[9px] font-bold uppercase tracking-widest -mt-0.5">Study Intelligence</span>
+                                    </div>
                                 </div>
                                 <h1 className="text-4xl md:text-5xl font-black text-indigo-950 leading-[1.1] tracking-tight mb-2">
                                     {displayTitle}
                                 </h1>
                                 <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">
-                                    Generated by Study Intelligence • {blocks.length} Key Blocks
+                                    Generated by Study Intelligence • {sections.length} Section{sections.length !== 1 ? 's' : ''}
                                 </p>
                             </div>
                             <button
@@ -268,18 +353,27 @@ const SummaryView = ({ summaryData, title, isExpanded = false }) => {
                     </div>
                 </div>
 
+                {/* ── Section Cards ── */}
                 <div className="space-y-8">
-                    {contentBlocks.map((block, idx) => (
-                        <motion.div
-                            key={idx}
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ delay: Math.min(idx * 0.05, 0.5) }}
+                    {sections.map((section, sIdx) => (
+                        <div
+                            key={section.heading ? blockKey(section.heading, sIdx) : `intro-${sIdx}`}
                             className="bg-white rounded-[2.5rem] p-8 md:p-10 border-4 border-white shadow-lg hover:shadow-xl transition-shadow"
                         >
-                            <BlockRenderer block={block} idx={idx} isExpanded={isExpanded} />
-                        </motion.div>
+                            {/* Section heading */}
+                            {section.heading && (
+                                <BlockRenderer block={section.heading} idx={sIdx} isExpanded={isExpanded} />
+                            )}
+                            {/* All blocks within this section — flowing content, no card per block */}
+                            {section.blocks.map((block, bIdx) => (
+                                <BlockRenderer
+                                    key={blockKey(block, bIdx)}
+                                    block={block}
+                                    idx={bIdx}
+                                    isExpanded={isExpanded}
+                                />
+                            ))}
+                        </div>
                     ))}
                 </div>
 

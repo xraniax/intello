@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo \"exit:$?\")",
+      "Bash(node --input-type=module)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('c:/Users/ASUS/Documents/GitHub/cognify/engine/services/generation.py'\\).read\\(\\)\\); print\\('generation.py: syntax OK'\\)\")",
+      "Bash(node -e *)",
+      "Bash(xargs grep *)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(\"c:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\.venv\\\\Scripts\\\\python.exe\" -m pip list)",
+      "Bash(OLLAMA_GENERATION_MODEL=test \"c:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\.venv\\\\Scripts\\\\python.exe\" -m unittest discover -s tests -p \"test_summary_prompts.py\" -v)",
+      "Bash(dir \"c:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\engine\")",
+      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\frontend\\\\src\" -File | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\backend\\\\src\" -File | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\engine\" -File -Exclude \"__pycache__\" | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\" -File -Include \"package.json\" | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\" -File | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\data\" -File | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\ASUS\\\\Documents\\\\GitHub\\\\cognify\\\\db\" -File | ForEach-Object { $_.FullName })",
+      "Bash(python3 -c ' *)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}

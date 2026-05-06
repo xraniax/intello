@@ -4,6 +4,7 @@ import logging
 import time
 import re
 import asyncio
+import concurrent.futures
 from typing import List, Optional, Dict, Any, Union, Iterator, AsyncIterator
 
 import httpx
@@ -11,6 +12,7 @@ import requests
 from requests.exceptions import RequestException, Timeout
 
 from .ollama_config import get_ollama_base_url, get_ollama_generation_model
+from .summary_pipeline import _build_summary_system_prompt
 
 logger = logging.getLogger("engine-generation")
 
@@ -26,6 +28,9 @@ OLLAMA_CHAT_TIMEOUT = int(os.getenv("OLLAMA_CHAT_TIMEOUT", "120"))
 OLLAMA_MAX_CONTEXT_CHARS = int(os.getenv("OLLAMA_MAX_CONTEXT_CHARS", "15000"))
 OLLAMA_REQUEST_RETRIES = int(os.getenv("OLLAMA_REQUEST_RETRIES", "4"))
 OLLAMA_REQUEST_RETRY_DELAY_SECONDS = float(os.getenv("OLLAMA_REQUEST_RETRY_DELAY_SECONDS", "2"))
+MAP_MAX_CHUNKS = int(os.getenv("MAP_MAX_CHUNKS", "80"))
+MAP_CONCURRENCY = int(os.getenv("MAP_CONCURRENCY", "2"))
+STREAM_MAP_MAX_CHUNKS = int(os.getenv("STREAM_MAP_MAX_CHUNKS", "20"))
 
 
 def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_type: str) -> str:
@@ -43,6 +48,7 @@ def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_t
     """
     payload = dict(payload)
     payload["stream"] = True
+    payload.setdefault("keep_alive", -1)
 
     parts: List[str] = []
     done_seen = False
@@ -318,6 +324,7 @@ def build_student_quiz_view(quiz_payload: Dict[str, Any]) -> Dict[str, Any]:
         safe_questions.append(safe_item)
     return {"type": "quiz", "questions": safe_questions}
 
+
 def build_prompt(
     material_type: str,
     context: str,
@@ -326,17 +333,39 @@ def build_prompt(
     count: Optional[int] = None,
     difficulty_override: Optional[str] = None,
     student_profile: Optional[Dict[str, Any]] = None,
+    difficulty: str = "intermediate",
 ) -> str:
     """Build a structured prompt for the LLM based on material type."""
     
     json_format_instructions = "Return ONLY valid JSON. Do not include any markdown formatting, pre-amble, or post-amble."
 
     if material_type == "summary":
-        base_instructions = f"Provide a comprehensive summary of the given context in {language}. Format the output in clear paragraphs."
+        lang_phrase = f" Write in {language}." if language and language.lower() != "en" else ""
+
+        # Difficulty-aware depth instructions
+        if difficulty in ("introductory", "beginner", "easy"):
+            depth_instruction = (
+                "Focus ONLY on the 2-3 most important ideas. "
+                "Skip minor details, examples, and edge cases entirely. "
+                "Keep it short and simple — a quick overview someone can read in under a minute."
+            )
+        elif difficulty in ("advanced", "hard"):
+            depth_instruction = (
+                "Cover nearly all the major and supporting ideas from the material. "
+                "Include important details, distinctions, and nuances, but still synthesize — "
+                "do not just restate every sentence. Explain connections between concepts."
+            )
+        else:  # intermediate / default
+            depth_instruction = (
+                "Cover all major concepts but compress the explanations. "
+                "Include enough detail to understand each idea, but skip minor examples "
+                "and tangential points. Aim for a balanced, medium-length summary."
+            )
+
         prompt = (
-            f"System instructions:\n{base_instructions}\n"
-            f"Context:\n---\n{context}\n---\n\n"
-            f"Generate the summary now:"
+            f"{depth_instruction}{lang_phrase}\n\n"
+            f"Text to summarize:\n---\n{context}\n---\n\n"
+            f"Summary:"
         )
         return prompt
 
@@ -457,6 +486,182 @@ def build_prompt(
     return prompt
 
 
+def _map_summarize_chunk(chunk_text: str, language: str, timeout: int, retries: int) -> str:
+    """Summarize a single chunk for the MAP stage."""
+    prompt = (
+        f"System instructions:\n"
+        f"You are a highly efficient assistant. Compress the following text into a concise summary in {language}. "
+        f"Extract ALL key facts, concepts, and details without omitting important information. "
+        f"Do not add introductions or conclusions. Return ONLY the summary.\n\n"
+        f"Text to summarize:\n---\n{chunk_text}\n---\n\n"
+        f"Summary:"
+    )
+    
+    payload: Dict[str, Any] = {
+        "model": OLLAMA_GENERATION_MODEL,
+        "prompt": prompt,
+    }
+    
+    prompt_chars = len(prompt)
+    logger.info(
+        "[TRACE][MAP_CHUNK] model=%s prompt_chars=%d chunk_input_chars=%d timeout=%d",
+        OLLAMA_GENERATION_MODEL, prompt_chars, len(chunk_text), timeout,
+    )
+    
+    for attempt in range(retries):
+        attempt_start = time.perf_counter()
+        try:
+            generated_text = _stream_ollama_generate(payload, timeout=timeout, material_type="map_summary")
+            attempt_ms = int((time.perf_counter() - attempt_start) * 1000)
+            if generated_text and generated_text.strip():
+                logger.info(
+                    "[TRACE][MAP_CHUNK] attempt=%d/%d duration_ms=%d output_chars=%d",
+                    attempt + 1, retries, attempt_ms, len(generated_text),
+                )
+                return generated_text.strip()
+        except Exception as e:
+            attempt_ms = int((time.perf_counter() - attempt_start) * 1000)
+            logger.warning(
+                "[TRACE][MAP_CHUNK] attempt=%d/%d FAILED duration_ms=%d error=%s",
+                attempt + 1, retries, attempt_ms, e,
+            )
+            if attempt == retries - 1:
+                return ""
+            time.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
+    return ""
+
+
+def generate_map_summaries(
+    chunks: List[str],
+    language: str = "en",
+    timeout: int = OLLAMA_GENERATION_TIMEOUT,
+    retries: int = OLLAMA_REQUEST_RETRIES,
+    max_chunks: Optional[int] = None,
+) -> List[str]:
+    """MAP stage: summarize chunks with bounded concurrency via ThreadPoolExecutor."""
+    map_stage_start = time.perf_counter()
+    cap = max_chunks or MAP_MAX_CHUNKS
+    eligible = [c for c in chunks if len(c.strip()) >= 100]
+    total_input_chars = sum(len(c) for c in eligible)
+    concurrency = min(len(eligible), MAP_CONCURRENCY) if eligible else 1
+    logger.info(
+        "[TRACE][MAP_START] total_chunks=%d eligible_chunks=%d total_input_chars=%d cap=%d concurrency=%d model=%s",
+        len(chunks), len(eligible), total_input_chars, cap, concurrency, OLLAMA_GENERATION_MODEL,
+    )
+    if len(eligible) > cap:
+        logger.warning(
+            "[TRACE][MAP] capping %d eligible chunks to %d",
+            len(eligible), cap,
+        )
+        eligible = eligible[:cap]
+
+    if not eligible:
+        return []
+
+    # Concurrent execution — each chunk runs in its own thread
+    results = [None] * len(eligible)
+    chunk_timings = [0] * len(eligible)
+
+    def _run_chunk(idx_chunk):
+        idx, chunk = idx_chunk
+        chunk_start = time.perf_counter()
+        logger.info("[TRACE][MAP] chunk %d/%d chars=%d", idx + 1, len(eligible), len(chunk))
+        summary = _map_summarize_chunk(chunk, language, timeout, retries)
+        chunk_ms = int((time.perf_counter() - chunk_start) * 1000)
+        if summary:
+            logger.info("[TRACE][MAP] chunk %d/%d DONE duration_ms=%d output_chars=%d", idx + 1, len(eligible), chunk_ms, len(summary))
+        else:
+            logger.warning("[TRACE][MAP] chunk %d/%d EMPTY duration_ms=%d", idx + 1, len(eligible), chunk_ms)
+        return idx, summary or "", chunk_ms
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = pool.map(_run_chunk, enumerate(eligible))
+        for idx, summary, chunk_ms in futures:
+            results[idx] = summary
+            chunk_timings[idx] = chunk_ms
+
+    mapped_summaries = [s for s in results if s]
+    map_total_ms = int((time.perf_counter() - map_stage_start) * 1000)
+    valid_timings = [t for t in chunk_timings if t > 0]
+    avg_ms = int(sum(valid_timings) / len(valid_timings)) if valid_timings else 0
+    logger.info(
+        "[TRACE][MAP_END] processed=%d/%d total_ms=%d avg_chunk_ms=%d min_ms=%d max_ms=%d output_summaries=%d concurrency=%d",
+        len(eligible), len(chunks), map_total_ms, avg_ms,
+        min(valid_timings) if valid_timings else 0,
+        max(valid_timings) if valid_timings else 0,
+        len(mapped_summaries), concurrency,
+    )
+    return mapped_summaries
+
+
+async def _async_map_summaries(
+    chunks: List[str],
+    language: str = "en",
+    timeout: int = OLLAMA_GENERATION_TIMEOUT,
+    retries: int = OLLAMA_REQUEST_RETRIES,
+    max_chunks: Optional[int] = None,
+) -> List[str]:
+    """Async MAP stage with bounded concurrency for the streaming path.
+
+    Uses asyncio.Semaphore + run_in_executor so the event loop stays
+    responsive (emitting keepalives) while MAP work proceeds in threads.
+
+    WARNING — LEGACY PATH:
+    This function is used only by generate_study_material_stream() for
+    non-summary material types (quiz, flashcards, exam).  It calls the
+    local _map_summarize_chunk() which does NOT accept a ``difficulty``
+    parameter.
+
+    Summary streaming MUST use summary_pipeline._async_map_summaries()
+    instead, which supports difficulty-aware MAP prompts.
+    api.py /generate/stream already routes summary correctly.
+    Do NOT call this function for material_type="summary".
+    """
+    cap = max_chunks or STREAM_MAP_MAX_CHUNKS
+    eligible = [c for c in chunks if len(c.strip()) >= 100]
+    if len(eligible) > cap:
+        eligible = eligible[:cap]
+
+    if not eligible:
+        return []
+
+    map_start = time.perf_counter()
+    concurrency = min(len(eligible), MAP_CONCURRENCY)
+    sem = asyncio.Semaphore(concurrency)
+    loop = asyncio.get_running_loop()
+
+    logger.info(
+        "[TRACE][ASYNC_MAP_START] eligible=%d cap=%d concurrency=%d",
+        len(eligible), cap, concurrency,
+    )
+
+    async def _map_one(idx: int, chunk: str):
+        async with sem:
+            result = await loop.run_in_executor(
+                None, _map_summarize_chunk, chunk, language, timeout, retries,
+            )
+            return idx, result or ""
+
+    tasks = [_map_one(i, c) for i, c in enumerate(eligible)]
+    gathered = await asyncio.gather(*tasks, return_exceptions=True)
+
+    ordered = [None] * len(eligible)
+    for item in gathered:
+        if isinstance(item, Exception):
+            logger.warning("[TRACE][ASYNC_MAP] chunk failed: %s", item)
+            continue
+        idx, summary = item
+        ordered[idx] = summary
+
+    mapped = [s for s in ordered if s]
+    map_ms = int((time.perf_counter() - map_start) * 1000)
+    logger.info(
+        "[TRACE][ASYNC_MAP_END] total_ms=%d input=%d output=%d concurrency=%d",
+        map_ms, len(eligible), len(mapped), concurrency,
+    )
+    return mapped
+
+
 def _build_generation_context(chunks: List[str]) -> str:
     """Combine chunk context with a safe max-length cap."""
     max_chars = OLLAMA_MAX_CONTEXT_CHARS
@@ -478,6 +683,12 @@ async def generate_study_material_stream(
     This path is intentionally independent from Celery so callers can forward
     progressive output to clients over SSE.
     """
+    overall_start = time.perf_counter()
+    logger.info(
+        "[TRACE][STREAM_GEN_START] material_type=%s chunks=%d difficulty=%s topic=%s",
+        material_type, len(chunks), difficulty, topic,
+    )
+
     if not chunks:
         yield "[ERROR] Not enough context to generate material."
         return
@@ -504,12 +715,22 @@ async def generate_study_material_stream(
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
         "stream": True,
+        "format": "json",
     }
-    if material_type != "summary":
-        payload["format"] = "json"
+
+    reduce_prompt_chars = len(prompt)
+    logger.info(
+        "[TRACE][REDUCE_START] model=%s prompt_chars=%d context_chars=%d url=%s timeout=%d",
+        OLLAMA_GENERATION_MODEL, reduce_prompt_chars, len(context),
+        OLLAMA_GENERATE_URL, OLLAMA_GENERATION_TIMEOUT,
+    )
 
     retries = OLLAMA_REQUEST_RETRIES
     for attempt in range(1, retries + 1):
+        reduce_attempt_start = time.perf_counter()
+        first_token_logged = False
+        token_count = 0
+        total_chars = 0
         try:
             async with httpx.AsyncClient(timeout=OLLAMA_GENERATION_TIMEOUT) as client:
                 async with client.stream(
@@ -518,6 +739,11 @@ async def generate_study_material_stream(
                     json=payload,
                 ) as resp:
                     resp.raise_for_status()
+                    logger.info(
+                        "[TRACE][REDUCE_HTTP_OK] attempt=%d/%d status=%d time_to_response_ms=%d",
+                        attempt, retries, resp.status_code,
+                        int((time.perf_counter() - reduce_attempt_start) * 1000),
+                    )
 
                     async for line in resp.aiter_lines():
                         if not line:
@@ -533,31 +759,48 @@ async def generate_study_material_stream(
 
                         piece = chunk.get("response")
                         if isinstance(piece, str) and piece:
+                            token_count += 1
+                            total_chars += len(piece)
+                            if not first_token_logged:
+                                first_token_ms = int((time.perf_counter() - reduce_attempt_start) * 1000)
+                                logger.info(
+                                    "[TRACE][REDUCE_FIRST_TOKEN] attempt=%d/%d time_to_first_token_ms=%d",
+                                    attempt, retries, first_token_ms,
+                                )
+                                first_token_logged = True
+                            
                             yield piece
 
                         if chunk.get("done") is True:
+                            reduce_ms = int((time.perf_counter() - reduce_attempt_start) * 1000)
+                            overall_ms = int((time.perf_counter() - overall_start) * 1000)
+                            throughput = (token_count / (reduce_ms / 1000)) if reduce_ms > 0 else 0
+                            logger.info(
+                                "[TRACE][REDUCE_DONE] attempt=%d/%d reduce_ms=%d tokens=%d chars=%d throughput_tok_per_s=%.1f overall_ms=%d",
+                                attempt, retries, reduce_ms, token_count, total_chars, throughput, overall_ms,
+                            )
                             return
             return
-        except (httpx.TimeoutException, httpx.RequestError) as e:
+        except (httpx.TimeoutException, httpx.RequestError, httpx.HTTPStatusError) as e:
+            attempt_ms = int((time.perf_counter() - reduce_attempt_start) * 1000)
             if attempt == retries:
                 logger.error(
-                    "Streaming generation failed after %d attempts for material_type=%s: %s",
-                    retries,
-                    material_type,
-                    e,
+                    "[TRACE][REDUCE_FAIL] attempt=%d/%d duration_ms=%d error=%s tokens_before_fail=%d",
+                    attempt, retries, attempt_ms, e, token_count,
                 )
                 yield f"[ERROR] Ollama unreachable at {OLLAMA_BASE_URL} after {retries} attempts"
                 return
             logger.warning(
-                "Streaming generation retry %d/%d for material_type=%s due to: %s",
-                attempt,
-                retries,
-                material_type,
-                e,
+                "[TRACE][REDUCE_RETRY] attempt=%d/%d duration_ms=%d error=%s",
+                attempt, retries, attempt_ms, e,
             )
             await asyncio.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
         except Exception as e:
-            logger.exception("Streaming generation failed for material_type=%s", material_type)
+            attempt_ms = int((time.perf_counter() - reduce_attempt_start) * 1000)
+            logger.exception(
+                "[TRACE][REDUCE_CRASH] attempt=%d duration_ms=%d error=%s",
+                attempt, attempt_ms, e,
+            )
             yield f"[ERROR] {e}"
             return
 
@@ -576,6 +819,12 @@ def generate_study_material(
     """Combine chunks into context and call Ollama to generate study material."""
     if not chunks:
         return "Not enough context to generate material."
+
+    if material_type == "summary":
+        logger.info("Initiating MAP stage for %d chunks", len(chunks))
+        mapped_chunks = generate_map_summaries(chunks, language, timeout, retries)
+        if mapped_chunks:
+            chunks = mapped_chunks
 
     context = _build_generation_context(chunks)
 
@@ -596,13 +845,16 @@ def generate_study_material(
         count=count,
         difficulty_override=difficulty,
         student_profile=student_profile,
+        difficulty=difficulty,
     )
 
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
     }
-    if material_type != "summary":
+    if material_type == "summary":
+        payload["system"] = _build_summary_system_prompt()
+    else:
         payload["format"] = "json"
 
     for attempt in range(retries):
@@ -642,7 +894,9 @@ def generate_study_material(
 
             try:
                 # Clean up potential markdown / fenced JSON
-                parsed_json = json.loads(_extract_json_payload(generated_text))
+                cleaned = _strip_markdown_fences(generated_text)
+                parsed_json = json.loads(cleaned)
+
                 from .schemas import ExamOutput, QuizOutput, FlashcardsOutput
                 from pydantic import ValidationError
 
@@ -897,6 +1151,63 @@ def generate_chat_response(
     raise RuntimeError("All chat retry attempts failed")
 
 
+def evaluate_quiz(
+    questions: List[Dict[str, Any]],
+    submissions: List[Dict[str, Any]],
+    answer_key: Optional[Dict[Union[str, int], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Compare user answers with correct answers and return color-coded results.
+    """
+    results = []
+    question_map: Dict[int, Dict[str, Any]] = {}
+    for q in questions or []:
+        try:
+            question_map[int(q.get("id"))] = q
+        except (TypeError, ValueError):
+            continue
+
+    resolved_answer_key: Dict[int, Dict[str, Any]] = {}
+    if isinstance(answer_key, dict):
+        for key, value in answer_key.items():
+            try:
+                resolved_answer_key[int(key)] = value if isinstance(value, dict) else {}
+            except (TypeError, ValueError):
+                continue
+    else:
+        resolved_answer_key = build_quiz_answer_key(questions or [])
+
+    for sub in submissions or []:
+        try:
+            val = sub.get("question_id")
+            q_id = int(val) if val is not None else 0
+            if q_id == 0: continue
+        except (TypeError, ValueError):
+            continue
+        user_ans = _canonical_answer(sub.get("user_answer", ""))
+
+        answer_info = resolved_answer_key.get(q_id) or {}
+        q = question_map.get(q_id) or {}
+        correct_ans = _canonical_answer(answer_info.get("correct_answer") or q.get("correct_answer", ""))
+        is_correct = bool(correct_ans) and user_ans == correct_ans
+
+        result = {
+            "question_id": q_id,
+            "status": "correct" if is_correct else "wrong",
+            "color": "green" if is_correct else "red",
+        }
+
+        if not is_correct:
+            result["explanation"] = answer_info.get("explanation") or q.get("explanation") or "Incorrect answer."
+
+        results.append(result)
+
+    return {
+        "type": "quiz_result",
+        "results": results
+    }
+
+
 async def condense_question(
     question: str,
     history: List[Dict[str, str]],
@@ -910,100 +1221,6 @@ async def condense_question(
     if not history:
         return question
 
-    # Cap history to avoid context bloat
-    history_lines = []
-    for msg in history[-6:]:
-        role = str(msg.get("role", "user")).capitalize()
-        content = str(msg.get("content", "")).strip()
-        if content:
-            history_lines.append(f"{role}: {content}")
-    history_block = "\n".join(history_lines)
-
-    prompt = (
-        f"Given the following conversation and a follow-up question, rephrase the "
-        f"follow-up question to be a standalone question in {language}.\n\n"
-        f"Chat History:\n{history_block}\n\n"
-        f"Follow-up Question: {question}\n\n"
-        f"Standalone version (respond with only the rephrased question):"
-    )
-
-    payload = {
-        "model": OLLAMA_GENERATION_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"num_predict": 64, "temperature": 0.0}, # Keep it fast and deterministic
-    }
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
-                json=payload,
-                timeout=timeout
-            )
-            response.raise_for_status()
-            result = response.json()
-            standalone = result.get("response", "").strip()
-            if standalone:
-                logger.info("[MEMORY] Condensed '%s' -> '%s'", question, standalone)
-                return standalone
-    except Exception as e:
-        logger.warning("[MEMORY] Failed to condense question: %s", e)
-
-    return question
-
-    return question
-
-
-async def _async_stream_ollama_generate(
-    payload: Dict[str, Any], *, timeout: int, material_type: str
-) -> str:
-    """Async version of _stream_ollama_generate using httpx."""
-    payload = dict(payload)
-    payload["stream"] = True
-
-    parts: List[str] = []
-    done_seen = False
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", OLLAMA_GENERATE_URL, json=payload) as resp:
-                resp.raise_for_status()
-                buf = b""
-                async for chunk_bytes in resp.aiter_bytes():
-                    if not chunk_bytes:
-                        continue
-                    
-                    buf += chunk_bytes
-                    
-                    while b"\n" in buf:
-                        line, buf = buf.split(b"\n", 1)
-                        line = line.strip()
-                        if not line:
-                            continue
-                        
-                        try:
-                            data = json.loads(line.decode("utf-8", errors="replace"))
-                            text_piece = data.get("response")
-                            if isinstance(text_piece, str) and text_piece:
-                                parts.append(text_piece)
-                            if data.get("done") is True:
-                                done_seen = True
-                                break
-                        except json.JSONDecodeError:
-                            continue
-                    
-                    if done_seen:
-                        break
-
-    except Exception as e:
-        logger.warning("Async Ollama stream failed material_type=%s error=%s", material_type, e)
-        raise
-
-    text = "".join(parts).strip()
-    if not text:
-        raise ValueError("Empty response from async Ollama stream")
-    return text
 
 
 async def generate_structured_chat(
@@ -1118,60 +1335,3 @@ async def generate_structured_chat(
             "confidence": 0.0,
             "fallback": True
         }
-
-
-def evaluate_quiz(
-    questions: List[Dict[str, Any]],
-    submissions: List[Dict[str, Any]],
-    answer_key: Optional[Dict[Union[str, int], Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
-    """
-    Compare user answers with correct answers and return color-coded results.
-    """
-    results = []
-    question_map: Dict[int, Dict[str, Any]] = {}
-    for q in questions or []:
-        try:
-            question_map[int(q.get("id"))] = q
-        except (TypeError, ValueError):
-            continue
-
-    resolved_answer_key: Dict[int, Dict[str, Any]] = {}
-    if isinstance(answer_key, dict):
-        for key, value in answer_key.items():
-            try:
-                resolved_answer_key[int(key)] = value if isinstance(value, dict) else {}
-            except (TypeError, ValueError):
-                continue
-    else:
-        resolved_answer_key = build_quiz_answer_key(questions or [])
-
-    for sub in submissions or []:
-        try:
-            val = sub.get("question_id")
-            q_id = int(val) if val is not None else 0
-            if q_id == 0: continue
-        except (TypeError, ValueError):
-            continue
-        user_ans = _canonical_answer(sub.get("user_answer", ""))
-
-        answer_info = resolved_answer_key.get(q_id) or {}
-        q = question_map.get(q_id) or {}
-        correct_ans = _canonical_answer(answer_info.get("correct_answer") or q.get("correct_answer", ""))
-        is_correct = bool(correct_ans) and user_ans == correct_ans
-
-        result = {
-            "question_id": q_id,
-            "status": "correct" if is_correct else "wrong",
-            "color": "green" if is_correct else "red",
-        }
-
-        if not is_correct:
-            result["explanation"] = answer_info.get("explanation") or q.get("explanation") or "Incorrect answer."
-
-        results.append(result)
-
-    return {
-        "type": "quiz_result",
-        "results": results
-    }

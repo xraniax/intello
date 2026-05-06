@@ -32,8 +32,16 @@ const protect = async (req, res, next) => {
         });
     }
 
-    if (process.env.NODE_ENV === 'test' && token === 'test-bypass-token') {
-        req.user = { id: 1, name: 'Test User', email: 'test@example.com' };
+    if (process.env.NODE_ENV === 'test' && token && token.startsWith('test-bypass-token')) {
+        if (token === 'test-bypass-token-admin') {
+            req.user = { id: 'admin-uuid', name: 'Test Admin', email: 'admin@example.com', role: 'admin', status: 'ACTIVE' };
+        } else if (token === 'test-bypass-token-user') {
+            req.user = { id: 'uuid-1', name: 'Test User', email: 'user@example.com', role: 'user', status: 'ACTIVE' };
+        } else if (token === 'test-bypass-token-suspended') {
+            req.user = { id: 'suspended-uuid', name: 'Suspended Test User', email: 'suspended@example.com', role: 'user', status: 'SUSPENDED' };
+        } else {
+            req.user = { id: 'uuid-1', name: 'Test User', email: 'test@example.com', role: 'user', status: 'ACTIVE' };
+        }
         return next();
     }
 

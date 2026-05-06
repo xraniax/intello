@@ -74,6 +74,14 @@ class User {
         return result.rows[0];
     }
 
+    static async findByIdWithPassword(id) {
+        const result = await query(
+            'SELECT id, email, name, role, status, password_hash FROM users WHERE id = $1',
+            [id]
+        );
+        return result.rows[0];
+    }
+
     /**
      * Update user's last_active_at timestamp.
      */

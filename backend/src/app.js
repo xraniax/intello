@@ -34,7 +34,9 @@ app.use(helmetConfig);
 
 // Middlewares
 app.use(cors({
-  origin: [frontendUrl, 'http://127.0.0.1:3000', 'http://localhost:3000'],
+  origin: isProduction 
+    ? [frontendUrl, 'http://127.0.0.1:3000', 'http://localhost:3000']
+    : true, // Allow all origins in development for troubleshooting
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
@@ -152,19 +154,21 @@ import subjectRoutes from './routes/subject.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import examRoutes from './routes/exam.routes.js';
-import analyticsRoutes from './routes/analytics.routes.js';
 import quizRoutes from './routes/quiz.routes.js';
+import analyticsRoutes from './routes/analytics.routes.js';
 import chatRoutes from './routes/chat.routes.js';
 import goalRoutes from './routes/goal.routes.js';
+import fileRoutes from './routes/file.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
+app.use('/api/files', fileRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/exams', examRoutes);
-app.use('/api/analytics', analyticsRoutes);
 app.use('/api/quiz', quizRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/goals', goalRoutes);
 

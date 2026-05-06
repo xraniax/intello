@@ -62,8 +62,14 @@ class GenerateRequest(BaseModel):
     top_k: int = Field(default=20, ge=1, le=50)
     language: str = Field(default="en")
     user_id: Optional[str] = None
+    summary_mode: Optional[str] = None
     generation_options: Optional[dict] = None
     chunks: Optional[List[str]] = None
+    # Filenames (basename of stored file path) used to scope retrieval to selected documents.
+    # Maps to engine documents.filename via subject_id+filename lookup — NOT to documents.id (Integer).
+    source_filenames: Optional[List[str]] = None
+    # Material UUIDs (from backend) to restrict retrieval context.
+    material_ids: Optional[List[UUID]] = None
 
 class ChatRequest(BaseModel):
     subject_id: UUID
@@ -235,6 +241,7 @@ class QuizSubmitAnswerRequest(BaseModel):
     language: str = Field(default="en")
     top_k: int = Field(default=5, ge=1, le=50)
 
+
 # --- Study Plan Generation Models ---
 
 class GoalInput(BaseModel):
@@ -264,3 +271,4 @@ class StudyPlanOutput(BaseModel):
     type: Literal["study_plan"] = "study_plan"
     content: StudyPlanContent
     metadata: GenerationMetadata
+

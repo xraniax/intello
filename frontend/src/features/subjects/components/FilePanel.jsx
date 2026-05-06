@@ -338,6 +338,11 @@ const FilePanel = ({
                                                             </p>
                                                             <span className="text-[10px] opacity-40 font-medium whitespace-nowrap" style={{ color: 'var(--c-text-muted)' }}>
                                                                 {new Date(m.created_at).toLocaleDateString()}
+                                                                {import.meta.env.DEV && m.started_at && m.completed_at && (
+                                                                    <span className="ml-1 text-sky-400/80 font-black">
+                                                                        ({((new Date(m.completed_at) - new Date(m.started_at)) / 1000).toFixed(1)}s)
+                                                                    </span>
+                                                                )}
                                                             </span>
                                                         </div>
                                                         <div className="flex gap-2 transition-all ml-auto mt-2 justify-end">

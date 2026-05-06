@@ -354,7 +354,16 @@ This code will expire in 24 hours.
         }
 
         const user = req.user;
-        console.log(`[AUTH] Social Auth profile: ${user.email}, provider: ${user.auth_provider}, status: ${user.status}`);
+        console.log(`[AUTH] Social Auth profile: ${user.email}, provider: ${user.auth_provider}, status: ${user.status}, isNew: ${user.isNewRecord}`);
+
+        // Check if public registration is allowed (only for new users)
+        if (user.isNewRecord) {
+            const controls = await SettingsService.getStorageControls();
+            if (controls.allow_public_registration === false) {
+                console.warn(`[AUTH] Social Auth registration blocked: Public registration is disabled for email: ${user.email}`);
+                return res.redirect(`${process.env.FRONTEND_URL}/login?error=registration_disabled`);
+            }
+        }
 
         if (normalizeStatus(user.status) !== 'ACTIVE') {
             console.warn(`[AUTH] Social Auth failed: Account ${user.status} for email: ${user.email}`);

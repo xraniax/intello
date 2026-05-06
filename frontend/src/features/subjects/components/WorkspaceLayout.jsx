@@ -197,12 +197,9 @@ const WorkspaceLayout = ({
                     ${isMobile ? (activePanel === 'content' ? 'flex' : 'hidden') : 'flex'}`}
                 style={{
                     width:             isMobile ? '100%' : `${mw}%`,
-                    background:        'rgba(255, 255, 255, 0.85)',
-                    backdropFilter:    'blur(24px)',
+                    background:        'var(--c-surface)',
                     borderTopLeftRadius: '32px',
-                    boxShadow:         '-12px 0 40px rgba(244, 63, 94, 0.08), inset 1px 0 0 rgba(255, 255, 255, 0.5)',
-                    zoom:              1.1,
-                    fontSize:          '20px',
+                    boxShadow:         '-4px 0 32px rgba(0,0,0,0.03)',
                     transition:        PANEL_TRANSITION,
                 }}
             >

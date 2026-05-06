@@ -325,15 +325,6 @@ const QuizHeader = ({ current, total, streak, muted, setMuted, isExpanded }) => 
                     </AnimatePresence>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 text-xs font-bold text-gray-400 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
-                        <Keyboard className="w-4 h-4" />
-                        <span className="hidden sm:inline">A-D to select, ↵ to submit</span>
-                        <span className="sm:hidden">Keyboard ready</span>
-                    </div>
-                    <div className="text-right ml-2">
-                        <span className="text-sm font-black text-indigo-600">{current + 1}</span>
-                        <span className="text-sm font-bold text-gray-300"> / {total}</span>
-                    </div>
                     <button
                         onClick={() => setMuted(m => !m)}
                         className="p-1.5 text-gray-400 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-full border border-gray-100 transition-colors"
@@ -415,6 +406,8 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
                 opts
             );
             const envelope = res?.data?.data || res?.data;
+            // Engine wraps the question: { question: {...}, progress: {...}, session: {...} }
+            // Unwrap nested question object before normalising with mapQuestion
             const raw = (envelope?.question && typeof envelope.question === 'object')
                 ? envelope.question
                 : envelope;
@@ -430,12 +423,15 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
         } finally {
             setLoading(false);
         }
-    }, [subjectId]);
+    }, [subjectId]); // topic/language stable via sessionParamsRef
 
+    // Skip initial fetch if results screen was already showing when page was refreshed
     useEffect(() => {
         if (initialState.showResults) return;
         fetchQuestion();
-    }, [fetchQuestion]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [fetchQuestion]); // eslint-disable-line react-hooks/exhaustive-deps -- initialState frozen at mount
+
+    // Persist session continuity fields so a refresh can resume at the correct count/score
 
     useEffect(() => {
         localStorage.setItem(storageKey, JSON.stringify({ questionCount, score, streak, showResults, muted }));
@@ -464,6 +460,7 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
         const next = questionCount + 1;
         const responseTime = startTimeRef.current ? (Date.now() - startTimeRef.current) / 1000 : 0;
         if (next >= MAX_ADAPTIVE_QUESTIONS) {
+            // Final answer: submit to backend before showing results (not fire-and-forget)
             setLoading(true);
             try {
                 await QuizService.nextQuestion(
@@ -599,8 +596,8 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
 // ---------------------------------------------------------------------------
 // Static mode — all questions from quizData prop
 // ---------------------------------------------------------------------------
-const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData }) => {
-    const storageKey = `cognify_quiz_state_${questions.length > 0 ? questions[0]?.question?.replace(/\s+/g, '').substring(0, 30) : 'default'}`;
+const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizDataId }) => {
+    const storageKey = `cognify_quiz_state_${quizDataId || (questions.length > 0 ? questions[0]?.question?.replace(/\s+/g, '').substring(0, 30) : 'default')}`;
 
     const initialSaved = (() => {
         try {
@@ -651,13 +648,11 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
             setStreak(0);
             if (!muted) playTone('wrong');
         }
-
         responsesRef.current.push({
             questionId: currentQuestion.id,
             isCorrect,
             difficulty: currentQuestion.difficulty ?? 'medium',
         });
-
         setIsSubmitted(true);
     }, [selectedOption, isSubmitted, currentQuestion, muted]);
 
@@ -671,14 +666,14 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
             if (subjectId && responsesRef.current.length > 0) {
                 AnalyticsService.recordQuizAttempt({
                     subjectId,
-                    materialId: materialId ?? quizData?.id,
+                    materialId: materialId ?? quizDataId,
                     responses: responsesRef.current,
                     startedAt: startedAtRef.current,
                     completedAt: new Date().toISOString(),
                 }).catch(() => {});
             }
         }
-    }, [currentQuestionIndex, questions.length, subjectId, materialId, quizData?.id]);
+    }, [currentQuestionIndex, questions.length, subjectId, materialId, quizDataId]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -757,13 +752,14 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
                         onClick={handleNext}
                         className="px-6 sm:px-10 py-4 sm:py-5 rounded-xl sm:rounded-2xl bg-indigo-600 text-white font-black hover:bg-indigo-700 transition-all flex items-center gap-2 sm:gap-3 shadow-xl shadow-indigo-100 hover:-translate-y-1 text-sm sm:text-base"
                     >
-                        {currentQuestionIndex === questions.length - 1 ? "See Final Results" : "Next Challenge"}
+                        {currentQuestionIndex + 1 < questions.length ? 'Next Question' : 'View Summary'}
                         <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                 )}
             </div>
         </div>
     );
+
 };
 
 // ---------------------------------------------------------------------------
@@ -774,12 +770,13 @@ const QuizView = ({
     quizData = null,     // static mode data (ignored in adaptive mode)
     isExpanded = false,
     subjectId = null,    // required for adaptive mode
-    materialId = null,   // for analytics
+    materialId = null,
     topic = null,
     language = 'en'
 }) => {
-    // Adaptive mode: fetch questions progressively via QuizService and /api/quiz/next-question
+    // Adaptive mode: fetch questions progressively via QuizService and /api/quiz/start + /submit-answer
     if (quizMode === 'adaptive') {
+        // Defensive fallback: adaptive requires subjectId
         if (!subjectId) {
             return (
                 <div className="flex flex-col items-center justify-center p-12 text-gray-500">
@@ -810,7 +807,7 @@ const QuizView = ({
         );
     }
 
-    return <StaticQuizView questions={questions} isExpanded={isExpanded} subjectId={subjectId} materialId={materialId} quizData={quizData} />;
+    return <StaticQuizView questions={questions} isExpanded={isExpanded} subjectId={subjectId} materialId={materialId} quizDataId={quizData?.id} />;
 };
 
 export default QuizView;

@@ -6,7 +6,7 @@ Run inside the engine container (WORKDIR /app):
 
     python init_db.py
 
-Requires: Postgres reachable with same env as the app (DB_HOST, DB_USER, ...).
+Requires: DATABASE_URL set in the environment (engine/.env.docker or shell).
 `subjects` must already exist (from db/init.sql) because documents.subject_id FK references it.
 """
 from database import Base, engine

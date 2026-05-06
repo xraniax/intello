@@ -19,6 +19,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "5000:5000"
     env_file:
@@ -46,6 +47,7 @@ services:
     build:
       context: ./engine
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
@@ -60,6 +62,7 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - COGNIFY_UPLOADS_DIR=/app/data/uploads
     volumes:
       - ./engine:/app
       - ./data/uploads:/app/data/uploads
@@ -76,6 +79,7 @@ services:
     build:
       context: ./engine
       dockerfile: Dockerfile
+    restart: unless-stopped
     env_file:
       - ./engine/.env.docker
     depends_on:
