@@ -71,7 +71,12 @@ const StudyGenerator = ({
     const countLabel = countHasLabel[genType] || 'Items';
 
     const onGenerate = () => {
-        handleGenerate({ difficulty, count, examTypes, topic: '' });
+        const diffMap = {
+            'Intro': 'beginner',
+            'Inter': 'intermediate',
+            'Adv': 'advanced'
+        };
+        handleGenerate({ difficulty: diffMap[difficulty] || 'intermediate', count, examTypes, topic: '' });
     };
 
     const toggleExamType = (type) => {

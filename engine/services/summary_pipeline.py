@@ -23,6 +23,8 @@ from typing import AsyncIterator, Dict, Any, List, Optional
 import httpx
 
 from .ollama_config import get_ollama_base_url, get_ollama_generation_model
+from .concept_planner import create_summary_plan, SummaryPlan
+from .chunk_processing import map_chunks_sync, async_map_chunks, reduce_results
 
 logger = logging.getLogger("engine-summary-pipeline")
 
@@ -126,12 +128,15 @@ def build_summary_prompt(
     language: str = "en",
     difficulty: str = "intermediate",
     topic: Optional[str] = None,
+    plan_block: str = "",
 ) -> str:
     """Build the user-facing REDUCE prompt, injecting a difficulty-specific depth strategy.
 
     The system prompt holds the invariant contract (grounding, structure, multi-doc rules).
     This function injects the depth frame: beginner targets understanding what and why,
     intermediate targets how it works, advanced targets complete coverage of all material.
+    An optional plan_block (from concept_planner) is injected between the depth strategy
+    and the context to direct the LLM's attention to the most important concepts.
     """
     lang_phrase = f" Write in {language}." if language and language.lower() != "en" else ""
 
@@ -165,8 +170,10 @@ def build_summary_prompt(
             "Terms: those a reader needs to follow the explanation but would not already know."
         )
 
+    plan_section = f"{plan_block}\n" if plan_block else ""
     prompt = (
         f"{depth_strategy}{lang_phrase}\n\n"
+        f"{plan_section}"
         f"Text to summarize:\n---\n{context}\n---\n\n"
         f"Summary:"
     )
@@ -176,19 +183,8 @@ def build_summary_prompt(
 # ── Context Assembly ─────────────────────────────────────────────────────────
 
 def _build_summary_context(chunks: List[str]) -> str:
-    """Combine chunks into a single context string with summary-specific limits.
-
-    Uses the larger ``SUMMARY_MAX_CONTEXT_CHARS`` (30K default) instead of the
-    shared 15K limit, because post-MAP summaries are already compressed.
-    """
-    context = "\n\n".join(chunks)
-    if len(context) > SUMMARY_MAX_CONTEXT_CHARS:
-        logger.warning(
-            "[SUMMARY] context truncated from %d to %d chars",
-            len(context), SUMMARY_MAX_CONTEXT_CHARS,
-        )
-        context = context[:SUMMARY_MAX_CONTEXT_CHARS] + "\n...[Context truncated]"
-    return context
+    """Combine chunks into a single context string with summary-specific limits."""
+    return reduce_results(chunks, SUMMARY_MAX_CONTEXT_CHARS)
 
 
 # ── MAP Stage ────────────────────────────────────────────────────────────────
@@ -286,20 +282,6 @@ def _map_summarize_chunk(
     return ""
 
 
-def _prepare_eligible_chunks(
-    chunks: List[str],
-    max_chunks: int,
-) -> List[str]:
-    """Filter and cap chunks for MAP processing."""
-    eligible = [c for c in chunks if len(c.strip()) >= _MIN_CHUNK_CHARS]
-    if len(eligible) > max_chunks:
-        logger.warning(
-            "[SUMMARY][MAP] capping %d eligible chunks to %d", len(eligible), max_chunks,
-        )
-        eligible = eligible[:max_chunks]
-    return eligible
-
-
 def generate_map_summaries(
     chunks: List[str],
     language: str = "en",
@@ -312,56 +294,15 @@ def generate_map_summaries(
 
     Returns ordered list of non-empty chunk summaries.
     """
-    import concurrent.futures
+    def process_fn(chunk: str) -> str:
+        return _map_summarize_chunk(chunk, language, difficulty, timeout, retries)
 
-    map_stage_start = time.perf_counter()
-    cap = max_chunks or MAP_MAX_CHUNKS
-    eligible = _prepare_eligible_chunks(chunks, cap)
-    if not eligible:
-        return []
-
-    total_input_chars = sum(len(c) for c in eligible)
-    concurrency = min(len(eligible), MAP_CONCURRENCY) if eligible else 1
-
-    logger.info(
-        "[SUMMARY][MAP_START] total_chunks=%d eligible=%d total_chars=%d cap=%d concurrency=%d difficulty=%s",
-        len(chunks), len(eligible), total_input_chars, cap, concurrency, difficulty,
+    return map_chunks_sync(
+        chunks,
+        process_fn,
+        concurrency=MAP_CONCURRENCY,
+        max_chunks=max_chunks or MAP_MAX_CHUNKS,
     )
-
-    results = [None] * len(eligible)
-    chunk_timings = [0] * len(eligible)
-
-    def _run_chunk(idx_chunk):
-        idx, chunk = idx_chunk
-        chunk_start = time.perf_counter()
-        logger.info("[SUMMARY][MAP] chunk %d/%d chars=%d", idx + 1, len(eligible), len(chunk))
-        summary = _map_summarize_chunk(chunk, language, difficulty, timeout, retries)
-        chunk_ms = int((time.perf_counter() - chunk_start) * 1000)
-        if summary:
-            logger.info("[SUMMARY][MAP] chunk %d/%d DONE ms=%d out_chars=%d", idx + 1, len(eligible), chunk_ms, len(summary))
-        else:
-            logger.warning("[SUMMARY][MAP] chunk %d/%d EMPTY ms=%d", idx + 1, len(eligible), chunk_ms)
-        return idx, summary or "", chunk_ms
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = pool.map(_run_chunk, enumerate(eligible))
-        for idx, summary, chunk_ms in futures:
-            results[idx] = summary
-            chunk_timings[idx] = chunk_ms
-
-    mapped = [s for s in results if s]
-    map_total_ms = int((time.perf_counter() - map_stage_start) * 1000)
-    valid_timings = [t for t in chunk_timings if t > 0]
-    avg_ms = int(sum(valid_timings) / len(valid_timings)) if valid_timings else 0
-
-    logger.info(
-        "[SUMMARY][MAP_END] processed=%d/%d total_ms=%d avg_ms=%d min_ms=%d max_ms=%d output=%d",
-        len(eligible), len(chunks), map_total_ms, avg_ms,
-        min(valid_timings) if valid_timings else 0,
-        max(valid_timings) if valid_timings else 0,
-        len(mapped),
-    )
-    return mapped
 
 
 async def _async_map_summaries(
@@ -373,66 +314,17 @@ async def _async_map_summaries(
     max_chunks: Optional[int] = None,
     progress_queue: Optional[asyncio.Queue] = None,
 ) -> List[str]:
-    """Async MAP stage for the streaming path.
+    """Async MAP stage for the streaming path."""
+    def process_fn(chunk: str) -> str:
+        return _map_summarize_chunk(chunk, language, difficulty, timeout, retries)
 
-    Uses asyncio.Semaphore + run_in_executor so the event loop stays
-    responsive (emitting keepalives) while MAP work proceeds in threads.
-
-    If *progress_queue* is provided, pushes a short progress string each
-    time a chunk finishes so the caller can yield SSE progress events.
-    """
-    cap = max_chunks or STREAM_MAP_MAX_CHUNKS
-    eligible = _prepare_eligible_chunks(chunks, cap)
-    if not eligible:
-        return []
-
-    map_start = time.perf_counter()
-    concurrency = min(len(eligible), MAP_CONCURRENCY)
-    sem = asyncio.Semaphore(concurrency)
-    loop = asyncio.get_running_loop()
-    completed_count = 0
-
-    logger.info(
-        "[SUMMARY][ASYNC_MAP_START] eligible=%d cap=%d concurrency=%d difficulty=%s",
-        len(eligible), cap, concurrency, difficulty,
+    return await async_map_chunks(
+        chunks,
+        process_fn,
+        concurrency=MAP_CONCURRENCY,
+        max_chunks=max_chunks or STREAM_MAP_MAX_CHUNKS,
+        progress_queue=progress_queue,
     )
-
-    async def _map_one(idx: int, chunk: str):
-        nonlocal completed_count
-        async with sem:
-            result = await loop.run_in_executor(
-                None, _map_summarize_chunk, chunk, language, difficulty, timeout, retries,
-            )
-            completed_count += 1
-            if progress_queue is not None:
-                await progress_queue.put(
-                    f"map {completed_count}/{len(eligible)}"
-                )
-            return idx, result or ""
-
-    tasks = [_map_one(i, c) for i, c in enumerate(eligible)]
-    gathered = await asyncio.gather(*tasks, return_exceptions=True)
-
-    ordered = [None] * len(eligible)
-    for item in gathered:
-        if isinstance(item, Exception):
-            logger.warning("[SUMMARY][ASYNC_MAP] chunk failed: %s", item)
-            continue
-        idx, summary = item
-        ordered[idx] = summary
-
-    mapped = [s for s in ordered if s]
-    map_ms = int((time.perf_counter() - map_start) * 1000)
-    logger.info(
-        "[SUMMARY][ASYNC_MAP_END] total_ms=%d input=%d output=%d concurrency=%d",
-        map_ms, len(eligible), len(mapped), concurrency,
-    )
-
-    # Signal the progress consumer that MAP is complete.
-    if progress_queue is not None:
-        await progress_queue.put(None)
-
-    return mapped
 
 
 # ── Streaming Summary Generation ─────────────────────────────────────────────
@@ -519,8 +411,14 @@ async def generate_summary_stream(
             chunks = mapped_chunks
 
     # ── REDUCE ──
+    try:
+        _, plan_block = create_summary_plan(chunks, difficulty)
+    except Exception as _plan_err:
+        logger.warning("[SUMMARY][PLANNER_FAIL] %s — continuing without plan", _plan_err)
+        plan_block = ""
+
     context = _build_summary_context(chunks)
-    prompt = build_summary_prompt(context, language, difficulty, topic)
+    prompt = build_summary_prompt(context, language, difficulty, topic, plan_block=plan_block)
 
     # Use adaptive context sizing to avoid allocating unnecessary VRAM.
     # 1 token ≈ 3 chars, plus 1024 tokens buffer for generation.
@@ -668,8 +566,14 @@ def generate_summary(
         chunks = mapped
 
     # ── REDUCE ──
+    try:
+        _, plan_block = create_summary_plan(chunks, difficulty)
+    except Exception as _plan_err:
+        logger.warning("[SUMMARY][SYNC_PLANNER_FAIL] %s — continuing without plan", _plan_err)
+        plan_block = ""
+
     context = _build_summary_context(chunks)
-    prompt = build_summary_prompt(context, language, difficulty, topic)
+    prompt = build_summary_prompt(context, language, difficulty, topic, plan_block=plan_block)
 
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,

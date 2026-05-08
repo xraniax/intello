@@ -5,6 +5,7 @@ import time
 import re
 import asyncio
 import concurrent.futures
+import string
 from typing import List, Optional, Dict, Any, Union, Iterator, AsyncIterator
 
 import httpx
@@ -13,6 +14,7 @@ from requests.exceptions import RequestException, Timeout
 
 from .ollama_config import get_ollama_base_url, get_ollama_generation_model
 from .summary_pipeline import _build_summary_system_prompt
+from .chunk_processing import map_chunks_sync, async_map_chunks, reduce_results
 
 logger = logging.getLogger("engine-generation")
 
@@ -279,19 +281,43 @@ def _validate_mode_specific_constraints(material_type: str, parsed: Dict[str, An
             question_text = str(q.get("question") or "").strip()
             if not question_text:
                 raise ValueError(f"Quiz question {idx} must include non-empty question text")
-            if q.get("options") is not None:
-                options = q.get("options") or []
-                if len(options) < 2:
-                    raise ValueError(f"Quiz question {idx} options must include at least 2 choices when present")
+            
+            options = q.get("options")
+            if not isinstance(options, list) or len(options) < 2:
+                raise ValueError(f"Quiz question {idx} options must be a list with at least 2 choices")
+            
+            correct_answer = q.get("correct_answer")
+            if not isinstance(correct_answer, int):
+                raise ValueError(f"Quiz question {idx} correct_answer must be an integer index")
+            
+            if not (0 <= correct_answer < len(options)):
+                raise ValueError(f"Quiz question {idx} correct_answer index out of range")
 
 
-def _canonical_answer(value: Any) -> str:
-    text = str(value or "").strip().lower()
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"[^\w\s]", "", text)
-    return text
+def extract_index(user_answer: Any, options: Any) -> Optional[int]:
+    """
+    Strict index-based extraction for quiz answers.
+    Supports numeric input only.
+    """
 
+    if not isinstance(options, list) or not options:
+        return None
 
+    if user_answer is None:
+        return None
+
+    text = str(user_answer).strip()
+    if not text:
+        return None
+
+    try:
+        idx = int(text)
+        if 0 <= idx < len(options):
+            return idx
+        return None
+    except (TypeError, ValueError):
+        return None
+    
 def build_quiz_answer_key(questions: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
     """Build internal answer key map from generated quiz questions."""
     answer_key: Dict[int, Dict[str, Any]] = {}
@@ -301,7 +327,7 @@ def build_quiz_answer_key(questions: List[Dict[str, Any]]) -> Dict[int, Dict[str
         except (TypeError, ValueError):
             continue
         answer_key[qid] = {
-            "correct_answer": str(q.get("correct_answer") or "").strip(),
+            "correct_answer": q.get("correct_answer"),
             "explanation": str(q.get("explanation") or "").strip(),
         }
     return answer_key
@@ -320,6 +346,118 @@ def build_student_quiz_view(quiz_payload: Dict[str, Any]) -> Dict[str, Any]:
             safe_item["options"] = q.get("options")
         safe_questions.append(safe_item)
     return {"type": "quiz", "questions": safe_questions}
+
+
+def _build_quiz_difficulty_guidance(difficulty: str) -> str:
+    """Map difficulty strings to specific cognitive and structural LLM constraints."""
+    diff_lower = (difficulty or "").lower().strip()
+    if diff_lower in ("introductory", "beginner", "easy", "beg"):
+        return (
+            "Difficulty Constraint (Beginner):\n"
+            "- Test factual recall and simple definitions.\n"
+            "- Require only single-step reasoning.\n"
+            "- Distractors must be obviously incorrect to a minimally prepared student."
+        )
+    elif diff_lower in ("advanced", "hard", "adv"):
+        return (
+            "Difficulty Constraint (Advanced):\n"
+            "- Test multi-step reasoning, complex scenarios, and edge cases.\n"
+            "- Do not test simple definitions.\n"
+            "- Distractors must be highly nuanced, plausible, and designed to trap subtle reasoning errors or common misconceptions."
+        )
+    else:
+        return (
+            "Difficulty Constraint (Intermediate):\n"
+            "- Test conceptual understanding and application.\n"
+            "- Distractors must include plausible misconceptions and require careful reading to rule out."
+        )
+
+
+# PURE STRUCTURAL VALIDATOR — NO SEMANTIC OR DIFFICULTY LOGIC
+def validate_quiz_question(question: Dict[str, Any]) -> Dict[str, Any]:
+    """Schema-only check: shape and index bounds. No content, semantic, or difficulty logic."""
+    if not isinstance(question, dict):
+        return {"valid": False, "reasons": ["Question is not a dict."]}
+
+    reasons = []
+
+    q_text = question.get("question") or question.get("text")
+    if not q_text or not str(q_text).strip():
+        reasons.append("Question text is missing or empty.")
+
+    options = question.get("options")
+    if not isinstance(options, list) or len(options) < 2:
+        reasons.append("Options must be a list with at least 2 items.")
+    else:
+        correct_ans = question.get("correct_answer")
+        if not isinstance(correct_ans, int) or correct_ans < 0 or correct_ans >= len(options):
+            reasons.append("correct_answer must be an integer index within options range.")
+
+    return {"valid": len(reasons) == 0, "reasons": reasons}
+
+
+def llm_validate_quiz_question(question: Dict[str, Any], difficulty: str) -> Dict[str, Any]:
+    """
+    Check question CONTENT quality only — never difficulty calibration.
+
+    # Difficulty is system-controlled, not model-inferred.
+    # The `difficulty` argument is passed so the LLM has generation context,
+    # but the model's opinion on difficulty is neither requested nor returned.
+
+    Returns valid=False only when there is a genuine content error:
+      - The marked correct_answer is factually wrong.
+      - A distractor is ambiguous or also-correct.
+      - The question stem is circular, self-referential, or unanswerable.
+      - The explanation contradicts the marked answer.
+    """
+    prompt = (
+        "You are a quiz question quality checker.\n"
+        "Your job: verify that the question is CORRECT and CLEAR.\n"
+        "You are NOT checking whether the question matches a difficulty level.\n\n"
+        "── What to check ──\n"
+        "1. Is the marked correct_answer factually correct for the question stem?\n"
+        "2. Are all other options (distractors) genuinely wrong — "
+        "none of them also-correct or ambiguous?\n"
+        "3. Is the question stem clear and answerable — not circular, "
+        "not self-referential, not missing necessary information?\n"
+        "4. Does the explanation correctly justify why the correct_answer is right?\n\n"
+        "── Hard rules ──\n"
+        "- Return valid=false ONLY for a content error listed above.\n"
+        "- NEVER return valid=false because the question seems too easy or too hard.\n"
+        "- NEVER return valid=false because the topic is unfamiliar or domain-specific.\n"
+        "- When in doubt, return valid=true.\n\n"
+        f"(Context: this question was generated for difficulty={difficulty.upper()}.)\n\n"
+        "Output (STRICT JSON only):\n"
+        "{\n"
+        '  "valid": true or false,\n'
+        '  "reason": "one sentence — describe the content error, or write OK"\n'
+        "}\n\n"
+        "Question to evaluate:\n"
+        f"{json.dumps(question, indent=2)}\n\n"
+        "Return ONLY JSON."
+    )
+
+    payload: Dict[str, Any] = {
+        "model": OLLAMA_GENERATION_MODEL,
+        "prompt": prompt,
+        "format": "json",
+    }
+
+    try:
+        generated_text = _stream_ollama_generate(payload, timeout=30, material_type="quiz_validation")
+        cleaned = _strip_markdown_fences(generated_text)
+        parsed = json.loads(cleaned)
+
+        valid = bool(parsed.get("valid"))
+        reason = str(parsed.get("reason", "")).strip()
+
+        logger.debug("[LLM_VAL] difficulty=%s valid=%s reason=%s", difficulty, valid, reason)
+
+        return {"valid": valid, "reason": reason}
+    except Exception as e:
+        # Structural validation already passed; don't block on an LLM validator error.
+        logger.warning("[LLM_VAL] validation call failed (accepting question): %s", e)
+        return {"valid": True, "reason": f"Validation skipped due to error: {e}"}
 
 
 def build_prompt(
@@ -370,7 +508,6 @@ def build_prompt(
         accuracy = None
         avg_response_time = None
         weak_topics: List[str] = []
-        difficulty = "medium"
 
         if student_profile:
             try:
@@ -384,22 +521,15 @@ def build_prompt(
 
             weak_topics = [str(t) for t in (student_profile.get("weak_topics") or []) if t]
 
-            if accuracy < 0.5:
-                difficulty = "easy"
-            elif accuracy <= 0.8:
-                difficulty = "medium"
-            else:
-                difficulty = "hard"
-
         question_count = count if isinstance(count, int) and count > 0 else 5
         if difficulty_override and str(difficulty_override).strip():
             difficulty = str(difficulty_override).strip()
 
         base_instructions = (
-            f"Generate a multiple-choice or short-answer quiz based on the context in {language}. "
-            f"Include exactly {question_count} questions. For each question, provide options (if MCQ), the correct answer, and a short explanation."
+            f"Generate a multiple-choice quiz based on the context in {language}. "
+            f"Include exactly {question_count} questions. For each question, provide options, the correct answer, and a short explanation."
         )
-        base_instructions += f"\nSet quiz difficulty to: {difficulty}."
+        base_instructions += f"\n{_build_quiz_difficulty_guidance(difficulty)}"
         if weak_topics:
             base_instructions += f"\nPrioritize these weak topics when possible: {', '.join(weak_topics)}."
         if accuracy is not None and avg_response_time is not None:
@@ -414,9 +544,9 @@ def build_prompt(
                     {
                         "id": 1,
                         "question": "Question text?",
-                        "options": ["A", "B", "C", "D"],
-                        "correct_answer": "A",
-                        "explanation": "Why A is correct"
+                        "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+                        "correct_answer": 0,
+                        "explanation": "Why Option 1 is correct"
                     }
                 ]
             },
@@ -425,6 +555,7 @@ def build_prompt(
         base_instructions += (
             f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
             "\nUse numeric ids starting from 1 and increment by 1."
+            "\ncorrect_answer must be the integer index of the correct option (0-based). DO NOT use letters or text for correct_answer."
         )
 
     elif material_type == "flashcards":
@@ -433,8 +564,11 @@ def build_prompt(
             base_instructions = f"Create a set of {card_count} flashcards (Front/Back) based on the context in {language}."
         else:
             base_instructions = f"Create a set of 5-10 flashcards (Front/Back) based on the context in {language}."
-        if difficulty_override and str(difficulty_override).strip():
-            base_instructions += f" Adapt the complexity to {str(difficulty_override).strip()} level."
+        
+        actual_diff = str(difficulty_override).strip() if difficulty_override and str(difficulty_override).strip() else difficulty
+        if actual_diff:
+            base_instructions += f" Adapt the complexity to {actual_diff} level."
+            
         json_structure = {
             "type": "flashcards",
             "content": {
@@ -536,59 +670,15 @@ def generate_map_summaries(
     max_chunks: Optional[int] = None,
 ) -> List[str]:
     """MAP stage: summarize chunks with bounded concurrency via ThreadPoolExecutor."""
-    map_stage_start = time.perf_counter()
-    cap = max_chunks or MAP_MAX_CHUNKS
-    eligible = [c for c in chunks if len(c.strip()) >= 100]
-    total_input_chars = sum(len(c) for c in eligible)
-    concurrency = min(len(eligible), MAP_CONCURRENCY) if eligible else 1
-    logger.info(
-        "[TRACE][MAP_START] total_chunks=%d eligible_chunks=%d total_input_chars=%d cap=%d concurrency=%d model=%s",
-        len(chunks), len(eligible), total_input_chars, cap, concurrency, OLLAMA_GENERATION_MODEL,
+    def process_fn(chunk: str) -> str:
+        return _map_summarize_chunk(chunk, language, timeout, retries)
+
+    return map_chunks_sync(
+        chunks,
+        process_fn,
+        concurrency=MAP_CONCURRENCY,
+        max_chunks=max_chunks or MAP_MAX_CHUNKS,
     )
-    if len(eligible) > cap:
-        logger.warning(
-            "[TRACE][MAP] capping %d eligible chunks to %d",
-            len(eligible), cap,
-        )
-        eligible = eligible[:cap]
-
-    if not eligible:
-        return []
-
-    # Concurrent execution — each chunk runs in its own thread
-    results = [None] * len(eligible)
-    chunk_timings = [0] * len(eligible)
-
-    def _run_chunk(idx_chunk):
-        idx, chunk = idx_chunk
-        chunk_start = time.perf_counter()
-        logger.info("[TRACE][MAP] chunk %d/%d chars=%d", idx + 1, len(eligible), len(chunk))
-        summary = _map_summarize_chunk(chunk, language, timeout, retries)
-        chunk_ms = int((time.perf_counter() - chunk_start) * 1000)
-        if summary:
-            logger.info("[TRACE][MAP] chunk %d/%d DONE duration_ms=%d output_chars=%d", idx + 1, len(eligible), chunk_ms, len(summary))
-        else:
-            logger.warning("[TRACE][MAP] chunk %d/%d EMPTY duration_ms=%d", idx + 1, len(eligible), chunk_ms)
-        return idx, summary or "", chunk_ms
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = pool.map(_run_chunk, enumerate(eligible))
-        for idx, summary, chunk_ms in futures:
-            results[idx] = summary
-            chunk_timings[idx] = chunk_ms
-
-    mapped_summaries = [s for s in results if s]
-    map_total_ms = int((time.perf_counter() - map_stage_start) * 1000)
-    valid_timings = [t for t in chunk_timings if t > 0]
-    avg_ms = int(sum(valid_timings) / len(valid_timings)) if valid_timings else 0
-    logger.info(
-        "[TRACE][MAP_END] processed=%d/%d total_ms=%d avg_chunk_ms=%d min_ms=%d max_ms=%d output_summaries=%d concurrency=%d",
-        len(eligible), len(chunks), map_total_ms, avg_ms,
-        min(valid_timings) if valid_timings else 0,
-        max(valid_timings) if valid_timings else 0,
-        len(mapped_summaries), concurrency,
-    )
-    return mapped_summaries
 
 
 async def _async_map_summaries(
@@ -599,9 +689,6 @@ async def _async_map_summaries(
     max_chunks: Optional[int] = None,
 ) -> List[str]:
     """Async MAP stage with bounded concurrency for the streaming path.
-
-    Uses asyncio.Semaphore + run_in_executor so the event loop stays
-    responsive (emitting keepalives) while MAP work proceeds in threads.
 
     WARNING — LEGACY PATH:
     This function is used only by generate_study_material_stream() for
@@ -614,58 +701,20 @@ async def _async_map_summaries(
     api.py /generate/stream already routes summary correctly.
     Do NOT call this function for material_type="summary".
     """
-    cap = max_chunks or STREAM_MAP_MAX_CHUNKS
-    eligible = [c for c in chunks if len(c.strip()) >= 100]
-    if len(eligible) > cap:
-        eligible = eligible[:cap]
+    def process_fn(chunk: str) -> str:
+        return _map_summarize_chunk(chunk, language, timeout, retries)
 
-    if not eligible:
-        return []
-
-    map_start = time.perf_counter()
-    concurrency = min(len(eligible), MAP_CONCURRENCY)
-    sem = asyncio.Semaphore(concurrency)
-    loop = asyncio.get_running_loop()
-
-    logger.info(
-        "[TRACE][ASYNC_MAP_START] eligible=%d cap=%d concurrency=%d",
-        len(eligible), cap, concurrency,
+    return await async_map_chunks(
+        chunks,
+        process_fn,
+        concurrency=MAP_CONCURRENCY,
+        max_chunks=max_chunks or STREAM_MAP_MAX_CHUNKS,
     )
-
-    async def _map_one(idx: int, chunk: str):
-        async with sem:
-            result = await loop.run_in_executor(
-                None, _map_summarize_chunk, chunk, language, timeout, retries,
-            )
-            return idx, result or ""
-
-    tasks = [_map_one(i, c) for i, c in enumerate(eligible)]
-    gathered = await asyncio.gather(*tasks, return_exceptions=True)
-
-    ordered = [None] * len(eligible)
-    for item in gathered:
-        if isinstance(item, Exception):
-            logger.warning("[TRACE][ASYNC_MAP] chunk failed: %s", item)
-            continue
-        idx, summary = item
-        ordered[idx] = summary
-
-    mapped = [s for s in ordered if s]
-    map_ms = int((time.perf_counter() - map_start) * 1000)
-    logger.info(
-        "[TRACE][ASYNC_MAP_END] total_ms=%d input=%d output=%d concurrency=%d",
-        map_ms, len(eligible), len(mapped), concurrency,
-    )
-    return mapped
 
 
 def _build_generation_context(chunks: List[str]) -> str:
     """Combine chunk context with a safe max-length cap."""
-    max_chars = OLLAMA_MAX_CONTEXT_CHARS
-    context = "\n\n".join(chunks)
-    if len(context) > max_chars:
-        context = context[:max_chars] + "...\n[Context truncated due to length]"
-    return context
+    return reduce_results(chunks, OLLAMA_MAX_CONTEXT_CHARS, "\n...\n[Context truncated due to length]")
 
 
 async def generate_study_material_stream(
@@ -966,8 +1015,9 @@ def generate_study_material(
 
 def generate_single_quiz_question(
     chunks: List[str],
-    student_profile: Optional[Dict[str, Any]] = None,
-    topic: Optional[str] = None,
+    difficulty: str,
+    target_concept: str,
+    distractor_pool: List[str],
     language: str = "en",
     timeout: int = OLLAMA_GENERATION_TIMEOUT,
     retries: int = OLLAMA_REQUEST_RETRIES,
@@ -981,47 +1031,65 @@ def generate_single_quiz_question(
     if len(context) > max_chars:
         context = context[:max_chars] + "...\n[Context truncated due to length]"
 
-    accuracy = 0.5
-    weak_topics: List[str] = []
-    if student_profile:
-        try:
-            accuracy = float(student_profile.get("accuracy", 0.5))
-        except (TypeError, ValueError):
-            accuracy = 0.5
-        weak_topics = [str(t) for t in (student_profile.get("weak_topics") or []) if t]
+    logger.info(
+        "[QUIZ_PIPELINE] prompt_difficulty=%s concept=%r chunks=%d context_chars=%d",
+        difficulty, target_concept, len(chunks), len(context),
+    )
+    logger.info(
+        "[QUIZ_GEN] build_prompt concept=%r difficulty=%s chunks=%d context_chars=%d pool=%s",
+        target_concept, difficulty, len(chunks), len(context),
+        distractor_pool[:5] if distractor_pool else [],
+    )
 
-    if accuracy < 0.5:
-        difficulty = "easy"
-    elif accuracy <= 0.8:
-        difficulty = "medium"
-    else:
-        difficulty = "hard"
+    target_hint = (
+        f"The question must test understanding of the concept: '{target_concept}'."
+        if target_concept else ""
+    )
 
-    topic_hint = f"Focus topic: {topic}." if topic else ""
-    weak_hint = (
-        f"Prioritize these weak topics when possible: {', '.join(weak_topics)}."
-        if weak_topics
+    # Related concept names hint: a suggestion, not a copy directive.
+    # The LLM must still derive actual wrong-answer text from the context.
+    distractor_hint = (
+        f"The following related concepts from the same subject area may inspire plausible wrong answers: "
+        f"{', '.join(distractor_pool[:5])}. "
+        f"Only use them if they can represent a realistic misconception about the correct answer to this specific question."
+        if distractor_pool
         else ""
+    )
+
+    option_grounding = (
+        "Option quality rules:\n"
+        "- Every option (correct and incorrect) must be a direct, specific answer to the question stem — "
+        "not a general fact about the subject area.\n"
+        "- Incorrect options must be plausible misconceptions or common confusions about the correct answer, "
+        "not unrelated facts.\n"
+        "- All options must be grounded in the provided context. Do not invent options absent from the context.\n"
+        "- Options should be parallel in form and comparable in length."
     )
 
     json_structure = {
         "question": "Question text?",
-        "options": ["A", "B", "C", "D"],
-        "correct_answer": "A",
-        "explanation": "Why A is correct",
+        "options": ["Option 1", "Option 2", "Option 3"],
+        "correct_answer": 0,
+        "explanation": "Why option 1 is correct",
     }
+
+    difficulty_guidance = _build_quiz_difficulty_guidance(difficulty)
 
     prompt = (
         f"System instructions:\n"
-        f"Generate EXACTLY ONE multiple-choice quiz question in {language}. "
-        f"Use difficulty level: {difficulty}. "
-        f"Question must include exactly 4 options, one correct_answer, and a concise explanation.\n"
-        f"{topic_hint}\n"
-        f"{weak_hint}\n"
+        f"Generate EXACTLY ONE multiple-choice quiz question in {language}.\n"
+        f"{difficulty_guidance}\n"
+        f"{option_grounding}\n"
+        f"Question must include a list of options (minimum 2), a correct_answer index, and a concise explanation.\n"
+        f"correct_answer must be the integer index of the correct option (0-based). DO NOT use letters or text for correct_answer.\n"
+        f"{target_hint}\n"
+        f"{distractor_hint}\n"
         f"Return ONLY valid JSON with this exact structure: {json.dumps(json_structure)}\n\n"
         f"Context:\n---\n{context}\n---\n\n"
         f"Generate the single quiz question JSON now:"
     )
+
+    logger.debug("[QUIZ_GEN] prompt_chars=%d prompt_head=%r", len(prompt), prompt[:400])
 
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
@@ -1033,10 +1101,8 @@ def generate_single_quiz_question(
     for attempt in range(retries):
         try:
             logger.info(
-                "Single quiz generation start attempt=%d/%d difficulty=%s",
-                attempt + 1,
-                retries,
-                difficulty,
+                "[QUIZ_GEN] generation attempt=%d/%d difficulty=%s concept=%r",
+                attempt + 1, retries, difficulty, target_concept,
             )
             generated_text = _stream_ollama_generate(payload, timeout=timeout, material_type="quiz_single")
             cleaned = _strip_markdown_fences(generated_text)
@@ -1047,20 +1113,27 @@ def generate_single_quiz_question(
 
             question = str(parsed.get("question") or "").strip()
             options = parsed.get("options") or []
-            correct_answer = str(parsed.get("correct_answer") or "").strip()
+            correct_answer = parsed.get("correct_answer")
             explanation = str(parsed.get("explanation") or "").strip()
 
             if not question:
                 raise ValueError("Missing question")
-            if not isinstance(options, list) or len(options) != 4:
-                raise ValueError("options must contain exactly 4 items")
+            if not isinstance(options, list) or len(options) < 2:
+                raise ValueError("options must contain at least 2 items")
             options = [str(o).strip() for o in options]
             if any(not o for o in options):
                 raise ValueError("All options must be non-empty")
-            if not correct_answer:
-                raise ValueError("Missing correct_answer")
+            if not isinstance(correct_answer, int):
+                raise ValueError("correct_answer must be an integer index")
+            if not 0 <= correct_answer < len(options):
+                raise ValueError("correct_answer index out of range")
             if not explanation:
                 raise ValueError("Missing explanation")
+
+            logger.info(
+                "[QUIZ_GEN] options_raw correct_idx=%d options=%s",
+                correct_answer, options,
+            )
 
             return {
                 "question": question,
@@ -1071,15 +1144,102 @@ def generate_single_quiz_question(
         except Exception as e:
             last_error = e
             logger.warning(
-                "Single quiz generation failed attempt=%d/%d error=%s",
-                attempt + 1,
-                retries,
-                e,
+                "[QUIZ_GEN] generation attempt=%d/%d FAILED error=%s",
+                attempt + 1, retries, e,
             )
             if attempt == retries - 1:
                 break
 
     raise RuntimeError(f"Single quiz generation failed: {last_error}")
+
+
+def generate_validated_quiz_question(
+    chunks: List[str],
+    difficulty: str,
+    target_concept: str,
+    distractor_pool: List[str],
+    language: str = "en",
+    timeout: int = OLLAMA_GENERATION_TIMEOUT,
+) -> Dict[str, Any]:
+    """
+    Generate and structurally validate a single quiz question.
+
+    # LLM is not a validator. It is a generator only.
+    #
+    # `difficulty` is the resolved value from resolve_quiz_difficulty() and is the
+    # single source of truth passed unchanged into every generation attempt.
+    # Retry decisions are made EXCLUSIVELY by validate_quiz_question() (deterministic,
+    # code-only).  llm_validate_quiz_question() is called for debug observability only
+    # and NEVER influences accept/reject or retry.
+    """
+    max_attempts = 3
+
+    logger.info(
+        "[QUIZ_PIPELINE] start resolved_difficulty=%s concept=%r max_attempts=%d",
+        difficulty, target_concept, max_attempts,
+    )
+
+    for attempt in range(max_attempts):
+        try:
+            logger.info(
+                "[QUIZ_PIPELINE] attempt=%d/%d resolved_difficulty=%s concept=%r",
+                attempt + 1, max_attempts, difficulty, target_concept,
+            )
+            question = generate_single_quiz_question(
+                chunks=chunks,
+                difficulty=difficulty,
+                target_concept=target_concept,
+                distractor_pool=distractor_pool,
+                language=language,
+                timeout=timeout,
+                retries=1,
+            )
+
+            # ── Structural validation (sole retry gate) ────────────────────────
+            # ONLY validate_quiz_question() can accept or reject a question.
+            # No other check influences retry. No heuristic, no LLM output.
+            val = validate_quiz_question(question)
+            if not val["valid"]:
+                logger.warning(
+                    "[QUIZ_PIPELINE] structural FAIL attempt=%d/%d resolved_difficulty=%s "
+                    "reasons=%s question_text=%r",
+                    attempt + 1, max_attempts, difficulty,
+                    val["reasons"], question.get("question", ""),
+                )
+                if attempt == max_attempts - 1:
+                    raise ValueError(f"Structural validation failed: {val['reasons']}")
+                continue
+
+            # ── LLM observability log (debug only — no decision made here) ────
+            # Difficulty is system-controlled, not model-inferred.
+            # llm_validate_quiz_question() checks content quality only.
+            # Its result never influences difficulty, retry, or rejection.
+            try:
+                llm_val = llm_validate_quiz_question(question, difficulty)
+                logger.debug(
+                    "[QUIZ_PIPELINE] llm_content_check resolved_difficulty=%s valid=%s reason=%s",
+                    difficulty, llm_val.get("valid"), llm_val.get("reason", ""),
+                )
+            except Exception as lv_err:
+                logger.debug("[QUIZ_PIPELINE] llm_validate skipped: %s", lv_err)
+
+            logger.info(
+                "[QUIZ_PIPELINE] accepted attempt=%d/%d resolved_difficulty=%s concept=%r",
+                attempt + 1, max_attempts, difficulty, target_concept,
+            )
+            return question
+
+        except Exception as e:
+            logger.warning(
+                "[QUIZ_PIPELINE] exception attempt=%d/%d resolved_difficulty=%s error=%s",
+                attempt + 1, max_attempts, difficulty, e,
+            )
+            if attempt == max_attempts - 1:
+                raise RuntimeError(
+                    f"All {max_attempts} validated generation attempts failed. Last error: {e}"
+                )
+
+    raise RuntimeError("Unexpected end of generate_validated_quiz_question.")
 
 
 def generate_chat_response(
@@ -1159,21 +1319,51 @@ def evaluate_quiz(
             q_id = int(sub.get("question_id"))
         except (TypeError, ValueError):
             continue
-        user_ans = _canonical_answer(sub.get("user_answer", ""))
+        user_answer = sub.get("user_answer", "")
 
         answer_info = resolved_answer_key.get(q_id) or {}
         q = question_map.get(q_id) or {}
-        correct_ans = _canonical_answer(answer_info.get("correct_answer") or q.get("correct_answer", ""))
-        is_correct = bool(correct_ans) and user_ans == correct_ans
+        options = q.get("options")
+        raw_correct = answer_info.get("correct_answer")
+        if raw_correct is None:
+            raw_correct = q.get("correct_answer")
+
+        correct_index = None
+        try:
+            if raw_correct is not None:
+                if isinstance(raw_correct, int):
+                    correct_index = raw_correct
+                elif isinstance(raw_correct, str) and raw_correct.strip().isdigit():
+                    correct_index = int(raw_correct.strip())
+        except (TypeError, ValueError):
+            pass
+
+        user_index = extract_index(user_answer, options)
+
+        is_correct = correct_index is not None and user_index == correct_index
+        correct_option_text = ""
+        if correct_index is not None and isinstance(options, list) and 0 <= correct_index < len(options):
+            correct_option_text = str(options[correct_index]).strip()
 
         result = {
             "question_id": q_id,
             "status": "correct" if is_correct else "wrong",
             "color": "green" if is_correct else "red",
+            "correct_index": correct_index,
+            "correct_option_text": correct_option_text,
         }
 
         if not is_correct:
-            result["explanation"] = answer_info.get("explanation") or q.get("explanation") or "Incorrect answer."
+            explanation = answer_info.get("explanation") or q.get("explanation") or "Incorrect answer."
+            if correct_index is not None and correct_option_text:
+                explanation = (
+                    f"{explanation} Correct answer: Option {correct_index + 1} — {correct_option_text}"
+                )
+            result["explanation"] = explanation
+            logger.debug(
+                "Quiz answer mismatch question_id=%s user_answer=%s correct_answer=%s",
+                q_id, user_answer, raw_correct,
+            )
 
         results.append(result)
 

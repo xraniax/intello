@@ -4,12 +4,14 @@ from typing import Dict, Any
 
 import redis
 
+from .redis_client import get_concepts, add_concept, remove_concept
+
 logger = logging.getLogger("engine-student-model")
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/1")
 
-# Simple tuning knobs for topic classification.
-STRONG_TOPIC_MIN_CORRECT = int(os.getenv("STUDENT_STRONG_TOPIC_MIN_CORRECT", "2"))
+# Simple tuning knobs for concept classification.
+STRONG_CONCEPT_MIN_CORRECT = int(os.getenv("STUDENT_STRONG_CONCEPT_MIN_CORRECT", "2"))
 ACCURACY_STEP = float(os.getenv("STUDENT_ACCURACY_STEP", "0.05"))
 
 
@@ -21,16 +23,16 @@ def _student_key(user_id: str) -> str:
     return f"student:{user_id}"
 
 
-def _weak_topics_key(user_id: str) -> str:
-    return f"student:{user_id}:weak_topics"
+def _weak_concepts_key(user_id: str) -> str:
+    return f"student:{user_id}:weak_concepts"
 
 
-def _strong_topics_key(user_id: str) -> str:
-    return f"student:{user_id}:strong_topics"
+def _strong_concepts_key(user_id: str) -> str:
+    return f"student:{user_id}:strong_concepts"
 
 
-def _topic_correct_count_key(user_id: str) -> str:
-    return f"student:{user_id}:topic_correct_count"
+def _concept_correct_count_key(user_id: str) -> str:
+    return f"student:{user_id}:concept_correct_count"
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -50,14 +52,14 @@ def get_student(user_id: str) -> Dict[str, Any]:
     accuracy = float(data.get("accuracy", 0.5))
     avg_response_time = float(data.get("avg_response_time", 0.0))
 
-    weak_topics = sorted(list(client.smembers(_weak_topics_key(user_id))))
-    strong_topics = sorted(list(client.smembers(_strong_topics_key(user_id))))
+    weak_concepts   = sorted(get_concepts(_weak_concepts_key(user_id),   client))
+    strong_concepts = sorted(get_concepts(_strong_concepts_key(user_id), client))
 
     return {
         "accuracy": accuracy,
         "avg_response_time": avg_response_time,
-        "weak_topics": weak_topics,
-        "strong_topics": strong_topics,
+        "weak_concepts": weak_concepts,
+        "strong_concepts": strong_concepts,
     }
 
 
@@ -65,7 +67,8 @@ def update_student_performance(
     user_id: str,
     is_correct: bool,
     response_time: float,
-    topic: str,
+    concept: str = None,
+    topic: str = None,
 ) -> Dict[str, Any]:
     """Update student metrics using simple rule-based tracking in Redis."""
     if not user_id:
@@ -100,19 +103,20 @@ def update_student_performance(
     adjusted_accuracy = _clamp(accuracy + step, 0.0, 1.0)
     new_accuracy = (empirical_accuracy + adjusted_accuracy) / 2.0
 
-    # Topic strength/weakness updates.
-    if topic:
-        weak_key = _weak_topics_key(user_id)
-        strong_key = _strong_topics_key(user_id)
+    # Concept strength/weakness updates.
+    resolved_concept = concept or topic
+    if resolved_concept:
+        weak_key = _weak_concepts_key(user_id)
+        strong_key = _strong_concepts_key(user_id)
 
         if is_correct:
-            topic_count = client.hincrby(_topic_correct_count_key(user_id), topic, 1)
-            if topic_count >= STRONG_TOPIC_MIN_CORRECT:
-                client.sadd(strong_key, topic)
-                client.srem(weak_key, topic)
+            concept_count = client.hincrby(_concept_correct_count_key(user_id), resolved_concept, 1)
+            if concept_count >= STRONG_CONCEPT_MIN_CORRECT:
+                add_concept(strong_key, resolved_concept, client)
+                remove_concept(weak_key, resolved_concept, client)
         else:
-            client.sadd(weak_key, topic)
-            client.srem(strong_key, topic)
+            add_concept(weak_key, resolved_concept, client)
+            remove_concept(strong_key, resolved_concept, client)
 
     # Persist updated metrics.
     client.hset(

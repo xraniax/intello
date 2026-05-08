@@ -219,6 +219,12 @@ def ingest_file(
         )
 
     inserted = bulk_insert_chunks(session, doc.id, chunks_data)
+    logger.info(
+        "[INGEST] concept_db_insert subject_id=%s document_id=%s chunks_inserted=%d",
+        resolved_subject_id,
+        doc.id,
+        inserted,
+    )
 
     upload_id = _insert_upload_metadata(
         session,

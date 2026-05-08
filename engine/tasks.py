@@ -21,11 +21,6 @@ from utils.logging import get_job_logger
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# DEPRECATED: Standardizing on utils.logging.get_job_logger
-def get_job_logger_deprecated(job_id):
-    return get_job_logger(job_id, "cognify-worker")
-
-
 # --- REUSABLE ERROR HANDLER ---
 
 @celery_app.task(name="tasks.task_record_failure")
@@ -253,53 +248,6 @@ def task_store(self, data):
     }
 
 
-CURRENT_CONFIG_VERSION = 1
-
-def initialize_workspace_config(subject_id: str, existing_opts: Optional[dict] = None) -> dict:
-    """
-    Mandatory Workspace Entry Point. 
-    Eradicates drift via strict versioning and 'Heal-and-Alert' logic.
-    """
-    opts = existing_opts or {}
-    corrections = []
-    
-    # 1. Version Check
-    version = opts.get("config_version", 0)
-    if version < CURRENT_CONFIG_VERSION:
-        corrections.append(f"version_upgrade({version}->{CURRENT_CONFIG_VERSION})")
-    
-    # 2. Build configuration with default-or-repair logic
-    config = {
-        "difficulty": opts.get("difficulty", "intermediate"),
-        "count": opts.get("count", opts.get("numberOfQuestions", 10)),
-        "types": opts.get("types", opts.get("examTypes", [])),
-        "timeout": opts.get("timeout", 300),
-        "strict_fallback_immunity": True,
-        "config_version": CURRENT_CONFIG_VERSION
-    }
-    
-    # 3. Detect and repair specific corruptions
-    if not isinstance(config["types"], list) or len(config["types"]) == 0:
-        config["types"] = ["single_choice", "multiple_select", "short_answer"]
-        corrections.append("defaulted_missing_exam_types")
-        
-    if not isinstance(config["count"], int) or config["count"] <= 0:
-        config["count"] = 10
-        corrections.append(f"repaired_invalid_count({opts.get('count')})")
-
-    # 4. Observability: Heal-and-Alert (No silent masking)
-    if corrections:
-        logger.warning(
-            f"[CONFIG AUDIT] Workspace {subject_id} was misconfigured or outdated. "
-            f"Repairs made: {', '.join(corrections)}. "
-            "Please audit upstream write path in Node.js backend."
-        )
-    else:
-        logger.info(f"[CONFIG VALID] Workspace {subject_id} passed initialization (v{CURRENT_CONFIG_VERSION})")
-        
-    return config
-
-
 def _normalize_generation_result(material: Any, material_type: str, topic: Optional[str], language: str, top_k: int, subject_id: str) -> dict:
     """Normalize generation output to the ai_generated_content contract only."""
     if isinstance(material, dict) and material.get("error"):
@@ -495,6 +443,42 @@ def task_process_document(
         except Exception:
             db.rollback()
             raise
+
+        # ---- Knowledge graph generation ----
+        try:
+            from services.retrieval import retrieve_sequential_chunks
+            from services.knowledge_graph_service import generate_subject_graph
+
+            logger.info(
+                "[PIPELINE] concept_graph_start request_id=%s task_id=%s subject_id=%s",
+                request_id,
+                task_id,
+                subject_id,
+            )
+
+            graph_chunks = retrieve_sequential_chunks(db, subject_id)
+            chunk_texts = [c.content for c in graph_chunks if c.content]
+
+            if not chunk_texts:
+                logger.warning(
+                    "[PIPELINE] concept_graph_empty subject_id=%s — no chunks found; knowledge graph not built",
+                    subject_id,
+                )
+            else:
+                graph_start = time.time()
+                generate_subject_graph(subject_id, chunk_texts)
+                logger.info(
+                    "[PIPELINE] concept_graph_success subject_id=%s chunks=%d elapsed_ms=%d",
+                    subject_id,
+                    len(chunk_texts),
+                    int((time.time() - graph_start) * 1000),
+                )
+        except Exception as e:
+            logger.error(
+                "[PIPELINE] concept_graph_error subject_id=%s error=%s",
+                subject_id,
+                e,
+            )
 
         logger.info(
             "[PIPELINE] task_success request_id=%s task_id=%s filename=%s total_elapsed_ms=%d",

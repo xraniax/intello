@@ -40,6 +40,7 @@ try:
     from core.normalization.input_normalizer import (
         SUPPORTED_MATERIAL_TYPES,
         coalesce_text,
+        normalize_difficulty,
         normalize_material_type,
         parse_optional_uuid,
     )
@@ -48,6 +49,7 @@ except ImportError:
     from ..core.normalization.input_normalizer import (
         SUPPORTED_MATERIAL_TYPES,
         coalesce_text,
+        normalize_difficulty,
         normalize_material_type,
         parse_optional_uuid,
     )
@@ -1011,7 +1013,7 @@ async def generate_route(body: GenerateRequest, db: Session = Depends(get_db)):
 
         # Extract difficulty from generation_options (GPS) sent by backend
         gen_opts = body.generation_options or {}
-        difficulty = gen_opts.get("difficulty", "intermediate")
+        difficulty = normalize_difficulty(gen_opts.get("difficulty", "intermediate"))
 
         # Dispatch to celery
         task = task_generate_material.delay(
@@ -1109,7 +1111,7 @@ async def generate_stream_route(body: GenerateRequest, db: Session = Depends(get
 
     # Extract difficulty from generation_options (GPS) sent by backend
     gen_opts = body.generation_options or {}
-    difficulty = gen_opts.get("difficulty", "intermediate")
+    difficulty = normalize_difficulty(gen_opts.get("difficulty", "intermediate"))
 
     # ── Dedicated summary pipeline (S-3, S-4, S-6, S-9) ──
     if material_type == "summary":

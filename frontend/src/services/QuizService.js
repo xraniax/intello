@@ -1,10 +1,12 @@
 import api from '@/services/api';
+import { useAuthStore } from '@/store/useAuthStore';
 
 /**
  * QuizService — adaptive quiz API layer.
  *
  * Single entry point for all adaptive quiz interactions.
- * userId is injected server-side from JWT — never sent from the client.
+ * user_id is read from the auth store and sent in every request body.
+ * Falls back to 'anonymous' when the user is not authenticated.
  *
  * Both paths ultimately call engine /quiz/next or /quiz/submit-answer,
  * which delegate all logic to quiz_manager.py.
@@ -23,8 +25,11 @@ export const QuizService = {
      * @param {{ isCorrect?: boolean, responseTime?: number }} opts
      */
     nextQuestion: (subjectId, topic = null, language = 'en', topK = 5, opts = {}) => {
+        const userId = useAuthStore.getState().data.user?.id?.toString() ?? 'anonymous';
+
         if (opts.isCorrect !== undefined) {
             return api.post('/quiz/submit-answer', {
+                user_id: userId,
                 subject_id: subjectId,
                 topic: topic || null,
                 language,
@@ -34,7 +39,8 @@ export const QuizService = {
             });
         }
 
-        return api.post('/quiz/start', {
+        return api.post('/quiz/next', {
+            user_id: userId,
             subject_id: subjectId,
             topic: topic || null,
             language,

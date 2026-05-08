@@ -12,6 +12,23 @@ MATERIAL_TYPE_ALIASES = {
 
 SUPPORTED_MATERIAL_TYPES = frozenset({"summary", "quiz", "flashcards", "exam"})
 
+# Frontend sends abbreviated codes; pipeline functions expect canonical strings.
+_DIFFICULTY_ALIASES = {
+    "intro": "beginner",
+    "inter": "intermediate",
+    "adv": "advanced",
+}
+
+
+def normalize_difficulty(value: Optional[str]) -> str:
+    """Map frontend difficulty codes to canonical pipeline strings.
+
+    'Intro' → 'beginner', 'Inter' → 'intermediate', 'Adv' → 'advanced'.
+    Unknown values pass through unchanged so the pipeline's else-branch default applies.
+    """
+    raw = str(value or "").strip().lower()
+    return _DIFFICULTY_ALIASES.get(raw, raw)
+
 
 def normalize_material_type(value: Optional[str]) -> str:
     """Normalize material type with alias mapping and case/whitespace cleanup."""

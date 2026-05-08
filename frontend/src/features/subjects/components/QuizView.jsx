@@ -19,6 +19,21 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import Confetti from 'react-confetti';
 import QuizService from '@/services/QuizService';
+import { normalizeOptions, isCorrectAnswer, getKeyboardMappedOption } from '@/quiz/quizEngine';
+import {
+    createQuizSession,
+    makeQuestionViewedEvent,
+    makeOptionSelectedEvent,
+    makeAnswerSubmittedEvent,
+    makeQuestionAdvancedEvent,
+    makeQuizCompletedEvent,
+    makeQuizResetEvent,
+} from '@/quiz/quizEvents';
+import { enqueueEvent, getSessionEvents } from '@/quiz/quizEventQueue';
+import { ingest } from '@/learning/adaptiveRuntime';
+import { LEARNING_SOURCE, LEARNING_EVENT_TYPE, LEARNING_EVENT_SCHEMA_VERSION } from '@/learning/learningEventSchema';
+import QuizDebugPanel from '@/quiz/QuizDebugPanel';
+import '@/quiz/quizDebug';
 
 function cn(...inputs) {
     return twMerge(clsx(inputs));
@@ -73,6 +88,30 @@ const ConfettiComponent = () => {
 };
 
 // ---------------------------------------------------------------------------
+// Module-level helpers
+// ---------------------------------------------------------------------------
+
+function _genEventId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+}
+
+// FNV-inspired 32-bit hash — produces a short base-36 fingerprint from a string.
+// Used to disambiguate storageKeys when only subjectId is available.
+function _hashStr(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+        h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+    }
+    return (h >>> 0).toString(36);
+}
+
+// ---------------------------------------------------------------------------
 // Data normaliser — handles every known backend shape & property names
 // ---------------------------------------------------------------------------
 const mapQuestion = (q) => {
@@ -83,7 +122,7 @@ const mapQuestion = (q) => {
     // Support multi-property mapping for correct answers
     // 1. Value-based: correct_answer, answer, correctAnswer
     // 2. Index-based: correctAnswers (array of indices), correctIndex
-    let correctAnswer = q.correct_answer || q.answer || q.correctAnswer || '';
+    let correctAnswer = q.correct_answer ?? q.answer ?? q.correctAnswer ?? '';
 
     // If we have correctAnswers as an array of indices, map to the option value
     if (Array.isArray(q.correctAnswers) && q.correctAnswers.length > 0 && options.length > 0) {
@@ -93,6 +132,10 @@ const mapQuestion = (q) => {
         }
     } else if (typeof q.correctIndex === 'number' && options[q.correctIndex]) {
         correctAnswer = options[q.correctIndex];
+    } else if (typeof correctAnswer === 'number' && options[correctAnswer]) {
+        correctAnswer = options[correctAnswer];
+    } else if (typeof correctAnswer === 'string' && /^\d+$/.test(correctAnswer) && options[parseInt(correctAnswer, 10)]) {
+        correctAnswer = options[parseInt(correctAnswer, 10)];
     }
 
     return {
@@ -153,7 +196,11 @@ const extractQuizQuestions = (data) => {
 // ---------------------------------------------------------------------------
 // Shared question card UI used by both modes
 // ---------------------------------------------------------------------------
-const QuestionCard = ({ question, selectedOption, isSubmitted, isExpanded, onSelect }) => (
+const QuestionCard = ({ question, selectedOption, isSubmitted, isExpanded, onSelect }) => {
+    if (!question) return null;
+    const options = normalizeOptions(question);
+
+    return (
     <AnimatePresence mode="wait">
         <motion.div
             key={question.id}
@@ -167,11 +214,11 @@ const QuestionCard = ({ question, selectedOption, isSubmitted, isExpanded, onSel
             </h3>
 
             <div className="space-y-3 sm:space-y-4">
-                {question.options && question.options.length > 0 ? (
-                    question.options.map((option, idx) => {
+                {options.length > 0 ? (
+                    options.map((option, idx) => {
                         const isSelected = selectedOption === option;
-                        const isCorrect = isSubmitted && option === question.correct_answer;
-                        const isWrong = isSubmitted && isSelected && option !== question.correct_answer;
+                        const isCorrect = isSubmitted && isCorrectAnswer(option, question.correct_answer);
+                        const isWrong = isSubmitted && isSelected && !isCorrectAnswer(option, question.correct_answer);
 
                         return (
                             <motion.button
@@ -241,7 +288,8 @@ const QuestionCard = ({ question, selectedOption, isSubmitted, isExpanded, onSel
             </AnimatePresence>
         </motion.div>
     </AnimatePresence>
-);
+    );
+};
 
 // ---------------------------------------------------------------------------
 // Shared results screen
@@ -334,7 +382,7 @@ const QuizHeader = ({ current, total, streak, muted, setMuted, isExpanded }) => 
                     </div>
                     <div className="flex items-center gap-2 text-xs font-bold text-gray-400 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
                         <Keyboard className="w-4 h-4" />
-                        <span className="hidden sm:inline">A-D to select, ↵ to submit</span>
+                        <span className="hidden sm:inline">Use letters to select, ↵ to submit</span>
                         <span className="sm:hidden">Keyboard ready</span>
                     </div>
                     <button
@@ -374,6 +422,57 @@ const QuizHeader = ({ current, total, streak, muted, setMuted, isExpanded }) => 
 };
 
 // ---------------------------------------------------------------------------
+// Shared quiz logic — used by both StaticQuizView and AdaptiveQuizView
+// ---------------------------------------------------------------------------
+
+// Update score/streak and play audio. Called identically in both handleSubmit
+// implementations; the surrounding mode-specific state mutations stay in each mode.
+function applyScoring(isCorrect, { setScore, setStreak, muted }) {
+    if (isCorrect) {
+        setScore(s => s + 1);
+        setStreak(s => s + 1);
+        if (!muted) playTone('correct');
+    } else {
+        setStreak(0);
+        if (!muted) playTone('wrong');
+    }
+}
+
+// Release submitLockRef once React has committed isSubmitted = true in state.
+// Identical in both modes — extracted to make the shared contract visible.
+function useSubmitLockRelease(submitLockRef, isSubmitted) {
+    useEffect(() => {
+        if (isSubmitted) submitLockRef.current = false;
+    }, [isSubmitted]); // eslint-disable-line react-hooks/exhaustive-deps -- submitLockRef is a stable ref object
+}
+
+// Register shared keyboard handler: letter-key selection, Enter to submit/advance,
+// Enter key-repeat guard. `loading` defaults to false for StaticQuizView (no loading state).
+function useQuizKeyboard({ question, isSubmitted, selectedOption, showResults, loading = false, selectOption, submitAnswer, advanceQuestion }) {
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            if (showResults || !question || loading) return;
+            if (['input', 'textarea'].includes(document.activeElement?.tagName.toLowerCase())) return;
+            const key = e.key.toLowerCase();
+            const opts = normalizeOptions(question);
+            if (!isSubmitted) {
+                const option = getKeyboardMappedOption(key, opts);
+                if (option !== null) selectOption(option);
+            }
+            if (key === 'enter') {
+                // Block OS key-repeat: holding Enter would fire submit then next in the same
+                // render cycle, inflating score and (in static mode) double-sending analytics.
+                if (e.repeat) return;
+                if (isSubmitted) advanceQuestion();
+                else if (selectedOption !== null) submitAnswer();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [showResults, question, loading, isSubmitted, selectedOption, selectOption, submitAnswer, advanceQuestion]);
+}
+
+// ---------------------------------------------------------------------------
 // Adaptive mode — one question at a time from the API
 // ---------------------------------------------------------------------------
 const MAX_ADAPTIVE_QUESTIONS = 10;
@@ -398,7 +497,7 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
     const [error, setError] = useState(null);
     const [selectedOption, setSelectedOption] = useState(null);
     const [isSubmitted, setIsSubmitted] = useState(false);
-    const [lastCorrect, setLastCorrect] = useState(null);
+    const [lastCorrect, setLastCorrect] = useState(initialState.lastCorrect ?? null);
     const [score, setScore] = useState(initialState.score ?? 0);
     const [questionCount, setQuestionCount] = useState(initialState.questionCount ?? 0);
     const [streak, setStreak] = useState(initialState.streak ?? 0);
@@ -406,7 +505,55 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
     const [muted, setMuted] = useState(initialState.muted ?? false);
     const startTimeRef = useRef(null);
 
+    // --- Submission locking ---
+    // submitLockRef: held from the moment handleSubmit fires until isSubmitted flips to true
+    // in React state. Prevents a rapid double-click or a keydown event that fires before the
+    // React re-render from scoring the same answer twice.
+    const submitLockRef = useRef(false);
+    // nextLockRef: held from handleNext until fetchQuestion completes (success or error).
+    // Prevents concurrent "next question" requests and rapid question skipping.
+    const nextLockRef = useRef(false);
+    // requestInFlightRef: true while a fetchQuestion HTTP call is in progress.
+    // Guards the initial mount, the retry button, and resetQuiz from overlapping
+    // with a handleNext-triggered fetch.
+    const requestInFlightRef = useRef(false);
+    // fetchRequestIdRef: monotonically-increasing counter. Each fetchQuestion call captures
+    // its own ID; if a newer call has started before this one resolves, the response is
+    // discarded — stale responses cannot overwrite newer state.
+    const fetchRequestIdRef = useRef(0);
+
+    // --- Event queue ---
+    // sessionRef: stable session context for all events in this quiz attempt.
+    // Rotated (new sessionId) on resetQuiz so post-reset events are distinguishable.
+    const sessionRef = useRef(null);
+    if (sessionRef.current === null) {
+        sessionRef.current = createQuizSession('adaptive', {
+            subjectId,
+            // Restore the original session identity on page refresh so events
+            // continue under the same sessionId and the persisted queue is found.
+            sessionId:  initialState.sessionId        ?? null,
+            createdAt:  initialState.sessionCreatedAt ?? null,
+        });
+    }
+    // eventQueueRef: in-memory mirror of the persisted event queue.
+    // Initialized from localStorage so events survive page refreshes.
+    const eventQueueRef = useRef(getSessionEvents(sessionRef.current.sessionId));
+    // completedEmittedRef: prevents a double QUIZ_COMPLETED if showResults effect re-fires.
+    // Initialized to true when resuming a completed session from localStorage.
+    const completedEmittedRef = useRef(initialState.showResults ?? false);
+
+    useSubmitLockRelease(submitLockRef, isSubmitted);
+
     const fetchQuestion = useCallback(async (opts = {}) => {
+        // Prevent concurrent fetches. nextLockRef already blocks handleNext re-entry, but
+        // the retry button and resetQuiz bypass nextLockRef, so we guard here too.
+        if (requestInFlightRef.current) return;
+        requestInFlightRef.current = true;
+
+        // Capture a unique ID for this call. Any response whose ID doesn't match the
+        // latest value is a stale response from an overlapping or retried request.
+        const requestId = ++fetchRequestIdRef.current;
+
         setLoading(true);
         setError(null);
         try {
@@ -417,6 +564,11 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
                 5,
                 opts
             );
+
+            // Stale response guard: a newer request has already started (e.g. retry fired
+            // while this response was in-flight). Discard this response entirely.
+            if (requestId !== fetchRequestIdRef.current) return;
+
             const envelope = res?.data?.data || res?.data;
             // Engine wraps the question: { question: {...}, progress: {...}, session: {...} }
             // Unwrap nested question object before normalising with mapQuestion
@@ -431,45 +583,174 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
             setIsSubmitted(false);
             setLastCorrect(null);
         } catch (err) {
+            // Discard errors from superseded requests too
+            if (requestId !== fetchRequestIdRef.current) return;
             setError(err?.response?.data?.message || 'Failed to load question. Please try again.');
         } finally {
-            setLoading(false);
+            // Only the owning request clears shared lock state. A superseded request must
+            // not release a lock that now belongs to the newer request.
+            if (requestId === fetchRequestIdRef.current) {
+                setLoading(false);
+                nextLockRef.current = false;
+                requestInFlightRef.current = false;
+            }
         }
     }, [subjectId]); // topic/language stable via sessionParamsRef
 
-    // Skip initial fetch if results screen was already showing when page was refreshed
+    // Skip initial fetch if results screen was already showing when page was refreshed.
+    // If the user refreshed after submitting but before clicking Next, replay lastCorrect
+    // so the backend records that answer before serving the next question.
+    // Guard the MAX boundary: if that was the final answer, show results without a new fetch.
     useEffect(() => {
         if (initialState.showResults) return;
-        fetchQuestion();
+        const pending = initialState.lastCorrect;
+        const resumedCount = initialState.questionCount ?? 0;
+        if (pending !== null && pending !== undefined && resumedCount + 1 < MAX_ADAPTIVE_QUESTIONS) {
+            fetchQuestion({ isCorrect: pending, responseTime: 0 });
+        } else {
+            fetchQuestion();
+        }
     }, [fetchQuestion]); // eslint-disable-line react-hooks/exhaustive-deps -- initialState frozen at mount
 
-    // Persist session continuity fields so a refresh can resume at the correct count/score
+    // Persist session continuity fields so a refresh can resume at the correct count/score.
+    // lastCorrect is included so an unanswered "next" after refresh replays the answer to the backend.
     useEffect(() => {
-        localStorage.setItem(storageKey, JSON.stringify({ questionCount, score, streak, showResults, muted }));
-    }, [questionCount, score, streak, showResults, muted, storageKey]);
+        localStorage.setItem(storageKey, JSON.stringify({
+            questionCount, score, streak, showResults, muted, lastCorrect,
+            sessionId:        sessionRef.current.sessionId,
+            sessionCreatedAt: sessionRef.current.createdAt,
+        }));
+    }, [questionCount, score, streak, showResults, muted, lastCorrect, storageKey]);
 
-    const handleOptionSelect = useCallback((opt) => {
-        if (!isSubmitted) setSelectedOption(opt);
-    }, [isSubmitted]);
+    // QUESTION_VIEWED: question reference only changes when fetchQuestion() resolves with a
+    // new object — rerenders of existing state never re-emit this event.
+    useEffect(() => {
+        if (!question) return;
+        const ev = makeQuestionViewedEvent(sessionRef.current, {
+            questionIndex: questionCount,
+            questionId: question.id ?? null,
+            correctAnswer: question.correct_answer,
+            totalQuestions: MAX_ADAPTIVE_QUESTIONS,
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
+    }, [question, questionCount]); // question and questionCount always advance together
 
-    const handleSubmit = useCallback(() => {
-        if (!selectedOption || isSubmitted || !question) return;
-        const correct = selectedOption === question.correct_answer;
-        setLastCorrect(correct);
-        setIsSubmitted(true);
-        if (correct) {
-            setScore(s => s + 1);
-            setStreak(s => s + 1);
-            if (!muted) playTone('correct');
-        } else {
-            setStreak(0);
-            if (!muted) playTone('wrong');
+    // QUIZ_COMPLETED: fires once when results become visible. completedEmittedRef prevents
+    // double-emission if score/streak update in the same render batch as showResults.
+    useEffect(() => {
+        if (!showResults || completedEmittedRef.current) return;
+        completedEmittedRef.current = true;
+        const ev = makeQuizCompletedEvent(sessionRef.current, {
+            totalQuestions: MAX_ADAPTIVE_QUESTIONS,
+            finalScore: score,
+            finalStreak: streak,
+            startedAt: sessionRef.current.createdAt,
+            completedAt: new Date().toISOString(),
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
+    }, [showResults, score, streak]);
+
+    const selectOption = useCallback((option) => {
+        // Block during active submit processing (submitLockRef). nextLockRef is already
+        // covered by loading=true which hides the question card during fetches.
+        if (submitLockRef.current) return;
+        if (!option) return;
+        if (!isSubmitted) {
+            setSelectedOption(option);
+            const ev = makeOptionSelectedEvent(sessionRef.current, {
+                questionIndex: questionCount,
+                questionId: question?.id ?? null,
+                selectedOption: option,
+            });
+            eventQueueRef.current.push(ev);
+            enqueueEvent(sessionRef.current.sessionId, ev);
+            ingest({
+                eventId:          _genEventId(),
+                sessionId:        sessionRef.current.sessionId,
+                timestamp:        ev.timestamp,
+                source:           LEARNING_SOURCE.QUIZ,
+                eventType:        LEARNING_EVENT_TYPE.ITEM_INTERACTED,
+                subjectId:        subjectId,
+                materialId:       null,
+                contentId:        question?.id?.toString() ?? null,
+                difficulty:       null,
+                responseTimeMs:   null,
+                schemaVersion:    LEARNING_EVENT_SCHEMA_VERSION,
+                contentIndex:     questionCount,
+                interactionType:  'option_selected',
+                interactionValue: option,
+            });
         }
-    }, [selectedOption, isSubmitted, question, muted]);
+    }, [isSubmitted, question, questionCount, subjectId]);
 
-    const handleNext = useCallback(async () => {
+    const submitAnswer = useCallback(() => {
+        // submitLockRef is the primary guard. isSubmitted is a secondary defence for any
+        // code path that doesn't go through the keyboard handler.
+        if (submitLockRef.current) return;
+        if (!selectedOption || isSubmitted || !question) return;
+
+        // Lock immediately — before any state mutation — so concurrent calls in the same
+        // JS microtask batch are rejected. Released by the useEffect above once React
+        // confirms isSubmitted = true in state, closing the stale-closure window.
+        submitLockRef.current = true;
+        const isCorrect = isCorrectAnswer(selectedOption, question.correct_answer);
+        // Compute post-scoring totals before queuing — setScore/setStreak are not yet committed.
+        const nextScore = score + (isCorrect ? 1 : 0);
+        const nextStreak = isCorrect ? streak + 1 : 0;
+        const responseTimeMs = startTimeRef.current ? Date.now() - startTimeRef.current : 0;
+        setLastCorrect(isCorrect);
+        setIsSubmitted(true);
+        applyScoring(isCorrect, { setScore, setStreak, muted });
+        const ev = makeAnswerSubmittedEvent(sessionRef.current, {
+            questionIndex: questionCount,
+            questionId: question.id ?? null,
+            selectedOption,
+            correctAnswer: question.correct_answer,
+            isCorrect,
+            responseTimeMs,
+            score: nextScore,
+            streak: nextStreak,
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
+        ingest({
+            eventId:        _genEventId(),
+            sessionId:      sessionRef.current.sessionId,
+            timestamp:      ev.timestamp,
+            source:         LEARNING_SOURCE.QUIZ,
+            eventType:      LEARNING_EVENT_TYPE.ITEM_ANSWERED,
+            subjectId:      subjectId,
+            materialId:     null,
+            contentId:      question.id?.toString() ?? null,
+            difficulty:     null,
+            responseTimeMs: responseTimeMs,
+            schemaVersion:  LEARNING_EVENT_SCHEMA_VERSION,
+            selectedOption,
+            isCorrect,
+            score:          nextScore,
+            streak:         nextStreak,
+        });
+    }, [selectedOption, isSubmitted, question, muted, score, streak, questionCount, subjectId]);
+
+    const advanceQuestion = useCallback(async () => {
+        // nextLockRef stays locked until fetchQuestion's finally block releases it,
+        // guaranteeing at most one in-flight request at any time.
+        if (nextLockRef.current) return;
+        nextLockRef.current = true;
+
         const next = questionCount + 1;
         const responseTime = startTimeRef.current ? (Date.now() - startTimeRef.current) / 1000 : 0;
+        // Emit before any state mutation or fetch so the event timestamp reflects
+        // when the user actually clicked Next, not when the API responds.
+        const adv = makeQuestionAdvancedEvent(sessionRef.current, {
+            fromIndex: questionCount,
+            toIndex: next < MAX_ADAPTIVE_QUESTIONS ? next : null,
+            questionId: question?.id ?? null,
+        });
+        eventQueueRef.current.push(adv);
+        enqueueEvent(sessionRef.current.sessionId, adv);
         if (next >= MAX_ADAPTIVE_QUESTIONS) {
             // Final answer: submit to backend before showing results (not fire-and-forget)
             setLoading(true);
@@ -487,14 +768,36 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
                 setLoading(false);
                 setQuestionCount(next);
                 setShowResults(true);
+                nextLockRef.current = false;
             }
             return;
         }
         setQuestionCount(next);
+        setQuestion(null); // nulling before fetch prevents stale QUESTION_VIEWED while old question + new index coexist
+        // nextLockRef is released inside fetchQuestion's finally — not here.
         fetchQuestion({ isCorrect: lastCorrect, responseTime });
-    }, [questionCount, lastCorrect, fetchQuestion, subjectId]);
+    }, [questionCount, lastCorrect, fetchQuestion, subjectId, question]);
 
     const resetQuiz = useCallback(() => {
+        const ev = makeQuizResetEvent(sessionRef.current, {
+            atQuestionIndex: questionCount,
+            atScore: score,
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
+        // Rotate session: new sessionId for all future events.
+        // Old session's events remain in localStorage for future transport — not cleared here.
+        sessionRef.current = createQuizSession('adaptive', { subjectId });
+        eventQueueRef.current = [];
+        completedEmittedRef.current = false;
+
+        // Invalidate any in-flight request so its response is discarded, then reset locks
+        // so the new fetchQuestion call is allowed to proceed.
+        fetchRequestIdRef.current++;
+        requestInFlightRef.current = false;
+        submitLockRef.current = false;
+        nextLockRef.current = false;
+
         localStorage.removeItem(storageKey);
         setScore(0);
         setQuestionCount(0);
@@ -502,30 +805,9 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
         setShowResults(false);
         setQuestion(null);
         fetchQuestion();
-    }, [fetchQuestion, storageKey]);
+    }, [fetchQuestion, storageKey, questionCount, score, subjectId]);
 
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (showResults || !question || loading) return;
-            if (['input', 'textarea'].includes(document.activeElement?.tagName.toLowerCase())) return;
-            const key = e.key.toLowerCase();
-            const opts = question.options || [];
-            if (!isSubmitted) {
-                let idx = -1;
-                if (key === 'a' || key === '1') idx = 0;
-                if (key === 'b' || key === '2') idx = 1;
-                if (key === 'c' || key === '3') idx = 2;
-                if (key === 'd' || key === '4') idx = 3;
-                if (idx >= 0 && idx < opts.length) handleOptionSelect(opts[idx]);
-            }
-            if (key === 'enter') {
-                if (isSubmitted) handleNext();
-                else if (selectedOption) handleSubmit();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [showResults, question, loading, isSubmitted, selectedOption, handleOptionSelect, handleSubmit, handleNext]);
+    useQuizKeyboard({ question, isSubmitted, selectedOption, showResults, loading, selectOption, submitAnswer, advanceQuestion });
 
     if (showResults) {
         return <ResultsScreen score={score} total={MAX_ADAPTIVE_QUESTIONS} onReset={resetQuiz} />;
@@ -572,13 +854,13 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
                 selectedOption={selectedOption}
                 isSubmitted={isSubmitted}
                 isExpanded={isExpanded}
-                onSelect={handleOptionSelect}
+                onSelect={selectOption}
             />
 
             <div className="flex justify-end gap-3 sm:gap-4">
                 {!isSubmitted ? (
                     <button
-                        onClick={handleSubmit}
+                        onClick={submitAnswer}
                         disabled={question.options && question.options.length > 0 && !selectedOption}
                         className={cn(
                             "px-6 sm:px-10 py-4 sm:py-5 rounded-xl sm:rounded-2xl font-black transition-all flex items-center gap-2 sm:gap-3 shadow-xl text-sm sm:text-base",
@@ -592,7 +874,7 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
                     </button>
                 ) : (
                     <button
-                        onClick={handleNext}
+                        onClick={advanceQuestion}
                         className="px-6 sm:px-10 py-4 sm:py-5 rounded-xl sm:rounded-2xl bg-indigo-600 text-white font-black hover:bg-indigo-700 transition-all flex items-center gap-2 sm:gap-3 shadow-xl shadow-indigo-100 hover:-translate-y-1 text-sm sm:text-base"
                     >
                         {questionCount + 1 < MAX_ADAPTIVE_QUESTIONS ? 'Next Question' : 'View Summary'}
@@ -600,6 +882,7 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
                     </button>
                 )}
             </div>
+            <QuizDebugPanel sessionRef={sessionRef} eventQueueRef={eventQueueRef} />
         </div>
     );
 };
@@ -608,7 +891,21 @@ const AdaptiveQuizView = ({ subjectId, topic, language, isExpanded }) => {
 // Static mode — all questions from quizData prop
 // ---------------------------------------------------------------------------
 const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizDataId }) => {
-    const storageKey = `cognify_quiz_state_${quizDataId || (questions.length > 0 ? questions[0]?.question?.replace(/\s+/g, '').substring(0, 30) : 'default')}`;
+    const storageKey = (() => {
+        if (quizDataId) return `cognify_quiz_state_${quizDataId}`;
+        if (materialId) return `cognify_quiz_state_${materialId}`;
+        if (subjectId) {
+            // When no quizDataId or materialId is available, fingerprint the question
+            // texts so two different generated quizzes for the same subject get distinct
+            // keys rather than overwriting each other's saved state.
+            const fp = _hashStr(questions.slice(0, 10).map(q => q.question).join('\x00'));
+            return `cognify_quiz_state_${subjectId}_${fp}`;
+        }
+        if (process.env.NODE_ENV !== 'production') {
+            console.warn('[StaticQuizView] No stable identifier (quizDataId, materialId, subjectId) provided — quiz state may collide across different quizzes.');
+        }
+        return 'cognify_quiz_state_unknown';
+    })();
 
     const initialSaved = (() => {
         try {
@@ -630,53 +927,183 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
     const [streak, setStreak] = useState(initialSaved.streak ?? 0);
     const [muted, setMuted] = useState(initialSaved.muted ?? false);
 
-    const responsesRef = useRef([]);
-    const startedAtRef = useRef(new Date().toISOString());
+    const responsesRef = useRef(Array.isArray(initialSaved.responses) ? initialSaved.responses : []);
+    const startedAtRef = useRef(initialSaved.startedAt ?? new Date().toISOString());
+
+    // --- Submission locking ---
+    // submitLockRef: held from handleSubmit until isSubmitted = true is confirmed in state.
+    // Prevents score/streak double-increment and duplicate responsesRef entries from
+    // rapid double-clicks or Enter auto-repeat firing before React re-renders.
+    const submitLockRef = useRef(false);
+    // nextLockRef: held from handleNext until currentQuestionIndex advances in state (via
+    // useEffect below). Prevents rapid question skipping. For the final question it stays
+    // locked permanently — showResults = true becomes the terminal guard.
+    const nextLockRef = useRef(false);
+    // analyticsSubmittedRef: set to true the first time recordQuizAttempt is called.
+    // Guards against the analytics payload being sent twice when nextLockRef is released
+    // before showResults has propagated (e.g. rapid double-click on the last question).
+    const analyticsSubmittedRef = useRef(false);
+
+    // --- Event queue ---
+    const sessionRef = useRef(null);
+    if (sessionRef.current === null) {
+        sessionRef.current = createQuizSession('static', {
+            subjectId,
+            materialId,
+            quizId:    quizDataId             ?? null,
+            // Restore original session identity on refresh so events continue under
+            // the same sessionId and the persisted queue is found by getSessionEvents.
+            sessionId: initialSaved.sessionId ?? null,
+        });
+    }
+    // Initialized from localStorage so the queue survives page refreshes.
+    const eventQueueRef = useRef(getSessionEvents(sessionRef.current.sessionId));
+    // lastViewedIndexRef: prevents duplicate QUESTION_VIEWED on rerenders or prop-identity
+    // changes that don't actually advance the question index.
+    const lastViewedIndexRef = useRef(-1);
+    // completedEmittedRef: prevents double QUIZ_COMPLETED if showResults effect re-fires.
+    // Initialized to true when resuming a completed session from localStorage.
+    const completedEmittedRef = useRef(initialSaved.showResults ?? false);
+
+    useSubmitLockRelease(submitLockRef, isSubmitted);
+
+    // Release nextLock when the question index advances in state. This allows the user to
+    // select an option and submit on the next question. For the final question, this effect
+    // never fires (currentQuestionIndex stays at questions.length - 1 before showResults),
+    // so nextLockRef remains locked — the only exit is through the results screen.
+    useEffect(() => {
+        nextLockRef.current = false;
+    }, [currentQuestionIndex]);
+
+    // QUESTION_VIEWED: lastViewedIndexRef prevents re-emission on rerenders or prop-identity
+    // changes that don't advance the question. Skips if already on results screen.
+    useEffect(() => {
+        if (showResults || !currentQuestion) return;
+        if (lastViewedIndexRef.current === currentQuestionIndex) return;
+        lastViewedIndexRef.current = currentQuestionIndex;
+        const ev = makeQuestionViewedEvent(sessionRef.current, {
+            questionIndex: currentQuestionIndex,
+            questionId: currentQuestion.id ?? null,
+            correctAnswer: currentQuestion.correct_answer,
+            totalQuestions: questions.length,
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
+    }, [currentQuestionIndex, currentQuestion, showResults]); // eslint-disable-line react-hooks/exhaustive-deps -- questions.length stable per session; lastViewedIndexRef guards double-emission
+
+    // QUIZ_COMPLETED: fires once after React commits showResults = true with final score/streak.
+    useEffect(() => {
+        if (!showResults || completedEmittedRef.current) return;
+        completedEmittedRef.current = true;
+        const ev = makeQuizCompletedEvent(sessionRef.current, {
+            totalQuestions: questions.length,
+            finalScore: score,
+            finalStreak: streak,
+            startedAt: startedAtRef.current,
+            completedAt: new Date().toISOString(),
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
+    }, [showResults, score, streak]); // eslint-disable-line react-hooks/exhaustive-deps -- questions.length/startedAtRef stable; completedEmittedRef prevents re-emission
 
     // Persist state
     useEffect(() => {
         if (questions.length > 0) {
             localStorage.setItem(storageKey, JSON.stringify({
-                currentQuestionIndex, selectedOption, isSubmitted, score, showResults, streak, muted
+                currentQuestionIndex, selectedOption, isSubmitted, score, showResults, streak, muted,
+                responses: responsesRef.current,
+                startedAt: startedAtRef.current,
+                sessionId: sessionRef.current.sessionId,
             }));
         }
     }, [currentQuestionIndex, selectedOption, isSubmitted, score, showResults, streak, muted, storageKey, questions.length]);
 
     const currentQuestion = questions[currentQuestionIndex];
 
-    const handleOptionSelect = useCallback((option) => {
+    const selectOption = useCallback((option) => {
+        // Block during active submit or next processing — either lock means a state
+        // transition is in progress and the selection would be against a stale question.
+        if (submitLockRef.current || nextLockRef.current) return;
+        if (!option) return;
         if (isSubmitted) return;
         setSelectedOption(option);
-    }, [isSubmitted]);
+        const ev = makeOptionSelectedEvent(sessionRef.current, {
+            questionIndex: currentQuestionIndex,
+            questionId: currentQuestion?.id ?? null,
+            selectedOption: option,
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
+    }, [isSubmitted, currentQuestionIndex, currentQuestion]);
 
-    const handleSubmit = useCallback(() => {
+    const submitAnswer = useCallback(() => {
+        // submitLockRef is the primary race guard; isSubmitted is secondary defence.
+        if (submitLockRef.current) return;
         if (selectedOption === null || isSubmitted) return;
 
-        const isCorrect = selectedOption === currentQuestion.correct_answer;
-        if (isCorrect) {
-            setScore(prev => prev + 1);
-            setStreak(prev => prev + 1);
-            if (!muted) playTone('correct');
-        } else {
-            setStreak(0);
-            if (!muted) playTone('wrong');
-        }
+        // Lock before any mutation. Released by useEffect once isSubmitted = true is
+        // confirmed in React state, bridging the stale-closure window.
+        submitLockRef.current = true;
+        const isCorrect = isCorrectAnswer(selectedOption, currentQuestion.correct_answer);
+        // Compute post-scoring totals before queuing — setScore/setStreak are not yet committed.
+        const nextScore = score + (isCorrect ? 1 : 0);
+        const nextStreak = isCorrect ? streak + 1 : 0;
+        applyScoring(isCorrect, { setScore, setStreak, muted });
+        // Push exactly once per question — submitLockRef guarantees this.
         responsesRef.current.push({
             questionId: currentQuestion.id,
             isCorrect,
             difficulty: currentQuestion.difficulty ?? 'medium',
         });
+        // Write responses immediately so a refresh between submit and the persist
+        // useEffect re-run cannot lose this entry.
+        try {
+            const snap = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            snap.responses = responsesRef.current;
+            snap.startedAt = startedAtRef.current;
+            localStorage.setItem(storageKey, JSON.stringify(snap));
+        } catch { /* ignore — persist effect will catch it on next render */ }
+        const ev = makeAnswerSubmittedEvent(sessionRef.current, {
+            questionIndex: currentQuestionIndex,
+            questionId: currentQuestion.id ?? null,
+            selectedOption,
+            correctAnswer: currentQuestion.correct_answer,
+            isCorrect,
+            responseTimeMs: 0,
+            score: nextScore,
+            streak: nextStreak,
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
         setIsSubmitted(true);
-    }, [selectedOption, isSubmitted, currentQuestion, muted]);
+    }, [selectedOption, isSubmitted, currentQuestion, muted, score, streak, currentQuestionIndex]);
 
-    const handleNext = useCallback(() => {
+    const advanceQuestion = useCallback(() => {
+        // nextLockRef is released by the currentQuestionIndex useEffect (non-final questions)
+        // or never released for the final question (showResults is the terminal guard).
+        if (nextLockRef.current) return;
+        nextLockRef.current = true;
+
+        // Emit before any state mutation so the timestamp reflects when the user clicked Next.
+        const adv = makeQuestionAdvancedEvent(sessionRef.current, {
+            fromIndex: currentQuestionIndex,
+            toIndex: currentQuestionIndex < questions.length - 1 ? currentQuestionIndex + 1 : null,
+            questionId: questions[currentQuestionIndex]?.id ?? null,
+        });
+        eventQueueRef.current.push(adv);
+        enqueueEvent(sessionRef.current.sessionId, adv);
+
         if (currentQuestionIndex < questions.length - 1) {
             setCurrentQuestionIndex(prev => prev + 1);
             setSelectedOption(null);
             setIsSubmitted(false);
+            // nextLockRef released by the currentQuestionIndex useEffect above.
         } else {
             setShowResults(true);
-            if (subjectId && responsesRef.current.length > 0) {
+            // analyticsSubmittedRef ensures exactly one analytics call even if this branch
+            // is somehow reached twice before React re-renders with showResults = true.
+            if (subjectId && responsesRef.current.length > 0 && !analyticsSubmittedRef.current) {
+                analyticsSubmittedRef.current = true;
                 AnalyticsService.recordQuizAttempt({
                     subjectId,
                     materialId: materialId ?? quizDataId,
@@ -685,33 +1112,36 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
                     completedAt: new Date().toISOString(),
                 }).catch(() => {});
             }
+            // nextLockRef intentionally NOT released here. showResults = true is the
+            // permanent guard for this terminal state; releasing the lock would open a
+            // window for a second analytics call before the React state propagates.
         }
     }, [currentQuestionIndex, questions.length, subjectId, materialId, quizDataId]);
 
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (showResults || !currentQuestion) return;
-            const key = e.key.toLowerCase();
-            const options = currentQuestion.options || [];
-            if (['input', 'textarea'].includes(document.activeElement?.tagName.toLowerCase())) return;
-            if (!isSubmitted) {
-                let index = -1;
-                if (key === 'a' || key === '1') index = 0;
-                if (key === 'b' || key === '2') index = 1;
-                if (key === 'c' || key === '3') index = 2;
-                if (key === 'd' || key === '4') index = 3;
-                if (index >= 0 && index < options.length) handleOptionSelect(options[index]);
-            }
-            if (key === 'enter') {
-                if (isSubmitted) handleNext();
-                else if (selectedOption !== null) handleSubmit();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [showResults, currentQuestion, isSubmitted, selectedOption, handleOptionSelect, handleSubmit, handleNext]);
+    useQuizKeyboard({ question: currentQuestion, isSubmitted, selectedOption, showResults, selectOption, submitAnswer, advanceQuestion });
 
     const resetQuiz = () => {
+        const ev = makeQuizResetEvent(sessionRef.current, {
+            atQuestionIndex: currentQuestionIndex,
+            atScore: score,
+        });
+        eventQueueRef.current.push(ev);
+        enqueueEvent(sessionRef.current.sessionId, ev);
+        // Rotate session: new sessionId for all future events.
+        // Old session's events remain in localStorage for future transport — not cleared here.
+        sessionRef.current = createQuizSession('static', {
+            subjectId,
+            materialId,
+            quizId: quizDataId ?? null,
+        });
+        eventQueueRef.current = [];
+        lastViewedIndexRef.current = -1;
+        completedEmittedRef.current = false;
+        localStorage.removeItem(storageKey);
+        // Reset all locks and the analytics guard before restoring quiz state.
+        submitLockRef.current = false;
+        nextLockRef.current = false;
+        analyticsSubmittedRef.current = false;
         setCurrentQuestionIndex(0);
         setSelectedOption(null);
         setIsSubmitted(false);
@@ -725,6 +1155,8 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
     if (showResults) {
         return <ResultsScreen score={score} total={questions.length} onReset={resetQuiz} />;
     }
+
+    if (!currentQuestion) return null;
 
     return (
         <div className={`mx-auto ${isExpanded ? 'max-w-5xl py-16' : 'max-w-3xl py-8 md:py-12'} px-6 transition-all duration-500`}>
@@ -742,13 +1174,13 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
                 selectedOption={selectedOption}
                 isSubmitted={isSubmitted}
                 isExpanded={isExpanded}
-                onSelect={handleOptionSelect}
+                onSelect={selectOption}
             />
 
             <div className="flex justify-end gap-3 sm:gap-4">
                 {!isSubmitted ? (
                     <button
-                        onClick={handleSubmit}
+                        onClick={submitAnswer}
                         disabled={currentQuestion.options && currentQuestion.options.length > 0 && selectedOption === null}
                         className={cn(
                             "px-6 sm:px-10 py-4 sm:py-5 rounded-xl sm:rounded-2xl font-black transition-all flex items-center gap-2 sm:gap-3 shadow-xl text-sm sm:text-base",
@@ -762,23 +1194,58 @@ const StaticQuizView = ({ questions, isExpanded, subjectId, materialId, quizData
                     </button>
                 ) : (
                     <button
-                        onClick={handleSubmit}
-                        disabled={selectedOption === null}
-                        className="group relative px-12 py-6 rounded-[2.5rem] font-black uppercase tracking-widest text-xs transition-all duration-300 flex items-center gap-4 active:scale-95 disabled:opacity-30 disabled:grayscale disabled:scale-95"
-                        style={{
-                            background: 'linear-gradient(135deg, #7C5CFC, #F43F5E)',
-                            color: 'white',
-                            boxShadow: '0 20px 40px -10px rgba(124,92,252,0.4)'
-                        }}
+                        onClick={advanceQuestion}
+                        className="px-6 sm:px-10 py-4 sm:py-5 rounded-xl sm:rounded-2xl bg-indigo-600 text-white font-black hover:bg-indigo-700 transition-all flex items-center gap-2 sm:gap-3 shadow-xl shadow-indigo-100 hover:-translate-y-1 text-sm sm:text-base"
                     >
-                        <Flame className={cn("w-6 h-6", selectedOption !== null && "animate-pulse")} />
-                        Submit Answer
+                        {currentQuestionIndex + 1 < questions.length ? 'Next Question' : 'View Summary'}
+                        <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                 )}
             </div>
+            <QuizDebugPanel sessionRef={sessionRef} eventQueueRef={eventQueueRef} />
         </div>
     );
 };
+
+// ---------------------------------------------------------------------------
+// Error boundary — catches render/lifecycle errors in both quiz modes and
+// prevents a white screen by showing a recoverable fallback UI.
+// ---------------------------------------------------------------------------
+class QuizErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+
+    componentDidCatch(error, info) {
+        console.error('[QuizErrorBoundary] Caught error:', error, info?.componentStack);
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="flex flex-col items-center justify-center p-12 text-gray-500">
+                    <XCircle className="w-12 h-12 mb-4 text-rose-400" />
+                    <p className="font-semibold mb-2">Something went wrong loading the quiz.</p>
+                    <p className="text-xs mb-6 text-gray-400 max-w-xs text-center">
+                        {this.state.error?.message ?? 'An unexpected error occurred.'}
+                    </p>
+                    <button
+                        onClick={() => this.setState({ hasError: false, error: null })}
+                        className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors"
+                    >
+                        Try Again
+                    </button>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // QuizView — dispatcher (explicit mode routing)
@@ -828,4 +1295,10 @@ const QuizView = ({
     return <StaticQuizView questions={questions} isExpanded={isExpanded} subjectId={subjectId} materialId={materialId} quizDataId={quizData?.id} />;
 };
 
-export default QuizView;
+const QuizViewWithBoundary = (props) => (
+    <QuizErrorBoundary>
+        <QuizView {...props} />
+    </QuizErrorBoundary>
+);
+
+export default QuizViewWithBoundary;

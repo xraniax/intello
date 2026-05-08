@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 try:
     from typing import Literal
 except ImportError:
@@ -111,7 +111,7 @@ class QuizQuestion(BaseModel):
     id: int
     question: str
     options: Optional[List[str]] = None
-    correct_answer: str
+    correct_answer: int
     explanation: str
 
 class QuizContent(BaseModel):
@@ -151,7 +151,7 @@ class SummaryOutput(BaseModel):
 
 class QuizSubmission(BaseModel):
     question_id: int
-    user_answer: str
+    user_answer: Union[int, str]
 
 class QuizEvaluateRequest(BaseModel):
     # Questions (with correct answers) are passed back for stateless evaluation
