@@ -12,6 +12,7 @@ export const useUIStore = create((set, get) => ({
         errors: {},
         activeWorkspacePanel: 'content', // 'files', 'content', 'tutor'
         modal: null, // 'authPrompt', etc.
+        goalsDrawerOpen: false,
         pendingAction: null // function
     },
     loading: false,
@@ -27,6 +28,18 @@ export const useUIStore = create((set, get) => ({
             set((state) => ({
                 ...state,
                 data: { ...state.data, modal: modalType }
+            })),
+
+        setGoalsDrawer: (isOpen) =>
+            set((state) => ({
+                ...state,
+                data: { ...state.data, goalsDrawerOpen: isOpen }
+            })),
+
+        toggleGoalsDrawer: () =>
+            set((state) => ({
+                ...state,
+                data: { ...state.data, goalsDrawerOpen: !state.data.goalsDrawerOpen }
             })),
 
         setPendingAction: (action) =>

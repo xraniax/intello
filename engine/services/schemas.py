@@ -146,7 +146,7 @@ class ExamAnswerSheetItem(BaseModel):
     explanation: str
 
 class GenerationMetadata(BaseModel):
-    difficulty: str
+    difficulty: str = "intermediate"
     count: Optional[int] = None
     telemetry: Optional[dict] = None
     version: str = "v1"
@@ -158,7 +158,7 @@ class ExamContent(BaseModel):
 class ExamOutput(BaseModel):
     type: Literal["exam"] = "exam"
     content: ExamContent
-    metadata: GenerationMetadata
+    metadata: GenerationMetadata = Field(default_factory=GenerationMetadata)
 
 class QuizQuestion(BaseModel):
     id: int
@@ -173,7 +173,7 @@ class QuizContent(BaseModel):
 class QuizOutput(BaseModel):
     type: Literal["quiz"] = "quiz"
     content: QuizContent
-    metadata: GenerationMetadata
+    metadata: GenerationMetadata = Field(default_factory=GenerationMetadata)
 
 class Flashcard(BaseModel):
     front: str
@@ -185,7 +185,7 @@ class FlashcardsContent(BaseModel):
 class FlashcardsOutput(BaseModel):
     type: Literal["flashcards"] = "flashcards"
     content: FlashcardsContent
-    metadata: GenerationMetadata
+    metadata: GenerationMetadata = Field(default_factory=GenerationMetadata)
 
 class SummarySection(BaseModel):
     heading: str
@@ -198,7 +198,7 @@ class SummaryContent(BaseModel):
 class SummaryOutput(BaseModel):
     type: Literal["summary"] = "summary"
     content: SummaryContent
-    metadata: GenerationMetadata
+    metadata: GenerationMetadata = Field(default_factory=GenerationMetadata)
 
 # --- Evaluation Models ---
 

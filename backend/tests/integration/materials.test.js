@@ -188,5 +188,61 @@ describe('Materials API Integration', () => {
 
             expect(res.status).toBe(400);
         });
+
+        it('returns 409 when a document title already exists in uploads', async () => {
+            global.__mockDbQuery.mockImplementation((text, params) => {
+                if (!text) return Promise.resolve({ rows: [] });
+                if (text.includes('SUM(f.size_bytes)') || text.includes('total_used_bytes')) {
+                    return Promise.resolve({ rows: [{ total_used_bytes: '0' }] });
+                }
+                if (text.includes('FROM users') && text.includes('WHERE id = $1')) {
+                    return Promise.resolve({ rows: [{ id: params?.[0], name: 'Test', email: 'test@example.com', role: 'user', status: 'ACTIVE' }] });
+                }
+                if (text.includes('admin_settings')) return Promise.resolve({ rows: [] });
+                if (text.includes('login_attempts')) return Promise.resolve({ rows: [], rowCount: 0 });
+                if (text.includes('FROM materials') && text.includes('deleted_at IS NULL') && text.includes('LOWER(TRIM(title))')) {
+                    return Promise.resolve({ rows: [{ id: UUID1, title: 'Duplicate Doc', deleted_at: null }] });
+                }
+                return Promise.resolve({ rows: [] });
+            });
+
+            const res = await request(app)
+                .post('/api/materials/upload')
+                .set(AUTH)
+                .send({ title: 'Duplicate Doc', content: 'Some text', type: 'upload', subjectId: UUID_SUBJ });
+
+            expect(res.status).toBe(409);
+            expect(res.body.code).toBe('DUPLICATE_MATERIAL');
+        });
+
+        it('returns 409 with TRASH_DUPLICATE when a document title exists in trash', async () => {
+            global.__mockDbQuery.mockImplementation((text, params) => {
+                if (!text) return Promise.resolve({ rows: [] });
+                if (text.includes('SUM(f.size_bytes)') || text.includes('total_used_bytes')) {
+                    return Promise.resolve({ rows: [{ total_used_bytes: '0' }] });
+                }
+                if (text.includes('FROM users') && text.includes('WHERE id = $1')) {
+                    return Promise.resolve({ rows: [{ id: params?.[0], name: 'Test', email: 'test@example.com', role: 'user', status: 'ACTIVE' }] });
+                }
+                if (text.includes('admin_settings')) return Promise.resolve({ rows: [] });
+                if (text.includes('login_attempts')) return Promise.resolve({ rows: [], rowCount: 0 });
+                if (text.includes('FROM materials') && text.includes('deleted_at IS NULL') && text.includes('LOWER(TRIM(title))')) {
+                    return Promise.resolve({ rows: [] });
+                }
+                if (text.includes('FROM materials') && text.includes('deleted_at IS NOT NULL') && text.includes('ORDER BY deleted_at DESC')) {
+                    return Promise.resolve({ rows: [{ id: UUID_NEW_MAT, title: 'Trashed Doc', deleted_at: '2026-01-01' }] });
+                }
+                return Promise.resolve({ rows: [] });
+            });
+
+            const res = await request(app)
+                .post('/api/materials/upload')
+                .set(AUTH)
+                .send({ title: 'Trashed Doc', content: 'Some text', type: 'upload', subjectId: UUID_SUBJ });
+
+            expect(res.status).toBe(409);
+            expect(res.body.code).toBe('TRASH_DUPLICATE');
+            expect(res.body.data).toEqual({ trashedMaterialId: UUID_NEW_MAT });
+        });
     });
 });

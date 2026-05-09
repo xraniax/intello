@@ -34,11 +34,42 @@ const TASK_TYPE_TO_MATERIAL_TYPE = {
     mock_exam: 'exam'
 };
 
+const normalizeExamPayload = (aiGeneratedContent) => {
+    if (!aiGeneratedContent || typeof aiGeneratedContent !== 'object') return aiGeneratedContent;
+    if (aiGeneratedContent.type !== 'exam') return aiGeneratedContent;
+
+    const content = aiGeneratedContent.content;
+    if (!content || typeof content !== 'object' || !Array.isArray(content.questions)) {
+        return aiGeneratedContent;
+    }
+
+    const questions = content.questions.map((q, idx) => ({
+        ...q,
+        id: idx + 1,
+    }));
+
+    const answerSheet = Array.isArray(content.answer_sheet)
+        ? content.answer_sheet.map((item, idx) => ({
+            ...item,
+            question_id: idx + 1,
+        }))
+        : content.answer_sheet;
+
+    return {
+        ...aiGeneratedContent,
+        content: {
+            ...content,
+            questions,
+            answer_sheet: answerSheet,
+        },
+    };
+};
+
 class MaterialService {
     /**
      * processDocument passes the entire upload payload (PDF + text) to the Python AI engine.
      */
-    static async processDocument(userId, file, title, content, type, subjectId = null) {
+    static async processDocument(userId, file, title, content, type, subjectId = null, options = {}) {
         const incomingSizeBytes = file ? file.size : Buffer.byteLength(content || '', 'utf8');
         const allowance = await QuotaService.checkUploadAllowance(userId, incomingSizeBytes);
 
@@ -53,12 +84,23 @@ class MaterialService {
             opContext.subjectId = finalSubjectId;
         }
 
-        const existing = await Material.findByTitle(userId, finalSubjectId, normalizedTitle);
-        if (existing) {
-            const error = new Error('A document with this title already exists in this subject.');
-            error.statusCode = 409;
-            error.code = 'DUPLICATE_MATERIAL';
-            throw error;
+        if (!options.skipDuplicateCheck) {
+            const existing = await Material.findByTitle(userId, finalSubjectId, normalizedTitle);
+            if (existing) {
+                const error = new Error('A document with this title already exists in this subject.');
+                error.statusCode = 409;
+                error.code = 'DUPLICATE_MATERIAL';
+                throw error;
+            }
+
+            const trashed = await Material.findByTitleInTrash(userId, finalSubjectId, normalizedTitle);
+            if (trashed) {
+                const error = new Error('A file with this name exists in your trash.');
+                error.statusCode = 409;
+                error.code = 'TRASH_DUPLICATE';
+                error.data = { trashedMaterialId: trashed.id };
+                throw error;
+            }
         }
 
         const documentRecord = await Material.create(
@@ -186,8 +228,9 @@ class MaterialService {
                         const now = new Date().toISOString();
 
                         const nowIso = new Date().toISOString();
+                        const normalizedAiContent = normalizeExamPayload(result.ai_generated_content);
                         const finalAiContent = enforceGenerationConstraintsForPersistence(
-                            result.ai_generated_content,
+                            normalizedAiContent,
                             { materialType: result.material_type, ...persistedConstraints }
                         );
 
@@ -587,7 +630,7 @@ class MaterialService {
     static async _resolveUniqueTitle(userId, subjectId, baseTitle) {
         let uniqueTitle = baseTitle;
         let counter = 1;
-        while (await Material.findByTitle(userId, subjectId, uniqueTitle)) {
+        while (await Material.findByTitleAnyStatus(userId, subjectId, uniqueTitle)) {
             uniqueTitle = `${baseTitle} (${counter})`;
             counter++;
         }

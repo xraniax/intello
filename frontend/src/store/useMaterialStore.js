@@ -181,15 +181,19 @@ export const useMaterialStore = create(devtools((set, get) => ({
                 toast.success('Document seeded! AI is cultivating your material...');
                 return material;
             } catch (err) {
-                const message = err.message || 'Upload failed';
+                const message = err.response?.data?.message || err.message || 'Upload failed';
+                const code = err.code || err.response?.data?.code;
+                const trashedMaterialId = err.data?.data?.trashedMaterialId || err.data?.trashedMaterialId || err.trashedMaterialId || err.materialId;
                 const fieldErrors = err.validationErrors || {};
                 set((state) => ({
                     ...state,
                     error: message,
                     data: { ...state.data, jobProgress: null }
                 }));
-                uiActions.setError('upload', message);
-                throw { message, fieldErrors };
+                if (code !== 'TRASH_DUPLICATE') {
+                    uiActions.setError('upload', message);
+                }
+                throw { message, code, trashedMaterialId, fieldErrors };
             } finally {
                 uiActions.setLoading('upload', false);
             }

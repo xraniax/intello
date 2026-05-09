@@ -122,11 +122,13 @@ const ToggleRow = ({ label, description, value, onChange }) => (
 // ─── Main Component ───────────────────────────────────────────────────────────
 const COMMON_MIME_TYPES = [
     { label: 'PDF', value: 'application/pdf' },
+    { label: 'JPEG', value: 'image/jpeg' },
+    { label: 'JPG', value: 'image/jpg' },
+    { label: 'PNG', value: 'image/png' },
+    { label: 'WEBP', value: 'image/webp' },
     { label: 'Word', value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
     { label: 'PowerPoint', value: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
     { label: 'Text', value: 'text/plain' },
-    { label: 'Images', value: 'image/jpeg' },
-    { label: 'PNG', value: 'image/png' },
 ];
 
 const AdminSettings = () => {

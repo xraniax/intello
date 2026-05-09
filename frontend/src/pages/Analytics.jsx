@@ -1,10 +1,9 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
-    Brain, Target, Activity, Zap, 
-    Sparkles, ArrowRight, Layers, 
-    TrendingUp, ShieldCheck, ChevronLeft
+import {
+    Brain, Target, Activity, Zap,
+    Sparkles, ArrowRight, Layers,
+    TrendingUp, ShieldCheck
 } from 'lucide-react';
 
 const FeaturePill = ({ icon: Icon, label }) => (
@@ -15,20 +14,8 @@ const FeaturePill = ({ icon: Icon, label }) => (
 );
 
 const Analytics = () => {
-    const navigate = useNavigate();
-
     return (
         <div className="flex-1 overflow-y-auto custom-scrollbar relative flex flex-col items-center justify-center p-6" style={{ background: 'var(--c-canvas)' }}>
-            {/* Top Navigation */}
-            <div className="absolute top-8 left-8 z-20">
-                <button 
-                    onClick={() => navigate('/dashboard')}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/80 border border-gray-100 text-gray-500 font-bold text-xs transition-all hover:text-gray-900 hover:border-gray-200 shadow-sm backdrop-blur-md"
-                >
-                    <ChevronLeft className="w-4 h-4" />
-                    Back to Dashboard
-                </button>
-            </div>
 
             {/* Ambient Background Elements */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">

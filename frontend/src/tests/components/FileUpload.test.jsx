@@ -29,7 +29,7 @@ vi.mock('@/store/useUIStore', () => ({
 vi.mock('@/services/MaterialService', () => ({
     MaterialService: {
         getSettings: vi.fn().mockResolvedValue({
-            data: { data: { max_file_size_mb: 10, allowed_types: ['application/pdf'] } },
+            data: { data: { max_file_size_mb: 10, allowed_types: ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'] } },
         }),
     },
 }));
@@ -45,6 +45,8 @@ const TITLE_PLACEHOLDER = /machine learning basics/i;
 
 const makePdf = (name = 'notes.pdf', sizeMb = 1) =>
     new File(['x'.repeat(sizeMb * 1024 * 1024)], name, { type: 'application/pdf' });
+const makeImage = (name = 'diagram.png', sizeMb = 1) =>
+    new File(['x'.repeat(sizeMb * 1024 * 1024)], name, { type: 'image/png' });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +70,19 @@ describe('FileUpload component', () => {
         await waitFor(() => {
             const titleInput = screen.getByPlaceholderText(TITLE_PLACEHOLDER);
             expect(titleInput.value).toBe('lecture-notes');
+        });
+    });
+
+    it('accepts image files and auto-fills title from image name', async () => {
+        renderComponent();
+        await waitFor(() => screen.getByPlaceholderText(TITLE_PLACEHOLDER));
+
+        const fileInput = document.querySelector('input[type="file"]');
+        await userEvent.upload(fileInput, makeImage('chapter-graph.png'));
+
+        await waitFor(() => {
+            const titleInput = screen.getByPlaceholderText(TITLE_PLACEHOLDER);
+            expect(titleInput.value).toBe('chapter-graph');
         });
     });
 

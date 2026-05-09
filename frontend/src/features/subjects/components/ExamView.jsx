@@ -26,13 +26,15 @@ const QuestionRenderer = ({
     onMatchChange,
     readOnly,
 }) => {
-    if (['short_answer', 'problem', 'scenario'].includes(question.type)) {
+    const isFreeText = ['short_answer', 'problem', 'scenario'].includes(question.type || '') || (!!question.answer_space && (!question.options || question.options.length === 0));
+
+    if (isFreeText) {
         return (
             <textarea
                 value={answer.answerText || ''}
                 onChange={(e) => onTextChange(question, e.target.value)}
                 disabled={readOnly}
-                placeholder="Write your answer clearly and concisely..."
+                placeholder={question.answer_space || "Write your answer clearly and concisely..."}
                 className="w-full min-h-[160px] rounded-[2rem] border-4 border-indigo-50 bg-indigo-50/20 p-6 text-base text-gray-700 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-indigo-200"
             />
         );
@@ -88,7 +90,7 @@ const QuestionRenderer = ({
     }
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {question.options.map((option, idx) => {
+            {(question.options || []).map((option, idx) => {
                 const checked = answer.selectedAnswers.includes(idx);
                 const isSingle = question.type === 'single_choice';
                 return (
@@ -148,7 +150,7 @@ const PrintableExam = ({ exam }) => {
                             <div className="flex-1">
                                 <p className="text-lg font-bold text-gray-900 leading-snug">{q.question}</p>
                                 <span className="text-[10px] uppercase tracking-widest font-black text-gray-400 mt-1 block">
-                                    {q.type.replace('_', ' ')} • {q.difficulty}
+                                    {(q.type || 'question').replace('_', ' ')} • {q.difficulty || 'Normal'}
                                 </span>
                             </div>
                         </div>
@@ -166,12 +168,12 @@ const PrintableExam = ({ exam }) => {
                         )}
 
                         {/* Blank for short answers */}
-                        {['short_answer', 'problem', 'scenario'].includes(q.type) && (
+                        {['short_answer', 'problem', 'scenario'].includes(q.type || '') && (
                             <div className="ml-12 mt-4 h-32 w-full border-2 border-dashed border-gray-200 rounded-xl" />
                         )}
 
                         {/* Blanks for fill in the blanks */}
-                        {q.type === 'fill_blank' && (
+                        {(q.type || '') === 'fill_blank' && (
                             <div className="ml-12 mt-4 space-y-3">
                                 {Array.from({ length: q.blankAnswers?.length || 1 }).map((_, i) => (
                                     <div key={i} className="flex items-center gap-3">
@@ -195,7 +197,7 @@ const PrintableExam = ({ exam }) => {
 // ---------------------------------------------------------------------------
 // Data normaliser
 // ---------------------------------------------------------------------------
-const extractExamData = (data) => {
+export const extractExamData = (data) => {
     if (!data) return null;
 
     // If it's a string, try to parse it
@@ -236,6 +238,7 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
     const examData = extractExamData(rawExamData);
     // Always prefer the explicitly passed DB UUID prop (propExamId) over the internal JSON id
     const examId = propExamId || examData?.id;
+    const isTransient = !examId || String(examId).startsWith('streaming-exam-');
     const [exam, setExam] = useState(null);
     const [answers, setAnswers] = useState({});
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -269,7 +272,7 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
             setRemainingSeconds(Math.max(0, Math.floor(Number(examData.timeLimit) * 60)));
         }
 
-        if (!examId) return;
+        if (!examId || isTransient) return;
         MaterialService.getAttempt(examId).then((res) => {
             const attempt = res?.data?.data;
             if (!attempt) return;
@@ -290,10 +293,23 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
         });
     }, [examId]);
 
+    // Keep exam data in sync during streaming (don't reset user answers)
+    useEffect(() => {
+        if (!examData?.questions?.length) return;
+        setExam(prev => {
+            // Only update if questions length or content changed
+            if (prev && prev.questions && prev.questions.length === examData.questions.length) {
+                // Potential optimization: check deep equality if needed
+                return prev; 
+            }
+            return { ...examData };
+        });
+    }, [examData]);
+
     const serializeAnswers = useCallback(() => {
         if (!exam?.questions) return [];
         return exam.questions.map((q) => ({
-            questionId: q.id,
+            questionId: String(q.id),
             selectedAnswers: Array.isArray(answers[q.id]?.selectedAnswers) ? answers[q.id].selectedAnswers : [],
             answerText: answers[q.id]?.answerText || '',
             blankAnswers: Array.isArray(answers[q.id]?.blankAnswers) ? answers[q.id].blankAnswers : [],
@@ -302,7 +318,7 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
     }, [answers, exam]);
 
     const saveAttempt = useCallback(async () => {
-        if (!examId || result) return;
+        if (!examId || isTransient || result) return;
         try {
             setIsSavingAttempt(true);
             const res = await MaterialService.saveAttempt({
@@ -321,14 +337,14 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
     }, [currentIndex, examId, flagged, result, serializeAnswers, startedAt]);
 
     const submitExam = useCallback(async () => {
-        if (!examId || !exam?.questions || isSubmitting || result) return;
+        if (!examId || isTransient || !exam?.questions || isSubmitting || result) return;
         setError('');
         setIsSubmitting(true);
         try {
             const payload = {
                 examId: examId,
                 answers: exam.questions.map((q) => ({
-                    questionId: q.id,
+                    questionId: String(q.id),
                     selectedAnswers: Array.isArray(answers[q.id]?.selectedAnswers) ? answers[q.id].selectedAnswers : [],
                     answerText: answers[q.id]?.answerText || '',
                 blankAnswers: Array.isArray(answers[q.id]?.blankAnswers) ? answers[q.id].blankAnswers : [],
@@ -464,6 +480,18 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
         }, {});
     }, [result]);
 
+    useEffect(() => {
+        console.log("[EXAM RENDER]", exam?.content?.questions?.length ?? exam?.questions?.length);
+        console.log('[TRACE][EXAM_RENDER_STATE]', {
+            questionCount: exam?.questions?.length || 0,
+            renderedQuestionIndex: currentIndex,
+            renderedQuestionNumber: total > 0 ? currentIndex + 1 : 0,
+            answerSheetCount: Array.isArray(exam?.answer_sheet) ? exam.answer_sheet.length : 0,
+            hasFinalPayload: !!exam,
+            completed: !!result,
+        });
+    }, [exam, currentIndex, total, result]);
+
     if (!exam || !Array.isArray(exam.questions) || exam.questions.length === 0 || !currentQuestion) {
         return (
             <div className="flex flex-col items-center justify-center p-12 text-gray-500">
@@ -567,15 +595,15 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
                                     <div className="text-[10px] uppercase font-black tracking-[0.3em] text-indigo-400 mb-4 flex items-center gap-2">
                                         <span className="bg-indigo-50 px-3 py-1 rounded-lg">Question {currentIndex + 1}</span>
                                         <span className="w-1 h-1 rounded-full bg-indigo-200" />
-                                        <span>{currentQuestion.type.replace('_', ' ')}</span>
+                                        <span>{(currentQuestion.type || 'single_choice').replace('_', ' ')}</span>
                                         <span className="w-1 h-1 rounded-full bg-indigo-200" />
                                         <span className={cn(
                                             "px-3 py-1 rounded-lg",
                                             currentQuestion.difficulty === 'Hard' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'
-                                        )}>{currentQuestion.difficulty}</span>
+                                        )}>{currentQuestion.difficulty || 'Normal'}</span>
                                     </div>
                                     <h3 className="text-3xl font-black text-indigo-950 leading-tight">
-                                        {currentQuestion.question}
+                                        {currentQuestion.question || 'Generating question...'}
                                     </h3>
                                 </div>
 

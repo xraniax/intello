@@ -16,6 +16,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
     const [subjectId, setSubjectId] = useState(initialSubjectId || '');
     const [validationErrors, setValidationErrors] = useState({});
     const [imagePreview, setImagePreview] = useState(null);
+    const [trashDuplicate, setTrashDuplicate] = useState(null); // { materialId, title }
     const [systemLimits, setSystemLimits] = useState({ 
         max_file_size_mb: 10, 
         allowed_types: ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'] 
@@ -100,7 +101,7 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
         
         if (!titleValid) errors.title = titleError || 'Title is required';
         if (!file && !content.trim()) {
-            errors.content = 'Document content or PDF is required';
+            errors.content = 'Document content or file is required';
         }
         
         setValidationErrors(errors);
@@ -127,12 +128,12 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     title: finalTitle,
                     content,
                     type: 'upload',
-                    subjectId: subjectId || undefined
+                    subjectId: subjectId || undefined,
                 });
             }
 
             const material = await uploadMaterial(payload);
-            
+
             if (material?.quota_warning) {
                 const toast = (await import('react-hot-toast')).default;
                 toast('Storage almost full (90%+). Consider organizing your subjects.', {
@@ -144,12 +145,32 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
 
             if (onSuccess) onSuccess(material);
         } catch (err) {
+            if (err.code === 'TRASH_DUPLICATE') {
+                setTrashDuplicate({ materialId: err.trashedMaterialId, title: title.trim() });
+                return;
+            }
             if (err.fieldErrors) {
                 setValidationErrors(err.fieldErrors);
                 if (err.fieldErrors.title) setTitleError(err.fieldErrors.title);
             }
         }
     };
+
+    const handleRestore = async () => {
+        if (!trashDuplicate) return;
+        try {
+            await MaterialService.restore(trashDuplicate.materialId);
+            const toast = (await import('react-hot-toast')).default;
+            toast.success('Document restored from trash!');
+            if (onSuccess) onSuccess({ id: trashDuplicate.materialId, title: trashDuplicate.title });
+        } catch {
+            const toast = (await import('react-hot-toast')).default;
+            toast.error('Failed to restore document');
+        } finally {
+            setTrashDuplicate(null);
+        }
+    };
+
 
     const titleErrorVisible = (isTouched && titleError) || validationErrors.title;
 
@@ -313,6 +334,30 @@ const FileUpload = ({ subjectId: initialSubjectId, onSuccess, onCancel, inline =
                     )}
                 </button>
             </div>
+
+            {trashDuplicate && (
+                <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-5 animate-in slide-in-from-top-2">
+                    <div className="flex items-start gap-3 mb-4">
+                        <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                            <AlertCircle className="w-4 h-4 text-amber-500" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-black text-amber-900">This file is in your trash</p>
+                            <p className="text-xs text-amber-700 mt-0.5">
+                                <span className="font-bold">"{trashDuplicate.title}"</span> was previously deleted. Restore it to access your document again.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleRestore}
+                        className="w-full py-3 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white rounded-xl font-black text-sm transition-all shadow-md shadow-amber-100 flex items-center justify-center gap-2"
+                    >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Restore from Trash
+                    </button>
+                </div>
+            )}
         </form>
     );
 };

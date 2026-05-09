@@ -34,139 +34,49 @@ STREAM_MAP_MAX_CHUNKS = int(os.getenv("STREAM_MAP_MAX_CHUNKS", "20"))
 
 
 def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_type: str) -> str:
-    """Call Ollama /api/generate with streaming enabled and reconstruct full text.
-
-    Robust against:
-    - partial JSON lines (chunk boundaries)
-    - malformed chunks
-    - bytes vs str inconsistencies
-    - keep-alive empty lines
-    - interrupted streams (bubbles up for retry)
-
-    We accumulate ONLY valid `response` strings from dict chunks and stop on
-    `done: true`.
-    """
+    """Call Ollama /api/generate with streaming enabled and reconstruct full text."""
     payload = dict(payload)
     payload["stream"] = True
-    payload.setdefault("keep_alive", -1)
-
-    parts: List[str] = []
-    done_seen = False
+    full_text = []
 
     try:
-        # Ensure the response body is properly closed even on exceptions.
-        with requests.post(
-            OLLAMA_GENERATE_URL,
-            json=payload,
-            timeout=timeout,
-            stream=True,
-        ) as resp:
-            resp.raise_for_status()
+        response = requests.post(OLLAMA_GENERATE_URL, json=payload, stream=True, timeout=timeout)
+        response.raise_for_status()
 
-            buf = b""
-            for raw_chunk in resp.iter_content(chunk_size=8192):
-                if raw_chunk is None:
-                    continue
-
-                if isinstance(raw_chunk, str):
-                    raw_bytes = raw_chunk.encode("utf-8", errors="replace")
-                else:
-                    raw_bytes = raw_chunk
-
-                if not raw_bytes:
-                    continue
-
-                buf += raw_bytes
-
-                while True:
-                    nl = buf.find(b"\n")
-                    if nl == -1:
-                        break
-                    line_bytes = buf[:nl]
-                    buf = buf[nl + 1 :]
-
-                    line_bytes = line_bytes.strip()
-                    if not line_bytes:
-                        continue
-
-                    line = line_bytes.decode("utf-8", errors="replace").strip()
-                    if not line:
-                        continue
-
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError as e:
-                        # Streaming occasionally includes malformed/noisy lines; keep going.
-                        logger.debug(
-                            "Streaming JSON decode failed material_type=%s error=%s line_prefix=%s",
-                            material_type,
-                            e,
-                            line[:200],
-                        )
-                        continue
-
-                    if not isinstance(chunk, dict):
-                        continue
-
-                    text_piece = chunk.get("response")
-                    if isinstance(text_piece, str) and text_piece:
-                        parts.append(text_piece)
-
-                    if chunk.get("done") is True:
-                        done_seen = True
-                        break
-
-                if done_seen:
+        for line in response.iter_lines():
+            if line:
+                chunk = json.loads(line)
+                if piece := chunk.get("response"):
+                    full_text.append(piece)
+                if chunk.get("done"):
                     break
-
-            # Try parsing any remaining trailing line (may not end with a newline).
-            tail = buf.strip()
-            if tail and not done_seen:
-                tail_line = tail.decode("utf-8", errors="replace").strip()
-                if tail_line:
-                    try:
-                        chunk = json.loads(tail_line)
-                        if isinstance(chunk, dict):
-                            text_piece = chunk.get("response")
-                            if isinstance(text_piece, str) and text_piece:
-                                parts.append(text_piece)
-                            if chunk.get("done") is True:
-                                done_seen = True
-                    except json.JSONDecodeError as e:
-                        logger.debug(
-                            "Streaming trailing JSON decode failed material_type=%s error=%s line_prefix=%s",
-                            material_type,
-                            e,
-                            tail_line[:200],
-                        )
-
-    except Timeout:
-        raise
-    except RequestException as err:
-        # Surface response body if present, but avoid noisy logs for expected streaming quirks.
-        if getattr(err, "response", None) is not None:
-            logger.error(
-                "Ollama stream error material_type=%s status=%s body=%s",
-                material_type,
-                getattr(err.response, "status_code", None),
-                getattr(err.response, "text", ""),
-            )
-        raise
-    except OSError as e:
-        logger.warning(
-            "Streaming interrupted material_type=%s error=%s accumulated_chars=%d",
-            material_type,
-            e,
-            sum(len(p) for p in parts),
-        )
+        return "".join(full_text)
+    except Exception as e:
+        logger.error("Ollama stream error for %s: %s", material_type, e)
         raise
 
-    text = "".join(parts).strip()
-    if not text:
-        raise ValueError("Empty response from Ollama streaming API")
 
-    return text
+async def _async_stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_type: str) -> str:
+    """Async version of _stream_ollama_generate using httpx."""
+    payload = dict(payload)
+    payload["stream"] = True
+    full_text = []
 
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("POST", OLLAMA_GENERATE_URL, json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        if piece := chunk.get("response"):
+                            full_text.append(piece)
+                        if chunk.get("done"):
+                            break
+        return "".join(full_text)
+    except Exception as e:
+        logger.error("Ollama async stream error for %s: %s", material_type, e)
+        raise
 
 def _strip_markdown_fences(text: str) -> str:
     """Best-effort cleanup for markdown fenced code blocks around JSON.
@@ -234,17 +144,18 @@ def _validate_non_empty_material(material_type: str, parsed: Dict[str, Any]) -> 
     warning.
     """
     try:
+        content = (parsed or {}).get("content") or {}
         if material_type == "flashcards":
-            cards = (parsed or {}).get("cards") or []
+            cards = content.get("cards") or []
             if not cards:
                 return "Flashcards output has empty 'cards' list."
         elif material_type == "quiz":
-            questions = (parsed or {}).get("questions") or []
+            questions = content.get("questions") or []
             if not questions:
                 return "Quiz output has empty 'questions' list."
         elif material_type == "exam":
-            questions = (parsed or {}).get("questions") or []
-            answers = (parsed or {}).get("answer_sheet") or []
+            questions = content.get("questions") or []
+            answers = content.get("answer_sheet") or []
             if not questions:
                 return "Exam output has empty 'questions' list."
             if not answers:
@@ -256,9 +167,11 @@ def _validate_non_empty_material(material_type: str, parsed: Dict[str, Any]) -> 
 
 def _validate_mode_specific_constraints(material_type: str, parsed: Dict[str, Any]) -> None:
     """Validate constraints that are stricter than schema shape validation."""
+    content = parsed.get("content") or {}
+    
     if material_type == "exam":
-        questions = parsed.get("questions") or []
-        answer_sheet = parsed.get("answer_sheet") or []
+        questions = content.get("questions") or []
+        answer_sheet = content.get("answer_sheet") or []
         for idx, q in enumerate(questions, start=1):
             if str(q.get("answer_space") or "").strip() == "":
                 raise ValueError(f"Exam question {idx} must include non-empty answer_space")
@@ -269,13 +182,13 @@ def _validate_mode_specific_constraints(material_type: str, parsed: Dict[str, An
             raise ValueError("Exam answer_sheet question_id values must match questions numbering (1..N)")
 
     if material_type == "flashcards":
-        cards = parsed.get("cards") or []
+        cards = content.get("cards") or []
         for idx, card in enumerate(cards, start=1):
             if not str(card.get("front") or "").strip() or not str(card.get("back") or "").strip():
                 raise ValueError(f"Flashcard {idx} must include non-empty front/back")
 
     if material_type == "quiz":
-        questions = parsed.get("questions") or []
+        questions = content.get("questions") or []
         for idx, q in enumerate(questions, start=1):
             question_text = str(q.get("question") or "").strip()
             if not question_text:
@@ -399,87 +312,79 @@ def build_prompt(
             difficulty = str(difficulty_override).strip()
 
         base_instructions = (
-            f"Generate a multiple-choice or short-answer quiz based on the context in {language}. "
-            f"Include exactly {question_count} questions. For each question, provide options (if MCQ), the correct answer, and a short explanation."
+            f"Generate a multiple-choice or short-answer quiz in {language}. "
+            f"Include exactly {question_count} questions. Each question must include options (for MCQ), correct_answer, and explanation.\n"
+            f"Difficulty: {difficulty}.\n"
         )
-        base_instructions += f"\nSet quiz difficulty to: {difficulty}."
         if weak_topics:
-            base_instructions += f"\nPrioritize these weak topics when possible: {', '.join(weak_topics)}."
-        if accuracy is not None and avg_response_time is not None:
-            base_instructions += (
-                f"\nStudent performance summary: accuracy={accuracy:.2f}, "
-                f"avg_response_time={avg_response_time:.2f}s."
-            )
+            base_instructions += f"Targeted topics: {', '.join(weak_topics)}.\n"
+            
         json_structure = {
             "type": "quiz",
             "content": {
                 "questions": [
                     {
                         "id": 1,
-                        "question": "Question text?",
+                        "question": "text",
                         "options": ["A", "B", "C", "D"],
-                        "correct_answer": "A",
-                        "explanation": "Why A is correct"
+                        "correct_answer": "answer",
+                        "explanation": "reasoning"
                     }
                 ]
             },
-            "metadata": {"difficulty": difficulty, "count": 5, "version": "v1"}
+            "metadata": {"difficulty": difficulty, "count": question_count, "version": "v1"}
         }
         base_instructions += (
-            f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
-            "\nUse numeric ids starting from 1 and increment by 1."
+            f"Output MUST be a single JSON object with this exact structure: {json.dumps(json_structure)}\n"
+            "All questions must be inside the 'content.questions' list."
         )
 
     elif material_type == "flashcards":
         card_count = count if isinstance(count, int) and count > 0 else None
         if card_count is not None:
-            base_instructions = f"Create a set of {card_count} flashcards (Front/Back) based on the context in {language}."
+            base_instructions = f"Create exactly {card_count} flashcards (Front/Back) in {language}."
         else:
-            base_instructions = f"Create a set of 5-10 flashcards (Front/Back) based on the context in {language}."
-        if difficulty_override and str(difficulty_override).strip():
-            base_instructions += f" Adapt the complexity to {str(difficulty_override).strip()} level."
+            base_instructions = f"Create between 5 and 10 flashcards (Front/Back) in {language}."
+            
         json_structure = {
             "type": "flashcards",
             "content": {
                 "cards": [
-                    {"front": "Question/Term", "back": "Answer/Definition"}
+                    {"front": "term", "back": "definition"}
                 ]
             },
-            "metadata": {"difficulty": "intermediate", "count": 5, "version": "v1"}
+            "metadata": {"difficulty": "intermediate", "count": card_count or 5, "version": "v1"}
         }
-        base_instructions += f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
+        base_instructions += f"\nOutput MUST be a single JSON object with this exact structure: {json.dumps(json_structure)}"
 
     elif material_type == "exam":
         exam_count = count if isinstance(count, int) and count > 0 else 5
         base_instructions = (
-            f"Create an exam based on the context in {language}. "
+            f"Create a mock exam in {language}. "
             f"Include exactly {exam_count} questions. Each question must have an 'answer_space' (e.g. '__________'). "
-            f"DO NOT include answers in the questions list. "
-            f"Provide a SEPARATE 'answer_sheet' section with 'question_id', 'answer', and 'explanation'."
+            f"The 'content' object MUST contain two separate lists: 'questions' (without answers) and 'answer_sheet' (with question_id, answer, explanation)."
         )
         json_structure = {
             "type": "exam",
             "content": {
                 "questions": [
-                    {"id": 1, "question": "Question text?", "answer_space": "__________"}
+                    {"id": 1, "question": "text", "answer_space": "__________"}
                 ],
                 "answer_sheet": [
-                    {"question_id": 1, "answer": "The answer", "explanation": "Explanation"}
+                    {"question_id": 1, "answer": "correct", "explanation": "logic"}
                 ]
             },
-            "metadata": {"difficulty": "intermediate", "count": 5, "version": "v1"}
+            "metadata": {"difficulty": "intermediate", "count": exam_count, "version": "v1"}
         }
-        base_instructions += (
-            f"\nOutput MUST be a JSON object following this structure: {json.dumps(json_structure)}"
-            "\nQuestion numbering in answer_sheet must start at 1 and map to questions order."
-        )
+        base_instructions += f"\nOutput MUST be a single JSON object with this exact structure: {json.dumps(json_structure)}"
     else:
         base_instructions = f"Process the given context and generate {material_type} in {language}."
 
     topic_focus = f"\nFocus specifically on the topic: '{topic}'." if topic else ""
 
     prompt = (
-        f"System instructions:\n{base_instructions}{topic_focus}\n{json_format_instructions}\n\n"
+        f"System instructions:\n{base_instructions}{topic_focus}\n{json_format_instructions}\n"
+        f"Return ONLY valid JSON. No preamble, no commentary.\n\n"
         f"Context:\n---\n{context}\n---\n\n"
         f"Generate the {material_type} JSON now:"
     )
@@ -684,6 +589,7 @@ async def generate_study_material_stream(
     progressive output to clients over SSE.
     """
     overall_start = time.perf_counter()
+    difficulty = (options or {}).get("difficulty", "medium")  # pre-read for logging; full parse happens below
     logger.info(
         "[TRACE][STREAM_GEN_START] material_type=%s chunks=%d difficulty=%s topic=%s",
         material_type, len(chunks), difficulty, topic,
@@ -694,12 +600,14 @@ async def generate_study_material_stream(
         return
 
     request_options = options if isinstance(options, dict) else {}
-    raw_count = request_options.get("count")
+    raw_count = request_options.get("count") or request_options.get("total_count")
     count = raw_count if isinstance(raw_count, int) and raw_count > 0 else None
     raw_difficulty = request_options.get("difficulty")
     difficulty_override = str(raw_difficulty).strip() if raw_difficulty is not None else None
     if difficulty_override == "":
         difficulty_override = None
+    if material_type == "exam":
+        logger.info(f"[EXAM COUNT] {count}")
 
     context = _build_generation_context(chunks)
     prompt = build_prompt(
@@ -900,6 +808,29 @@ def generate_study_material(
                 from .schemas import ExamOutput, QuizOutput, FlashcardsOutput
                 from pydantic import ValidationError
 
+                # Pre-processing/Wrapping for smaller, less precise models (Wrap-and-Inject)
+                if not isinstance(parsed_json, dict):
+                    # If LLM returned just a list, assume it belongs in content
+                    if isinstance(parsed_json, list):
+                        key_map = {"flashcards": "cards", "quiz": "questions", "exam": "questions"}
+                        key = key_map.get(material_type, "questions")
+                        parsed_json = {"content": {key: parsed_json}}
+                    else:
+                        raise ValueError("Unexpected JSON type from LLM (not an object or list)")
+
+                # If root 'content' is missing, try to locate content-like keys at the root
+                if "content" not in parsed_json:
+                    content_keys = {"questions", "cards", "answer_sheet", "title", "sections"}
+                    found_keys = content_keys.intersection(parsed_json.keys())
+                    if found_keys:
+                        # Move content-like keys into a content block
+                        content = {k: parsed_json.pop(k) for k in found_keys}
+                        parsed_json["content"] = content
+
+                # Ensure type is set
+                if "type" not in parsed_json:
+                    parsed_json["type"] = material_type
+
                 try:
                     if material_type == "quiz":
                         parsed_json = QuizOutput(**parsed_json).model_dump()
@@ -907,6 +838,10 @@ def generate_study_material(
                         parsed_json = ExamOutput(**parsed_json).model_dump()
                     elif material_type == "flashcards":
                         parsed_json = FlashcardsOutput(**parsed_json).model_dump()
+
+                    if material_type == "exam":
+                        questions = (parsed_json.get("content") or {}).get("questions") or []
+                        logger.info(f"[GENERATED QUESTIONS] {len(questions)}")
 
                     _validate_mode_specific_constraints(material_type, parsed_json)
 

@@ -56,6 +56,9 @@ api.interceptors.response.use(
         );
         customError.code = error.response?.data?.code || 'NETWORK_ERROR';
         customError.status = error.response?.status;
+        customError.data = error.response?.data;
+        customError.response = error.response;
+        customError.materialId = error.response?.data?.materialId; // For trash duplicates
         customError.validationErrors = error.response?.data?.errors || {}; // For Zod flat errors
 
         return Promise.reject(customError);

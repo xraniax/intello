@@ -29,7 +29,7 @@ const storage = multer.diskStorage({
  * File filter: only allow supported document formats based on system rules.
  */
 const documentOnlyFilter = (req, file, cb) => {
-  const allowed = req.allowedMimeTypes || ['application/pdf'];
+  const allowed = req.allowedMimeTypes || ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
   const mimeOk = allowed.includes(file.mimetype);
 
   if (mimeOk) {
@@ -55,7 +55,7 @@ export const documentUpload = async (req, res, next) => {
     const maxSizeBytes = effectiveLimitMb * 1024 * 1024;
     
     // Pass allowed types to the filter via the request object
-    req.allowedMimeTypes = controls?.allowed_types || ['application/pdf'];
+    req.allowedMimeTypes = controls?.allowed_types || ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 
     const upload = multer({
       storage,

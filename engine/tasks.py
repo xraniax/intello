@@ -638,8 +638,10 @@ def task_generate_material(
         request_options = options if isinstance(options, dict) else {}
         effective_topic = topic or request_options.get("topic")
         effective_language = language or request_options.get("language") or "en"
-        raw_count = request_options.get("count")
-        count = raw_count if isinstance(raw_count, int) and 1 <= raw_count <= 50 else None
+        raw_count = request_options.get("count") or request_options.get("total_count")
+        count = int(raw_count) if raw_count is not None and isinstance(raw_count, (int, str)) and str(raw_count).isdigit() and 1 <= int(raw_count) <= 50 else None
+        if material_type == "exam":
+            logger.info(f"[EXAM COUNT] {count}")
 
         # 1. Retrieve context chunks — scope to selected files when provided
         if chunks and isinstance(chunks, list) and len(chunks) > 0:

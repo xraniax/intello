@@ -30,6 +30,7 @@ const errorHandler = (err, req, res, next) => {
         status: 'error',
         code: err.code || statusCode || 'UNKNOWN_ERROR',
         message: err.message || 'Internal Server Error',
+        ...(err.data !== undefined && { data: err.data }),
         stack: process.env.NODE_ENV === 'production' ? null : err.stack
     };
 

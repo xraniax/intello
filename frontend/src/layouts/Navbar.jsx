@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, LayoutDashboard, UserCircle, LogOut, Shield, Sparkles, Zap, Trash2, Target } from 'lucide-react';
+import { Menu, X, LayoutDashboard, UserCircle, LogOut, Shield, Sparkles, Zap, Trash2, Target, Calendar } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
+import { useUIStore } from '../store/useUIStore';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 
 const Navbar = () => {
@@ -10,6 +11,8 @@ const Navbar = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [mobileOpen, setMobileOpen] = React.useState(false);
+    const toggleGoals = useUIStore((s) => s.actions.toggleGoalsDrawer);
+    const goalsOpen = useUIStore((s) => s.data.goalsDrawerOpen);
 
     // Scroll-aware elevation
     const { scrollY } = useScroll();
@@ -26,6 +29,7 @@ const Navbar = () => {
 
     const navLinks = [
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+        { label: 'Planner', path: '/planner', icon: Calendar },
         { label: 'Goals', path: '/goals', icon: Target },
         { label: 'Trash', path: '/trash', icon: Trash2 },
     ];
@@ -81,27 +85,52 @@ const Navbar = () => {
             <nav className="hidden md:flex items-center gap-1">
                 {user ? (
                     <>
-                        {navLinks.map((link) => (
-                            <Link
-                                key={link.path}
-                                to={link.path}
-                                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-colors duration-150"
-                                style={{
-                                    color: isActive(link.path) ? 'var(--c-primary)' : 'var(--c-text-muted)',
-                                }}
-                            >
-                                {isActive(link.path) && (
-                                    <motion.span
-                                        layoutId="nav-pill"
-                                        className="absolute inset-0 rounded-xl"
-                                        style={{ background: 'var(--c-primary-ultra)', border: '1.5px solid var(--c-primary-light)' }}
-                                        transition={{ type: 'spring', damping: 26, stiffness: 300 }}
-                                    />
-                                )}
-                                <link.icon className="w-3.5 h-3.5 relative z-10" />
-                                <span className="relative z-10">{link.label}</span>
-                            </Link>
-                        ))}
+                        {navLinks.map((link) => {
+                            if (link.label === 'Goals') {
+                                return (
+                                    <button
+                                        key={link.label}
+                                        onClick={toggleGoals}
+                                        className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-colors duration-150"
+                                        style={{
+                                            color: goalsOpen ? 'var(--c-primary)' : 'var(--c-text-muted)',
+                                        }}
+                                    >
+                                        {goalsOpen && (
+                                            <motion.span
+                                                layoutId="nav-pill"
+                                                className="absolute inset-0 rounded-xl"
+                                                style={{ background: 'var(--c-primary-ultra)', border: '1.5px solid var(--c-primary-light)' }}
+                                                transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+                                            />
+                                        )}
+                                        <link.icon className="w-3.5 h-3.5 relative z-10" />
+                                        <span className="relative z-10">{link.label}</span>
+                                    </button>
+                                );
+                            }
+                            return (
+                                <Link
+                                    key={link.path}
+                                    to={link.path}
+                                    className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-colors duration-150"
+                                    style={{
+                                        color: isActive(link.path) ? 'var(--c-primary)' : 'var(--c-text-muted)',
+                                    }}
+                                >
+                                    {isActive(link.path) && (
+                                        <motion.span
+                                            layoutId="nav-pill"
+                                            className="absolute inset-0 rounded-xl"
+                                            style={{ background: 'var(--c-primary-ultra)', border: '1.5px solid var(--c-primary-light)' }}
+                                            transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+                                        />
+                                    )}
+                                    <link.icon className="w-3.5 h-3.5 relative z-10" />
+                                    <span className="relative z-10">{link.label}</span>
+                                </Link>
+                            );
+                        })}
 
                         {user.role === 'admin' && (
                             <Link
@@ -302,24 +331,42 @@ const Navbar = () => {
                                     <>
                                         {navLinks.map((link, i) => (
                                             <motion.div
-                                                key={link.path}
+                                                key={link.label}
                                                 initial={{ opacity: 0, x: 12 }}
                                                 animate={{ opacity: 1, x: 0 }}
                                                 transition={{ delay: i * 0.06 + 0.1, type: 'spring', damping: 20 }}
                                             >
-                                                <Link
-                                                    to={link.path}
-                                                    onClick={() => setMobileOpen(false)}
-                                                    className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all"
-                                                    style={{
-                                                        background: isActive(link.path) ? 'var(--c-primary-ultra)' : 'transparent',
-                                                        color:      isActive(link.path) ? 'var(--c-primary)'       : 'var(--c-text)',
-                                                        border: isActive(link.path) ? '1.5px solid var(--c-primary-light)' : '1.5px solid transparent',
-                                                    }}
-                                                >
-                                                    <link.icon className="w-4 h-4" />
-                                                    {link.label}
-                                                </Link>
+                                                {link.label === 'Goals' ? (
+                                                    <button
+                                                        onClick={() => {
+                                                            setMobileOpen(false);
+                                                            toggleGoals();
+                                                        }}
+                                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all"
+                                                        style={{
+                                                            background: goalsOpen ? 'var(--c-primary-ultra)' : 'transparent',
+                                                            color:      goalsOpen ? 'var(--c-primary)'       : 'var(--c-text)',
+                                                            border: goalsOpen ? '1.5px solid var(--c-primary-light)' : '1.5px solid transparent',
+                                                        }}
+                                                    >
+                                                        <link.icon className="w-4 h-4" />
+                                                        {link.label}
+                                                    </button>
+                                                ) : (
+                                                    <Link
+                                                        to={link.path}
+                                                        onClick={() => setMobileOpen(false)}
+                                                        className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all"
+                                                        style={{
+                                                            background: isActive(link.path) ? 'var(--c-primary-ultra)' : 'transparent',
+                                                            color:      isActive(link.path) ? 'var(--c-primary)'       : 'var(--c-text)',
+                                                            border: isActive(link.path) ? '1.5px solid var(--c-primary-light)' : '1.5px solid transparent',
+                                                        }}
+                                                    >
+                                                        <link.icon className="w-4 h-4" />
+                                                        {link.label}
+                                                    </Link>
+                                                )}
                                             </motion.div>
                                         ))}
                                         <motion.div

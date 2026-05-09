@@ -111,6 +111,9 @@ const TabContent = ({
         if (hasFile) {
             const isDrive = material.file_path.includes('drive.google.com');
             const isMemory = material.file_path.startsWith('memory://');
+            const lowerFilePath = (material.file_path || '').toLowerCase();
+            const isPdf = lowerFilePath.endsWith('.pdf');
+            const isImage = ['.png', '.jpg', '.jpeg', '.webp', '.gif'].some((ext) => lowerFilePath.endsWith(ext));
             let fileUrl = (material.file_path.startsWith('http') || isMemory)
                 ? material.file_path
                 : `${BASE_URL.replace(/\/+$/, '')}/${material.file_path.replace(/^\/+/, '')}`;
@@ -135,7 +138,7 @@ const TabContent = ({
                 );
             }
 
-            if (material.file_path.toLowerCase().endsWith('.pdf') || isDrive) {
+            if (isPdf || isDrive) {
                 return (
                     <div className="flex-1 h-full w-full flex flex-col" style={{ background: 'var(--c-canvas)' }}>
                         {DeletedBanner}
@@ -146,6 +149,22 @@ const TabContent = ({
                             title={tab.title}
                             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                         />
+                    </div>
+                );
+            }
+
+            if (isImage) {
+                return (
+                    <div className="flex-1 h-full w-full flex flex-col" style={{ background: 'var(--c-canvas)' }}>
+                        {DeletedBanner}
+                        <div className="flex-1 flex items-center justify-center p-6">
+                            <img
+                                src={fileUrl}
+                                alt={tab.title}
+                                className="max-w-full max-h-full object-contain rounded-2xl border shadow-sm"
+                                style={{ borderColor: 'var(--c-border-soft)' }}
+                            />
+                        </div>
                     </div>
                 );
             }

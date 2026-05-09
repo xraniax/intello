@@ -21,7 +21,9 @@ import AdminLayout from '@/components/Admin/AdminLayout';
 import SubjectDetail from '@/pages/SubjectDetail';
 import Analytics from '@/pages/Analytics';
 import AnalyticsSubject from '@/pages/AnalyticsSubject';
+import GoalsDrawer from '@/components/Drawers/GoalsDrawer';
 import Goals from '@/pages/Goals';
+import MainLayout from '@/layouts/MainLayout';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import LoadingOverlay from '@/components/ui/LoadingOverlay';
@@ -31,6 +33,10 @@ import { useMaterialStore } from '@/store/useMaterialStore';
 import { useUIStore } from '@/store/useUIStore';
 import AuthModal from '@/components/Auth/AuthModal';
 import GuestGate from '@/components/Auth/GuestGate';
+import PlannerDashboard from './features/planner/components/PlannerDashboard';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient();
 
 const RouteLoadingState = () => (
   <div className="flex-1 flex items-center justify-center bg-white">
@@ -81,6 +87,7 @@ const AppContent = () => {
   const { loginWithToken } = useAuth();
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith('/admin');
+  const isMainRoute = ['/dashboard', '/analytics', '/trash', '/goals'].includes(location.pathname);
 
   React.useEffect(() => {
     // Token harvesting is now handled globally in AuthContext.jsx
@@ -89,19 +96,21 @@ const AppContent = () => {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      {!isAdminRoute && <Navbar />}
-      <main className={`flex-1 min-h-0 flex flex-col ${isAdminRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+      {!isAdminRoute && !isMainRoute && <Navbar />}
+      <main className={`flex-1 min-h-0 flex flex-col ${isAdminRoute || isMainRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
-          <Route path="/dashboard" element={<GuestOrStudentRoute><Dashboard /></GuestOrStudentRoute>} />
+          <Route path="/dashboard" element={<GuestOrStudentRoute><MainLayout><Dashboard /></MainLayout></GuestOrStudentRoute>} />
+          <Route path="/goals" element={<StudentRoute><MainLayout><Goals /></MainLayout></StudentRoute>} />
+          <Route path="/analytics" element={<StudentRoute><MainLayout><Analytics /></MainLayout></StudentRoute>} />
+          <Route path="/trash" element={<ProtectedRoute><MainLayout><Trash /></MainLayout></ProtectedRoute>} />
           <Route path="/subjects/:id" element={<StudentRoute><SubjectDetail /></StudentRoute>} />
-          <Route path="/analytics" element={<StudentRoute><Analytics /></StudentRoute>} />
           <Route path="/analytics/subjects/:subjectId" element={<StudentRoute><AnalyticsSubject /></StudentRoute>} />
-          <Route path="/goals" element={<StudentRoute><Goals /></StudentRoute>} />
+          <Route path="/planner" element={<StudentRoute><PlannerDashboard /></StudentRoute>} />
           <Route path="/upload" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
@@ -112,7 +121,6 @@ const AppContent = () => {
           <Route path="/admin/logs" element={<AdminRoute><AdminLayout><AdminLogs /></AdminLayout></AdminRoute>} />
           <Route path="/admin/settings" element={<AdminRoute><AdminLayout><AdminSettings /></AdminLayout></AdminRoute>} />
           <Route path="/admin/trash" element={<Navigate to="/trash" />} />
-          <Route path="/trash" element={<ProtectedRoute><Trash /></ProtectedRoute>} />
 
           <Route path="/welcome" element={<Welcome />} />
           <Route path="/" element={<Navigate to="/welcome" />} />
@@ -125,7 +133,7 @@ const AppContent = () => {
 const App = () => {
   const globalLoading = useUIStore((state) => {
     const loadingStates = state.data.loadingStates || {};
-    return Object.values(loadingStates).find(s => s?.loading) || null;
+    return Object.values(loadingStates).find((s) => s?.loading) || null;
   });
   const jobProgress = useMaterialStore((state) => state.data.jobProgress);
 
@@ -134,15 +142,18 @@ const App = () => {
   const isBlocking = globalLoading?.blocking ?? true;
 
   return (
-    <AuthProvider>
-      <Toaster position="top-right" />
-      <LoadingOverlay visible={isVisible} message={loadingMessage} blocking={isBlocking} />
-      <JobProgress job={jobProgress} />
-      <AuthModal />
-      <Router>
-        <AppContent />
-      </Router>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <Toaster position="top-right" />
+        <LoadingOverlay visible={isVisible} message={loadingMessage} blocking={isBlocking} />
+        <JobProgress job={jobProgress} />
+        <AuthModal />
+        <GoalsDrawer />
+        <Router>
+          <AppContent />
+        </Router>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 };
 

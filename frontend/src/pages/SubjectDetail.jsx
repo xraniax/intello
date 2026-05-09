@@ -151,7 +151,7 @@ const SubjectDetail = () => {
                                 {uploads.length} Sources
                             </span>
                         </div>
-                        <p className="text-[10px] md:text-xs font-bold truncate max-w-[150px] sm:max-w-md mt-1 text-fuchsia-300/80 uppercase tracking-widest">
+                        <p className="text-[10px] md:text-xs font-bold truncate max-w-[150px] sm:max-w-md mt-1 text-violet-700 uppercase tracking-widest">
                             {subject?.description || 'Refining knowledge with AI clarity.'}
                         </p>
                     </div>

@@ -5,6 +5,7 @@ import GenerationLoadingOverlay from '@/components/ui/GenerationLoadingOverlay';
 import SummaryView from './SummaryView';
 import QuizView from './QuizView';
 import FlashcardsView from './FlashcardsView';
+import ExamView, { extractExamData } from './ExamView';
 
 // ─── Static config ────────────────────────────────────────────────────────────
 
@@ -124,7 +125,12 @@ const MaterialsPanel = ({
             return;
         }
         setShowAlert(false);
-        handleGenerate(genType, null, genOptions);
+        if (genType === 'mock_exam') {
+            const payload = { ...genOptions };
+            console.log("[EXAM SUBMIT]", payload);
+        }
+        // Workspace generator already tracks genType in state; only pass options.
+        handleGenerate(genOptions);
     };
 
     const lastSuccessfulGenRef = useRef(null);
@@ -461,6 +467,10 @@ const MaterialsPanel = ({
                                             </div>
                                         </div>
                                     );
+                                }
+                                if (genType === 'mock_exam') {
+                                    // Exam renders in its own tab (created by useMaterialGeneration)
+                                    return null;
                                 }
                                 return (
                                     <div className="border rounded-2xl p-6 text-sm whitespace-pre-wrap font-mono leading-relaxed" style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border-soft)', color: 'var(--c-text)' }}>

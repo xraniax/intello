@@ -160,6 +160,9 @@ import chatRoutes from './routes/chat.routes.js';
 import goalRoutes from './routes/goal.routes.js';
 import fileRoutes from './routes/file.routes.js';
 
+import plannerRoutes from './routes/planner.routes.js';
+import plannerAIRoutes from './routes/planner.ai.routes.js';
+
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/files', fileRoutes);
@@ -171,6 +174,8 @@ app.use('/api/quiz', quizRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/goals', goalRoutes);
+app.use('/api/planner', plannerRoutes);
+app.use('/api/planner/ai', plannerAIRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Cognify Backend API', version: '1.0.0', endpoints: { auth: '/api/auth', materials: '/api/materials', subjects: '/api/subjects', health: '/health' } });

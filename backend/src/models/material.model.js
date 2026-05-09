@@ -194,6 +194,39 @@ class Material {
     }
 
     /**
+     * Find a material by title regardless of deletion status.
+     */
+    static async findByTitleAnyStatus(userId, subjectId, title) {
+        const result = await query(
+            'SELECT * FROM materials WHERE user_id = $1 AND subject_id = $2 AND LOWER(TRIM(title)) = LOWER(TRIM($3))',
+            [userId, subjectId, title]
+        );
+        return result.rows[0];
+    }
+
+    /**
+     * Find a material by title specifically in the trash.
+     */
+    static async findInTrashByTitle(userId, subjectId, title) {
+        const result = await query(
+            'SELECT * FROM materials WHERE user_id = $1 AND subject_id = $2 AND LOWER(TRIM(title)) = LOWER(TRIM($3)) AND deleted_at IS NOT NULL',
+            [userId, subjectId, title]
+        );
+        return result.rows[0];
+    }
+
+    /**
+     * Find a soft-deleted (trashed) material by title — used to detect trash duplicates.
+     */
+    static async findByTitleInTrash(userId, subjectId, title) {
+        const result = await query(
+            'SELECT id, title, deleted_at FROM materials WHERE user_id = $1 AND subject_id = $2 AND LOWER(TRIM(title)) = LOWER(TRIM($3)) AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 1',
+            [userId, subjectId, title]
+        );
+        return result.rows[0] || null;
+    }
+
+    /**
      * Delete a material (Soft Delete).
      * user_id enforced for IDOR protection — users can only delete their own materials.
      */

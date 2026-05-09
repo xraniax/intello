@@ -23,6 +23,48 @@ _TEXT_JOBS: Dict[str, Dict[str, Any]] = {}
 _TEXT_JOBS_LOCK = asyncio.Lock()
 
 
+def _normalize_exam_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+    if payload.get("type") != "exam":
+        return payload
+
+    content = payload.get("content")
+    if not isinstance(content, dict):
+        return payload
+
+    questions = content.get("questions")
+    if not isinstance(questions, list):
+        return payload
+
+    normalized_questions = []
+    for idx, question in enumerate(questions, start=1):
+        if isinstance(question, dict):
+            normalized_questions.append({**question, "id": idx})
+        else:
+            normalized_questions.append(question)
+
+    answer_sheet = content.get("answer_sheet")
+    if isinstance(answer_sheet, list):
+        normalized_answer_sheet = []
+        for idx, item in enumerate(answer_sheet, start=1):
+            if isinstance(item, dict):
+                normalized_answer_sheet.append({**item, "question_id": idx})
+            else:
+                normalized_answer_sheet.append(item)
+    else:
+        normalized_answer_sheet = answer_sheet
+
+    return {
+        **payload,
+        "content": {
+            **content,
+            "questions": normalized_questions,
+            "answer_sheet": normalized_answer_sheet,
+        },
+    }
+
+
 def _extract_stream_text_from_generation_result(result: Dict[str, Any]) -> Optional[str]:
     """Extract stream-safe text from normalized generation payload only."""
     if not isinstance(result, dict):
@@ -34,6 +76,7 @@ def _extract_stream_text_from_generation_result(result: Dict[str, Any]) -> Optio
     payload = result.get("ai_generated_content")
     if not isinstance(payload, dict):
         return None
+    payload = _normalize_exam_payload(payload)
     content = payload.get("content")
     if content is None:
         return None
@@ -243,6 +286,11 @@ async def stream_job_status(job_id: str):
                         chunk_text = generation_stream or result.get("extracted_text") or result.get("status") or "SUCCESS"
                     elif status == "FAILURE":
                         chunk_text = error or "FAILURE"
+                    elif status == "RETRY":
+                        # RETRY is a transient Celery state — the task will re-execute
+                        # after its countdown. Keep polling; do NOT treat as terminal.
+                        # Celery will transition to SUCCESS or FAILURE on its own.
+                        chunk_text = "Retrying generation..."
                     else:
                         chunk_text = status
 

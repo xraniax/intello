@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { MaterialService } from '@/services/MaterialService';
-import { Trash2, RotateCcw, File as FileIcon, ArrowLeft, AlertTriangle, X, Clock } from 'lucide-react';
+import { Trash2, RotateCcw, File as FileIcon, AlertTriangle, X, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, differenceInDays, differenceInHours } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -74,7 +73,6 @@ const ExpiryBadge = ({ expiresAt }) => {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const Trash = () => {
-    const navigate = useNavigate();
     const [trashItems, setTrashItems]         = useState([]);
     const [ttlDays, setTtlDays]               = useState(30);
     const [loading, setLoading]               = useState(true);
@@ -156,7 +154,7 @@ const Trash = () => {
     }).length;
 
     return (
-        <div className="relative min-h-screen w-full bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 px-4 py-10 sm:px-6 md:px-8 animate-in fade-in duration-500 overflow-hidden">
+        <div className="relative flex-1 overflow-y-auto w-full bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 px-4 py-10 sm:px-6 md:px-8 animate-in fade-in duration-500">
             <div className="pointer-events-none absolute inset-0 opacity-80">
                 <div className="absolute -left-28 top-24 h-56 w-56 rounded-full bg-rose-300/25 blur-3xl" />
                 <div className="absolute right-0 top-40 h-72 w-72 rounded-full bg-indigo-300/20 blur-3xl" />
@@ -166,14 +164,6 @@ const Trash = () => {
 
             <div className="relative mx-auto flex w-full max-w-[1920px] flex-col gap-6 sm:flex-row sm:items-end sm:justify-between mb-10">
                 <div className="space-y-5 rounded-[2rem] border border-slate-200/80 bg-white/80 p-6 shadow-[0_30px_60px_-40px_rgba(15,23,42,0.36)] backdrop-blur-xl">
-                    <button
-                        onClick={() => navigate('/dashboard')}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-indigo-700 hover:shadow-md active:scale-95"
-                    >
-                        <ArrowLeft className="w-4 h-4" />
-                        Back to dashboard
-                    </button>
-
                     <div className="space-y-3">
                         <div className="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.24em] text-rose-700 shadow-sm shadow-rose-100/70">
                             <span className="inline-flex h-2 w-2 rounded-full bg-rose-500 animate-pulse" />

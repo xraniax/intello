@@ -21,7 +21,7 @@ const safeDelete = (filePath) => {
 
 class MaterialController {
     /**
-     * Upload endpoint: accepts a PDF file and/or raw text content.
+     * Upload endpoint: accepts a supported file (PDF/image) and/or raw text content.
      *
      * NEW Processing pipeline:
      *   1. Receive file locally via Multer.
@@ -41,18 +41,22 @@ class MaterialController {
 
         if (!file && !content) {
             res.status(400);
-            throw new Error('Content is required — upload a PDF or paste text.');
+            throw new Error('Content is required — upload a file or paste text.');
         }
 
         try {
             // Forward everything directly to Python Engine via the Service layer
+            const skipDuplicateCheck =
+                req.body.skipDuplicateCheck === 'true' || req.body.skipDuplicateCheck === true;
+
             const uploadedDocument = await MaterialService.processDocument(
                 req.user.id,
                 file,
                 title,
                 content || '',
                 type || 'upload',
-                subjectId
+                subjectId,
+                { skipDuplicateCheck }
             );
 
             res.status(201).json({
@@ -164,8 +168,9 @@ class MaterialController {
 
         req.on('close', () => {
             const totalMs = Date.now() - reqStart;
-            console.log('[TRACE][BACKEND_CLIENT_CLOSE] total_ms=%d chunks_piped=%d', totalMs, chunkCount);
-            if (response.data.destroy) response.data.destroy();
+            console.log('[TRACE][BACKEND_CLIENT_CLOSE] total_ms=%d chunks_piped=%d — engine stream continues independently', totalMs, chunkCount);
+            // Do NOT destroy the engine stream — the engine continues generating.
+            // The job result is persisted regardless of client connection state.
         });
     });
 
@@ -211,10 +216,10 @@ class MaterialController {
 
         response.data.pipe(res);
 
-        // Handle client disconnect
+        // Handle client disconnect — job continues in background
         req.on('close', () => {
-            console.log(`[MaterialController] Client closed connection for job: ${material.job_id}`);
-            if (response.data.destroy) response.data.destroy();
+            console.log(`[MaterialController] Client disconnected for job: ${material.job_id} — engine continues independently`);
+            // Do NOT destroy the engine stream. The job persists and can be recovered.
         });
     });
 

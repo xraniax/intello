@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useMaterialStore } from '@/store/useMaterialStore';
 import { MaterialService } from '@/services/MaterialService';
+import { extractExamData } from '@/features/subjects/components/ExamView';
 
 const GENERATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — MAP+REDUCE for large docs needs headroom
 
@@ -55,10 +56,58 @@ export const useMaterialGeneration = ({
     const activeMaterialIdRef = useRef(null);
     const timeoutRef = useRef(null);
     const lastGenParamsRef = useRef(null);
+    const activeGenTypeRef = useRef(null);
+    const examTabCreatedRef = useRef(false);
 
     const streamControllerRef = useRef(null);
     const currentSubjectIdRef = useRef(normalizedId);
     useEffect(() => { currentSubjectIdRef.current = normalizedId; }, [normalizedId]);
+
+    // ── Auto-create / update exam tab during streaming ──────────────────────
+    const EXAM_TAB_ID = `streaming-exam-${subjectId}`;
+    useEffect(() => {
+        if (activeGenTypeRef.current !== 'mock_exam') return;
+        if (!genResult) return;
+
+        // Prefer real material ID if we have it, otherwise fallback to transient
+        const currentId = activeMaterialIdRef.current ? String(activeMaterialIdRef.current) : EXAM_TAB_ID;
+
+        let parsed;
+        try { parsed = typeof genResult === 'string' ? JSON.parse(genResult) : genResult; }
+        catch { return; } // JSON not yet complete
+
+        const examData = extractExamData(parsed);
+        if (!examData || !Array.isArray(examData.questions) || examData.questions.length === 0) return;
+        // Need at least one question with text
+        if (!examData.questions[0].question) return;
+        console.log('[TRACE][EXAM_STREAM_TAB]', {
+            streamedQuestionCount: examData.questions.length,
+            streamedAnswerSheetCount: Array.isArray(examData.answer_sheet) ? examData.answer_sheet.length : undefined,
+        });
+
+        if (!examTabCreatedRef.current) {
+            // First time — create the tab and switch to it
+            examTabCreatedRef.current = true;
+            setTabs(prev => [
+                ...prev.filter(t => String(t.id) !== currentId),
+                {
+                    id: currentId,
+                    title: examData.title || 'Mock Exam',
+                    type: 'exam_session',
+                    material: { id: currentId, type: 'exam_session', ai_generated_content: examData },
+                    pinned: false,
+                },
+            ]);
+            setActiveTabId(currentId);
+        } else {
+            // Update the existing tab's data with new questions
+            setTabs(prev => prev.map(t =>
+                String(t.id) === currentId
+                    ? { ...t, material: { ...t.material, ai_generated_content: examData } }
+                    : t
+            ));
+        }
+    }, [genResult, setTabs, setActiveTabId, subjectId, EXAM_TAB_ID]);
 
     // ── Streaming accumulator refs ──────────────────────────────────────────
     // Raw chunks land here instantly; a timer flushes to React state at a
@@ -99,7 +148,9 @@ export const useMaterialGeneration = ({
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
         }
-    }, []);
+        // Refresh sidebar to capture any new materials
+        fetchMaterials();
+    }, [fetchMaterials]);
 
     useEffect(() => {
         return () => {
@@ -137,19 +188,24 @@ export const useMaterialGeneration = ({
         setGenerationStartTime(Date.now());
         hasRenamedRef.current = false;
         activeMaterialIdRef.current = null;
+        activeGenTypeRef.current = genType;
+        examTabCreatedRef.current = false;
 
         // Store params for retry (from HEAD)
         lastGenParamsRef.current = { genType, singleId, genOptions };
 
-        // Set generation timeout (from HEAD)
+        // Set generation timeout — skipped for mock_exam since the LLM must not be
+        // aborted mid-way. Other types retain a 10-minute safety net.
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        timeoutRef.current = setTimeout(() => {
-            console.warn('[TRACE][FE_TIMEOUT] generation timed out after %dms', GENERATION_TIMEOUT_MS);
-            streamControllerRef.current?.abort();
-            setMaterialGenError('Generation timed out after 10 minutes. The AI engine may be overloaded — please try again.');
-            stopFlushTimer();
-            finishGenerating();
-        }, GENERATION_TIMEOUT_MS);
+        if (genType !== 'mock_exam') {
+            timeoutRef.current = setTimeout(() => {
+                console.warn('[TRACE][FE_TIMEOUT] generation timed out after %dms', GENERATION_TIMEOUT_MS);
+                streamControllerRef.current?.abort();
+                setMaterialGenError('Generation timed out after 10 minutes. The AI engine may be overloaded — please try again.');
+                stopFlushTimer();
+                finishGenerating();
+            }, GENERATION_TIMEOUT_MS);
+        }
         const isFlashGen = genType === 'flashcards' && genOptions?.count;
         const requestedCount = genOptions?.count;
 
@@ -157,7 +213,15 @@ export const useMaterialGeneration = ({
         let renderCount = 0;
         console.log('[TRACE][FE_GEN_START] type=%s targets=%d timestamp=%d', genType, targets.length, Date.now());
 
-        try {
+        // For exams, we prioritize the persistence path so they appear in the sidebar 
+        // with a real UUID immediately and avoid 404/400 errors.
+        if (genType === 'mock_exam') {
+            console.log('[MaterialGen] Routing exam to persistence path for sidebar and ID stability.');
+            // Skip directly to the generate -> stream flow below (using a catch-like jumping or just conditional)
+            // We'll let it flow into the second try block by throwing a dummy "skip" error if we want 
+            // but a cleaner way is just wrapping the primary stream path in a conditional.
+        } else {
+            try {
 
             streamControllerRef.current?.abort();
             const controller = new AbortController();
@@ -299,7 +363,7 @@ export const useMaterialGeneration = ({
                 finishGenerating();
                 return;
             }
-            console.warn('[MaterialGen] Streaming path failed, falling back to async job flow:', streamErr?.message || streamErr);
+            }
         }
 
         try {
