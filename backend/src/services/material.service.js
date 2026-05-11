@@ -234,27 +234,20 @@ class MaterialService {
                             { materialType: result.material_type, ...persistedConstraints }
                         );
 
-                        await withTransaction(async (client) => {
-                            if (result.content && result.ai_generated_content) {
-                                await client.query(
-                                    'UPDATE materials SET content = $2, ai_generated_content = $3, status = $4, completed_at = $5, processed_at = $6 WHERE id = $1 AND user_id = $7',
-                                    [materialId, contentStr, aiContentStr, COMPLETED, nowIso, nowIso, userId]
-                                );
-                            } else if (result.content) {
-                                await client.query(
-                                    'UPDATE materials SET content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
-                                    [materialId, contentStr, COMPLETED, nowIso, nowIso, userId]
-                                );
-                            } else if (result.ai_generated_content) {
-                                await client.query(
-                                    'UPDATE materials SET ai_generated_content = $2, status = $3, completed_at = $4, processed_at = $5 WHERE id = $1 AND user_id = $6',
-                                    [materialId, aiContentStr, COMPLETED, nowIso, nowIso, userId]
-                                );
-                            }
+                        // ── DIAGNOSTIC: compare question counts at each stage ──
+                        const _rawQ = result.ai_generated_content?.content?.questions?.length;
+                        const _normQ = normalizedAiContent?.content?.questions?.length;
+                        const _finalQ = (typeof finalAiContent === 'string' ? JSON.parse(finalAiContent) : finalAiContent)?.content?.questions?.length;
+                        console.log('[EXAM_DIAG] materialId=%s | ENGINE_RAW=%d | NORMALIZED=%d | FINAL_PERSISTED=%d | constraints=%j',
+                            materialId, _rawQ, _normQ, _finalQ, persistedConstraints);
 
+                        await withTransaction(async (client) => {
+                            // SINGLE SOURCE OF TRUTH UPDATE: 
+                            // This ensures that either all fields are updated correctly via the 
+                            // normalized+constrained payload, or none are.
                             await client.query(
-                                'UPDATE materials SET ai_generated_content = $2, processed_at = NOW(), completed_at = NOW(), status = $4 WHERE id = $1 AND user_id = $3 AND deleted_at IS NULL',
-                                [materialId, finalAiContent, userId, COMPLETED]
+                                'UPDATE materials SET content = $2, ai_generated_content = $3, processed_at = $4, completed_at = $4, status = $6 WHERE id = $1 AND user_id = $5 AND deleted_at IS NULL',
+                                [materialId, contentStr, finalAiContent, nowIso, userId, COMPLETED]
                             );
                         });
                         generationConstraintByMaterialId.delete(String(materialId));

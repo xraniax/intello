@@ -5,7 +5,8 @@ import GenerationLoadingOverlay from '@/components/ui/GenerationLoadingOverlay';
 import SummaryView from './SummaryView';
 import QuizView from './QuizView';
 import FlashcardsView from './FlashcardsView';
-import ExamView, { extractExamData } from './ExamView';
+import ExamView from './ExamView';
+import { extractExamData } from '@/features/subjects/utils/examUtils';
 
 // ─── Static config ────────────────────────────────────────────────────────────
 

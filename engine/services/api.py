@@ -67,7 +67,7 @@ try:
 except ImportError:
     from ..database import SessionLocal
     from ..models import Document, Chunk
-from .routes import chat, documents, generation, health, jobs, quiz, goals, assistant
+from .routes import chat, documents, generation, health, jobs, quiz, goals, assistant, scoring
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,6 +119,7 @@ app.include_router(generation.router)
 app.include_router(quiz.router)
 app.include_router(goals.router)
 app.include_router(assistant.router)
+app.include_router(scoring.router, prefix="/scoring", tags=["Exam Scoring"])
 
 
 def _get_db_display() -> str:

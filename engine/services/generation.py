@@ -360,21 +360,24 @@ def build_prompt(
     elif material_type == "exam":
         exam_count = count if isinstance(count, int) and count > 0 else 5
         base_instructions = (
-            f"Create a mock exam in {language}. "
-            f"Include exactly {exam_count} questions. Each question must have an 'answer_space' (e.g. '__________'). "
+            f"Create a COMPREHENSIVE mock exam in {language}. "
+            f"You MUST include EXACTLY {exam_count} unique questions. DO NOT truncate. "
+            f"Each question must have an 'answer_space' (e.g. '__________'). "
             f"The 'content' object MUST contain two separate lists: 'questions' (without answers) and 'answer_sheet' (with question_id, answer, explanation)."
         )
         json_structure = {
             "type": "exam",
             "content": {
                 "questions": [
-                    {"id": 1, "question": "text", "answer_space": "__________"}
+                    {"id": 1, "question": "First question text?", "answer_space": "__________"},
+                    {"id": 2, "question": "Second question text?", "answer_space": "__________"}
                 ],
                 "answer_sheet": [
-                    {"question_id": 1, "answer": "correct", "explanation": "logic"}
+                    {"question_id": 1, "answer": "Detailed answer 1", "explanation": "Logic for 1"},
+                    {"question_id": 2, "answer": "Detailed answer 2", "explanation": "Logic for 2"}
                 ]
             },
-            "metadata": {"difficulty": "intermediate", "count": exam_count, "version": "v1"}
+            "metadata": {"difficulty": "intermediate", "count": exam_count, "version": "v1.1"}
         }
         base_instructions += f"\nOutput MUST be a single JSON object with this exact structure: {json.dumps(json_structure)}"
     else:

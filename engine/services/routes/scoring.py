@@ -9,9 +9,12 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-# Import the scoring module
-from scoring import ExamScorer, ExamRubric, StudentAnswer, ExamScoreResult
-from scoring.schemas import ConceptDefinition, ScoreScale
+try:
+    from scoring import ExamScorer, ExamRubric, StudentAnswer, ExamScoreResult
+    from scoring.schemas import ConceptDefinition, ScoreScale
+except ImportError:
+    from ...scoring import ExamScorer, ExamRubric, StudentAnswer, ExamScoreResult
+    from ...scoring.schemas import ConceptDefinition, ScoreScale
 
 
 # =============================================================================
@@ -92,7 +95,7 @@ class BatchScoreResponse(BaseModel):
 # FastAPI Router
 # =============================================================================
 
-router = APIRouter(prefix="/scoring", tags=["Exam Scoring"])
+router = APIRouter()
 
 # Global scorer instance (singleton pattern)
 _scorer: Optional[ExamScorer] = None

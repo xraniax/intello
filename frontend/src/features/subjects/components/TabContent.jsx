@@ -9,6 +9,7 @@ import QuizView from './QuizView';
 import FlashcardsView from './FlashcardsView';
 import ExamView from './ExamView';
 import SummaryView from './SummaryView';
+import { extractExamData } from '../utils/examUtils';
 
 const TabContent = ({
     tabId,
@@ -210,11 +211,8 @@ const TabContent = ({
         );
     }
 
-    let parsedContent = material.ai_generated_content || material.content || '';
-    if (typeof parsedContent === 'string') {
-        try { parsedContent = JSON.parse(parsedContent); } catch { }
-    }
-    if (parsedContent?.result) parsedContent = parsedContent.result;
+    // Use robust extraction utility to handle nested AI payloads
+    let parsedContent = extractExamData(material.ai_generated_content || material.content || '');
 
     if (typeof parsedContent === 'object' && parsedContent) {
         parsedContent.id = material.id;
@@ -253,7 +251,7 @@ const TabContent = ({
                 {DeletedBanner}
                 <div className="flex-1">
                     <MaterialErrorBoundary type="exam">
-                        <ExamView examData={material.ai_generated_content} examId={material.id} subjectId={subjectId} isExpanded={isExpanded} />
+                        <ExamView examData={parsedContent} examId={material.id} subjectId={subjectId} isExpanded={isExpanded} />
                     </MaterialErrorBoundary>
                 </div>
             </div>

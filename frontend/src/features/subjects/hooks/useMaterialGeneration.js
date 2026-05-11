@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useMaterialStore } from '@/store/useMaterialStore';
 import { MaterialService } from '@/services/MaterialService';
-import { extractExamData } from '@/features/subjects/components/ExamView';
+import { extractExamData } from '@/features/subjects/utils/examUtils';
 
 const GENERATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — MAP+REDUCE for large docs needs headroom
 

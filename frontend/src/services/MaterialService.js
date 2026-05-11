@@ -103,13 +103,9 @@ export const MaterialService = {
                             const parsed = JSON.parse(jsonStr);
                             const status = String(parsed?.status || '').toUpperCase();
                             const isTerminalStatus = status === 'SUCCESS' || status === 'FAILURE' || status === 'REVOKED';
-                            const isProgressOnlyChunk =
-                                status &&
-                                typeof parsed.chunk === 'string' &&
-                                parsed.chunk.trim().toUpperCase() === status &&
-                                !parsed.is_final;
+                            const isContentChunk = parsed.is_final || status === 'SUCCESS' || status === 'FAILURE';
 
-                            if (parsed.chunk && !isProgressOnlyChunk) onChunk(parsed.chunk);
+                            if (parsed.chunk && isContentChunk) onChunk(parsed.chunk);
 
                             // Defensive terminal detection:
                             // some stream producers may send terminal statuses even if is_final is omitted.
