@@ -1,0 +1,159 @@
+@startuml Generate Summary Use Case - Enhanced
+
+!theme cerulean-outline
+
+skinparam usecase {
+    BackgroundColor<<core>> LightYellow
+    BorderColor<<core>> Orange
+    BorderThickness<<core>> 2
+    
+    BackgroundColor<<smart>> LightGreen
+    BorderColor<<smart>> DarkGreen
+    BorderThickness<<smart>> 2
+    
+    BackgroundColor<<fallback>> LightCoral
+    BorderColor<<fallback>> DarkRed
+    
+    BackgroundColor<<stream>> LightBlue
+    BorderColor<<stream>> DarkBlue
+}
+
+skinparam actor {
+    BackgroundColor LightYellow
+    BorderColor Black
+}
+
+skinparam note {
+    BackgroundColor White
+    BorderColor Gray
+}
+
+title Generate Summary Use Case\n<font size=14><b>MAP/REDUCE Architecture | Dual Path | Intelligent Fallback</b></font>
+
+left to right direction
+
+' === ACTORS ===
+actor "👤 Student" as User
+actor "🤖 Ollama\nAI Engine" as AIEngine #LightCoral
+actor "🗄️ PostgreSQL\nDatabase" as DB #LightGray
+
+' === CORE WORKFLOW (Yellow) ===
+rectangle "Core Workflow" as CoreZone #LightYellow {
+    usecase "UC1: Generate\nSummary" as UC_Main <<core>>
+    usecase "UC2: Validate\nDocuments" as UC_Validate <<core>>
+    usecase "UC3: Retrieve\nChunks" as UC_Retrieve <<core>>
+    usecase "UC4: REDUCE\nSynthesis" as UC_Reduce <<core>>
+    usecase "UC5: Persist\nResult" as UC_Persist <<core>>
+}
+
+' === SMART FEATURES (Green) ===
+rectangle "Smart Features" as SmartZone #E8F5E9 {
+    usecase "UC6: MAP Stage\nParallel Summarization" as UC_Map <<smart>>
+    usecase "UC7: Adaptive\nContext Sizing" as UC_Adaptive <<smart>>
+}
+
+' === STREAMING (Blue) ===
+rectangle "Real-Time Streaming" as StreamZone #E3F2FD {
+    usecase "UC8: Stream\nProgress" as UC_Stream <<stream>>
+    usecase "UC9: Live Token\nStreaming" as UC_Tokens <<stream>>
+}
+
+' === RESILIENCE (Red) ===
+rectangle "Resilience & Fallback" as ResilienceZone #FFEBEE {
+    usecase "UC10: Fallback\nGeneration" as UC_Fallback <<fallback>>
+    usecase "UC11: Error\nHandling" as UC_Error <<fallback>>
+}
+
+' === USER ACTIONS ===
+rectangle "User Actions" as UserZone #FFF3E0 {
+    usecase "Select Source\nDocuments" as UC_Select
+    usecase "Configure\nOptions" as UC_Config
+    usecase "View\nSummary" as UC_View
+}
+
+' === MAIN FLOW RELATIONSHIPS ===
+User --> UC_Select
+User --> UC_Config
+User --> UC_Main
+
+UC_Main ..> UC_Validate : <<include>>
+UC_Main ..> UC_Retrieve : <<include>>
+UC_Retrieve ..> UC_Reduce : <<include>>
+UC_Reduce ..> UC_Persist : <<include>>
+UC_Persist ..> UC_View : <<include>>
+User --> UC_View
+
+' === SMART FEATURES (Conditional) ===
+UC_Map ..> UC_Retrieve : <<extend>>
+note right of UC_Map
+  <b>SMART FEATURE:</b>
+  Auto-triggered when
+  total_chars > 30K
+  Parallel processing (2x
+  concurrency, 90s timeout
+  per chunk)
+end note
+
+UC_Adaptive ..> UC_Reduce : <<extend>>
+note bottom of UC_Adaptive
+  <b>ADAPTIVE CONTEXT:</b>
+  Dynamic VRAM allocation
+  based on prompt length
+  (2048-32768 tokens)
+end note
+
+' === STREAMING PATH ===
+UC_Stream ..> UC_Main : <<extend>>
+UC_Tokens ..> UC_Reduce : <<extend>>
+note bottom of UC_Stream
+  <b>REAL-TIME FEATURES:</b>
+  • Progress markers during MAP
+  • Live token streaming
+  • Client disconnect tolerance
+  • 10 min timeout
+end note
+
+' === RESILIENCE ===
+UC_Fallback ..> UC_Reduce : <<extend>>
+UC_Error ..> UC_Main : <<extend>>
+note bottom of UC_Fallback
+  <b>FALLBACK MECHANISM:</b>
+  • Triggers on primary failure
+  • 8K truncated context
+  • Synchronous generation
+  • Zero data loss
+end note
+
+' === SYSTEM INTERACTIONS ===
+UC_Reduce --> AIEngine : generates
+UC_Map --> AIEngine : parallel\nchunks
+UC_Fallback --> AIEngine : sync\nbackup
+
+UC_Main --> DB : creates\nplaceholder
+UC_Retrieve --> DB : reads chunks
+UC_Persist --> DB : writes result
+
+' === LEGEND ===
+legend bottom
+  |= Zone | Purpose |
+  | <#LightYellow> | Core mandatory workflow |
+  | <#E8F5E9> | Smart optimizations (MAP, adaptive) |
+  | <#E3F2FD> | Real-time streaming features |
+  | <#FFEBEE> | Resilience & fallback |
+  | --- | --- |
+  | Line Type | Meaning |
+  | --▶ | Actor interaction |
+  | ..▶ | <<include>> mandatory |
+  | ..▷ | <<extend>> conditional |
+endlegend
+
+' === CONFIG OPTIONS NOTE ===
+note top of UserZone
+  <b>Configuration Options:</b>
+  • Mode: key_concepts | concise | detailed | exam_ready | teach_me
+  • Difficulty: beginner | intermediate | advanced
+  • Language: en | ar | es | fr | de
+  • Custom topic focus
+end note
+
+@enduml

@@ -14,7 +14,7 @@ const UploadModal = ({
                 <FileUpload 
                     subjectId={subjectId}
                     onSuccess={(data) => {
-                        onSuccess(data);
+                        onSuccess?.(data);
                         onClose();
                     }}
                     onCancel={onClose}

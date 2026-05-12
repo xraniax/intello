@@ -3,82 +3,101 @@ import asyncHandler from '../utils/asyncHandler.js';
 import { parsePagination, buildPaginatedResponse } from '../utils/pagination.js';
 
 class SubjectController {
-    static create = asyncHandler(async (req, res) => {
-        const { name, description } = req.body;
-        const subject = await SubjectService.createSubject(req.user.id, name, description);
-        res.status(201).json({ status: 'success', data: subject });
-    });
+  static create = asyncHandler(async (req, res) => {
+    const { name, description } = req.body;
+    const subject = await SubjectService.createSubject(req.user.id, name, description);
+    res.status(201).json({ status: 'success', data: subject });
+  });
 
-    static getAll = asyncHandler(async (req, res) => {
-        const { page, limit, offset } = parsePagination(req.query);
-        const result = await SubjectService.getAllSubjects(req.user.id, { limit, offset });
-        
-        // If pagination was applied, return paginated response
-        if (result && result.subjects) {
-            const paginatedResponse = buildPaginatedResponse(result.subjects, result.total, { page, limit });
-            res.status(200).json({ status: 'success', ...paginatedResponse });
-        } else {
-            // Backward compatibility: return plain array if no pagination requested
-            res.status(200).json({ status: 'success', data: result });
-        }
-    });
+  static getAll = asyncHandler(async (req, res) => {
+    const hasExplicitPagination = req.query.page !== undefined || req.query.limit !== undefined;
+    const pagination = hasExplicitPagination ? parsePagination(req.query) : null;
+    const paginationArg = pagination
+      ? { limit: pagination.limit, offset: pagination.offset }
+      : null;
 
-    static getOne = asyncHandler(async (req, res) => {
-        const subject = await SubjectService.getSubjectDetails(req.user.id, req.params.id);
-        if (!subject) {
-            res.status(404);
-            throw new Error('Subject not found');
-        }
-        res.status(200).json({ status: 'success', data: subject });
-    });
+    const result = await SubjectService.getAllSubjects(req.user.id, paginationArg);
 
-    static update = asyncHandler(async (req, res) => {
-        const { name, description } = req.body;
-        const subject = await SubjectService.updateSubject(req.user.id, req.params.id, name, description);
-        if (!subject) {
-            res.status(404);
-            throw new Error('Subject not found');
-        }
-        res.status(200).json({ status: 'success', data: subject });
-    });
+    if (result && result.subjects) {
+      const paginatedResponse = buildPaginatedResponse(result.subjects, result.total, {
+        page: pagination.page,
+        limit: pagination.limit,
+      });
+      res.status(200).json({ status: 'success', ...paginatedResponse });
+    } else {
+      res.status(200).json({ status: 'success', data: result });
+    }
+  });
 
-    static delete = asyncHandler(async (req, res) => {
-        const deleted = await SubjectService.deleteSubject(req.user.id, req.params.id);
-        if (!deleted) {
-            res.status(404);
-            throw new Error('Subject not found');
-        }
-        res.status(200).json({ status: 'success', message: 'Subject deleted successfully' });
-    });
+  static getOne = asyncHandler(async (req, res) => {
+    const subject = await SubjectService.getSubjectDetails(req.user.id, req.params.id);
+    if (!subject) {
+      res.status(404);
+      throw new Error('Subject not found');
+    }
+    res.status(200).json({ status: 'success', data: subject });
+  });
 
-    static getTrash = asyncHandler(async (req, res) => {
-        const { page, limit, offset } = parsePagination(req.query);
-        const result = await SubjectService.getTrash(req.user.id, { limit, offset });
-        if (result && result.trash) {
-            const paginatedResponse = buildPaginatedResponse(result.trash, result.total, { page, limit });
-            res.status(200).json({ status: 'success', ...paginatedResponse });
-        } else {
-            res.status(200).json({ status: 'success', data: result });
-        }
-    });
+  static update = asyncHandler(async (req, res) => {
+    const { name, description } = req.body;
+    const subject = await SubjectService.updateSubject(
+      req.user.id,
+      req.params.id,
+      name,
+      description
+    );
+    if (!subject) {
+      res.status(404);
+      throw new Error('Subject not found');
+    }
+    res.status(200).json({ status: 'success', data: subject });
+  });
 
-    static restore = asyncHandler(async (req, res) => {
-        const restored = await SubjectService.restoreSubject(req.user.id, req.params.id);
-        if (!restored) {
-            res.status(404);
-            throw new Error('Subject not found or not in trash');
-        }
-        res.status(200).json({ status: 'success', message: 'Subject restored successfully' });
-    });
+  static delete = asyncHandler(async (req, res) => {
+    const deleted = await SubjectService.deleteSubject(req.user.id, req.params.id);
+    if (!deleted) {
+      res.status(404);
+      throw new Error('Subject not found');
+    }
+    res.status(200).json({ status: 'success', message: 'Subject deleted successfully' });
+  });
 
-    static permanentDelete = asyncHandler(async (req, res) => {
-        const deleted = await SubjectService.permanentDeleteSubject(req.user.id, req.params.id);
-        if (!deleted) {
-            res.status(404);
-            throw new Error('Subject not found or not in trash');
-        }
-        res.status(200).json({ status: 'success', message: 'Subject permanently deleted' });
-    });
+  static getTrash = asyncHandler(async (req, res) => {
+    const hasExplicitPagination = req.query.page !== undefined || req.query.limit !== undefined;
+    const pagination = hasExplicitPagination ? parsePagination(req.query) : null;
+    const paginationArg = pagination
+      ? { limit: pagination.limit, offset: pagination.offset }
+      : null;
+
+    const result = await SubjectService.getTrash(req.user.id, paginationArg);
+    if (result && result.trash) {
+      const paginatedResponse = buildPaginatedResponse(result.trash, result.total, {
+        page: pagination.page,
+        limit: pagination.limit,
+      });
+      res.status(200).json({ status: 'success', ...paginatedResponse });
+    } else {
+      res.status(200).json({ status: 'success', data: result });
+    }
+  });
+
+  static restore = asyncHandler(async (req, res) => {
+    const restored = await SubjectService.restoreSubject(req.user.id, req.params.id);
+    if (!restored) {
+      res.status(404);
+      throw new Error('Subject not found or not in trash');
+    }
+    res.status(200).json({ status: 'success', message: 'Subject restored successfully' });
+  });
+
+  static permanentDelete = asyncHandler(async (req, res) => {
+    const deleted = await SubjectService.permanentDeleteSubject(req.user.id, req.params.id);
+    if (!deleted) {
+      res.status(404);
+      throw new Error('Subject not found or not in trash');
+    }
+    res.status(200).json({ status: 'success', message: 'Subject permanently deleted' });
+  });
 }
 
 export default SubjectController;

@@ -7,6 +7,8 @@ export const uploadMaterialSchema = z.object({
     content: z.string().optional(),
     type: z.enum(['upload'], { required_error: 'Valid task type is required' }),
     subjectId: idSchema,
+    conflictResolution: z.enum(['restore', 'duplicate']).optional(),
+    skipDuplicateCheck: z.union([z.boolean(), z.string()]).optional().transform(v => v === 'true' || v === true),
 });
 
 export const chatCombinedSchema = z.object({

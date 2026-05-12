@@ -18,7 +18,8 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     broker_connection_retry_on_startup=True,
-    # Additional optimizations
+    # Stability patch: enforce strict GPU-safe concurrency
+    worker_concurrency=2,
     worker_prefetch_multiplier=1, # Important for LLM GPU single-processing
     task_acks_late=True, # Ensure tasks aren't lost if worker dies
 )

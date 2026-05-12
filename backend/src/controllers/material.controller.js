@@ -10,291 +10,344 @@ import fs from 'fs';
  * Used to ensure uploaded files are cleaned up even if processing fails.
  */
 const safeDelete = (filePath) => {
-    try {
-        if (filePath && fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-        }
-    } catch (err) {
-        console.warn(`[MaterialController] Could not clean up temp file (${filePath}):`, err.message);
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
     }
+  } catch (err) {
+    console.warn(`[MaterialController] Could not clean up temp file (${filePath}):`, err.message);
+  }
 };
 
 class MaterialController {
-    /**
-     * Upload endpoint: accepts a supported file (PDF/image) and/or raw text content.
-     *
-     * NEW Processing pipeline:
-     *   1. Receive file locally via Multer.
-     *   2. Immediately forward the physical file to the Python AI Engine.
-     *   3. Python Engine handles ALL text extraction, chunking, processing.
-     *   4. Python Engine returns the final processed JSON result.
-     *   5. Backend saves the processed result in Postgres.
-     *   6. Clean up the temp file locally.
-     */
-    static upload = asyncHandler(async (req, res) => {
-        console.log('[MaterialController] Upload Headers:', JSON.stringify(req.headers, null, 2));
-        console.log('[MaterialController] Upload request body:', req.body);
-        const { title, content, type, subjectId } = req.body;
-        const file = req.file;
-        console.log('[MaterialController] Upload file present:', !!file);
-        console.log('[MaterialController] Upload subjectId:', subjectId);
+  /**
+   * Upload endpoint: accepts a supported file (PDF/image) and/or raw text content.
+   *
+   * NEW Processing pipeline:
+   *   1. Receive file locally via Multer.
+   *   2. Immediately forward the physical file to the Python AI Engine.
+   *   3. Python Engine handles ALL text extraction, chunking, processing.
+   *   4. Python Engine returns the final processed JSON result.
+   *   5. Backend saves the processed result in Postgres.
+   *   6. Clean up the temp file locally.
+   */
+  static upload = asyncHandler(async (req, res) => {
+    console.log('[MaterialController] Upload Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('[MaterialController] Upload request body:', req.body);
+    const { title, content, type, subjectId } = req.body;
+    const file = req.file;
+    console.log('[MaterialController] Upload file present:', !!file);
+    console.log('[MaterialController] Upload subjectId:', subjectId);
 
-        if (!file && !content) {
-            res.status(400);
-            throw new Error('Content is required — upload a file or paste text.');
-        }
+    if (!file && !content) {
+      res.status(400);
+      throw new Error('Content is required — upload a file or paste text.');
+    }
 
-        try {
-            // Forward everything directly to Python Engine via the Service layer
-            const skipDuplicateCheck =
-                req.body.skipDuplicateCheck === 'true' || req.body.skipDuplicateCheck === true;
+    try {
+      // Forward everything directly to Python Engine via the Service layer
+      const { skipDuplicateCheck, conflictResolution } = req.body;
 
-            const uploadedDocument = await MaterialService.processDocument(
-                req.user.id,
-                file,
-                title,
-                content || '',
-                type || 'upload',
-                subjectId,
-                { skipDuplicateCheck }
-            );
+      const uploadedDocument = await MaterialService.processDocument(
+        req.user.id,
+        file,
+        title,
+        content || '',
+        type || 'upload',
+        subjectId,
+        { skipDuplicateCheck, conflictResolution }
+      );
 
-            res.status(201).json({
-                status: 'success',
-                data: uploadedDocument,
-            });
-        } catch (error) {
-            // Only scrape the physical file from the NFS drive if a database/processing error halted the pipeline
-            if (file) {
-                safeDelete(file.path);
-            }
-            throw error;
-        }
+      res.status(201).json({
+        status: 'success',
+        data: uploadedDocument,
+      });
+    } catch (error) {
+      // Only scrape the physical file from the NFS drive if a database/processing error halted the pipeline
+      if (file) {
+        safeDelete(file.path);
+      }
+      throw error;
+    }
+  });
+
+  static getOne = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const material = await MaterialService.getMaterialById(req.user.id, id);
+
+    if (!material) {
+      res.status(404);
+      throw new Error('Material not found');
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: material,
     });
+  });
 
-    static getOne = asyncHandler(async (req, res) => {
-        const { id } = req.params;
+  static getHistory = asyncHandler(async (req, res) => {
+    // Only paginate when explicitly requested via query params
+    const hasExplicitPagination = req.query.page !== undefined || req.query.limit !== undefined;
+    const pagination = hasExplicitPagination ? parsePagination(req.query) : null;
+    const paginationArg = pagination
+      ? { limit: pagination.limit, offset: pagination.offset }
+      : null;
 
-        const material = await MaterialService.getMaterialById(req.user.id, id);
+    const result = await MaterialService.getUserHistory(req.user.id, paginationArg);
 
-        if (!material) {
-            res.status(404);
-            throw new Error('Material not found');
-        }
+    // If pagination was applied, return paginated response
+    if (result && result.history) {
+      const paginatedResponse = buildPaginatedResponse(result.history, result.total, {
+        page: pagination.page,
+        limit: pagination.limit,
+      });
+      res.status(200).json({ status: 'success', ...paginatedResponse });
+    } else {
+      // Backward compatibility: return plain array if no pagination requested
+      res.status(200).json({ status: 'success', data: result });
+    }
+  });
 
-        res.status(200).json({
-            status: 'success',
-            data: material
-        });
-    });
+  static chatCombined = asyncHandler(async (req, res) => {
+    const { materialIds, question } = req.body;
+    if (!materialIds || !question) {
+      res.status(400);
+      throw new Error('materialIds and question are required');
+    }
 
-    static getHistory = asyncHandler(async (req, res) => {
-        const { page, limit, offset } = parsePagination(req.query);
-        const result = await MaterialService.getUserHistory(req.user.id, { limit, offset });
-        
-        // If pagination was applied, return paginated response
-        if (result && result.history) {
-            const paginatedResponse = buildPaginatedResponse(result.history, result.total, { page, limit });
-            res.status(200).json({ status: 'success', ...paginatedResponse });
-        } else {
-            // Backward compatibility: return plain array if no pagination requested
-            res.status(200).json({ status: 'success', data: result });
-        }
-    });
+    const result = await MaterialService.chatWithContext(req.user.id, materialIds, question);
+    res.status(200).json({ status: 'success', data: result });
+  });
 
-    static chatCombined = asyncHandler(async (req, res) => {
-        const { materialIds, question } = req.body;
-        if (!materialIds || !question) {
-            res.status(400);
-            throw new Error('materialIds and question are required');
-        }
+  static generateCombined = asyncHandler(async (req, res) => {
+    console.log('[MaterialController] generateCombined body:', JSON.stringify(req.body, null, 2));
+    const { materialIds, taskType, subjectId, genOptions } = req.body;
+    if (!materialIds || !taskType) {
+      res.status(400);
+      throw new Error('materialIds and taskType are required');
+    }
 
-        const result = await MaterialService.chatWithContext(req.user.id, materialIds, question);
-        res.status(200).json({ status: 'success', data: result });
-    });
+    const result = await MaterialService.generateWithContext(
+      req.user.id,
+      subjectId,
+      materialIds,
+      taskType,
+      genOptions
+    );
+    res.status(200).json({ status: 'success', data: result });
+  });
 
-    static generateCombined = asyncHandler(async (req, res) => {
-        console.log('[MaterialController] generateCombined body:', JSON.stringify(req.body, null, 2));
-        const { materialIds, taskType, subjectId, genOptions } = req.body;
-        if (!materialIds || !taskType) {
-            res.status(400);
-            throw new Error('materialIds and taskType are required');
-        }
+  static generateCombinedStream = asyncHandler(async (req, res) => {
+    const reqStart = Date.now();
+    console.log(
+      '[TRACE][BACKEND_STREAM_RECV] timestamp=%d body=%s',
+      reqStart,
+      JSON.stringify(req.body)
+    );
+    const { materialIds, taskType, subjectId, genOptions } = req.body;
+    if (!materialIds || !taskType) {
+      res.status(400);
+      throw new Error('materialIds and taskType are required');
+    }
 
-        const result = await MaterialService.generateWithContext(req.user.id, subjectId, materialIds, taskType, genOptions);
-        res.status(200).json({ status: 'success', data: result });
-    });
+    console.log('[TRACE][BACKEND_STREAM_FWD] forwarding to engine timestamp=%d', Date.now());
+    const response = await MaterialService.generateStream(
+      req.user.id,
+      materialIds,
+      taskType,
+      subjectId,
+      genOptions
+    );
+    const engineResponseMs = Date.now() - reqStart;
+    console.log(
+      '[TRACE][BACKEND_ENGINE_RESP] engine_response_ms=%d status=%d',
+      engineResponseMs,
+      response.status
+    );
 
-    static generateCombinedStream = asyncHandler(async (req, res) => {
-        const reqStart = Date.now();
-        console.log('[TRACE][BACKEND_STREAM_RECV] timestamp=%d body=%s', reqStart, JSON.stringify(req.body));
-        const { materialIds, taskType, subjectId, genOptions } = req.body;
-        if (!materialIds || !taskType) {
-            res.status(400);
-            throw new Error('materialIds and taskType are required');
-        }
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
 
-        console.log('[TRACE][BACKEND_STREAM_FWD] forwarding to engine timestamp=%d', Date.now());
-        const response = await MaterialService.generateStream(req.user.id, materialIds, taskType, subjectId, genOptions);
-        const engineResponseMs = Date.now() - reqStart;
-        console.log('[TRACE][BACKEND_ENGINE_RESP] engine_response_ms=%d status=%d', engineResponseMs, response.status);
-
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.setHeader('X-Accel-Buffering', 'no');
-        res.flushHeaders();
-
-        let firstChunk = true;
-        let chunkCount = 0;
-        response.data.on('data', (chunk) => {
-            chunkCount++;
-            if (firstChunk) {
-                console.log('[TRACE][BACKEND_FIRST_CHUNK] time_to_first_chunk_ms=%d', Date.now() - reqStart);
-                firstChunk = false;
-            }
-        });
-
-        console.log('[TRACE][BACKEND_PIPE_START] timestamp=%d time_since_request_ms=%d', Date.now(), Date.now() - reqStart);
-        response.data.pipe(res);
-
-        response.data.on('end', () => {
-            console.log('[TRACE][BACKEND_PIPE_END] total_ms=%d chunks_piped=%d', Date.now() - reqStart, chunkCount);
-        });
-
-        response.data.on('error', (err) => {
-            console.error('[TRACE][BACKEND_PIPE_ERROR] total_ms=%d error=%s', Date.now() - reqStart, err.message);
-        });
-
-        req.on('close', () => {
-            const totalMs = Date.now() - reqStart;
-            console.log('[TRACE][BACKEND_CLIENT_CLOSE] total_ms=%d chunks_piped=%d — engine stream continues independently', totalMs, chunkCount);
-            // Do NOT destroy the engine stream — the engine continues generating.
-            // The job result is persisted regardless of client connection state.
-        });
-    });
-
-    static syncStatus = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const updated = await MaterialService.checkJobStatus(req.user.id, id);
-        res.status(200).json({
-            status: 'success',
-            data: updated
-        });
-    });
-
-    static cancelJob = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        await MaterialService.cancelJob(req.user.id, id);
-        res.status(200).json({ status: 'success', message: 'Job cancellation requested' });
-    });
-
-    static streamJob = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const material = await MaterialService.checkJobStatus(req.user.id, id);
-
-        if (!material || !material.job_id) {
-            res.status(404);
-            throw new Error('Streaming not available for this material');
-        }
-
-        console.log(`[MaterialController] Proxying stream for job: ${material.job_id}`);
-
-        const response = await engineClient.get(
-            `/job/${material.job_id}/stream`,
-            {
-            responseType: 'stream',
-            timeout: 0 // Disable timeout for long-lived streams
-            }
+    let firstChunk = true;
+    let chunkCount = 0;
+    response.data.on('data', (chunk) => {
+      chunkCount++;
+      if (firstChunk) {
+        console.log(
+          '[TRACE][BACKEND_FIRST_CHUNK] time_to_first_chunk_ms=%d',
+          Date.now() - reqStart
         );
-
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.setHeader('X-Accel-Buffering', 'no');
-        res.flushHeaders();
-
-        response.data.pipe(res);
-
-        // Handle client disconnect — job continues in background
-        req.on('close', () => {
-            console.log(`[MaterialController] Client disconnected for job: ${material.job_id} — engine continues independently`);
-            // Do NOT destroy the engine stream. The job persists and can be recovered.
-        });
+        firstChunk = false;
+      }
     });
 
-    static delete = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const deleted = await MaterialService.deleteMaterial(id, req.user.id);
+    console.log(
+      '[TRACE][BACKEND_PIPE_START] timestamp=%d time_since_request_ms=%d',
+      Date.now(),
+      Date.now() - reqStart
+    );
+    response.data.pipe(res);
 
-        if (!deleted) {
-            res.status(404);
-            throw new Error('Document not found or already deleted');
-        }
-
-        res.status(200).json({
-            status: 'success',
-            message: 'Document moved to trash successfully'
-        });
+    response.data.on('end', () => {
+      console.log(
+        '[TRACE][BACKEND_PIPE_END] total_ms=%d chunks_piped=%d',
+        Date.now() - reqStart,
+        chunkCount
+      );
     });
 
-    static getTrash = asyncHandler(async (req, res) => {
-        const { page, limit, offset } = parsePagination(req.query);
-        const result = await MaterialService.getTrash(req.user.id, { limit, offset });
-        
-        // If pagination was applied, return paginated response
-        if (result && result.trash) {
-            const paginatedResponse = buildPaginatedResponse(result.trash, result.total, { page, limit });
-            res.status(200).json({ status: 'success', ...paginatedResponse });
-        } else {
-            // Backward compatibility: return plain array if no pagination requested
-            res.status(200).json({ status: 'success', data: result });
-        }
+    response.data.on('error', (err) => {
+      console.error(
+        '[TRACE][BACKEND_PIPE_ERROR] total_ms=%d error=%s',
+        Date.now() - reqStart,
+        err.message
+      );
     });
 
-    static restore = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const restored = await MaterialService.restoreMaterial(id, req.user.id);
-        res.status(200).json({
-            status: 'success',
-            message: 'Document restored successfully',
-            data: restored
-        });
+    req.on('close', () => {
+      const totalMs = Date.now() - reqStart;
+      console.log(
+        '[TRACE][BACKEND_CLIENT_CLOSE] total_ms=%d chunks_piped=%d — engine stream continues independently',
+        totalMs,
+        chunkCount
+      );
+      // Do NOT destroy the engine stream — the engine continues generating.
+      // The job result is persisted regardless of client connection state.
+    });
+  });
+
+  static syncStatus = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const updated = await MaterialService.checkJobStatus(req.user.id, id);
+    res.status(200).json({
+      status: 'success',
+      data: updated,
+    });
+  });
+
+  static cancelJob = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    await MaterialService.cancelJob(req.user.id, id);
+    res.status(200).json({ status: 'success', message: 'Job cancellation requested' });
+  });
+
+  static streamJob = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const material = await MaterialService.checkJobStatus(req.user.id, id);
+
+    if (!material || !material.job_id) {
+      res.status(404);
+      throw new Error('Streaming not available for this material');
+    }
+
+    console.log(`[MaterialController] Proxying stream for job: ${material.job_id}`);
+
+    const response = await engineClient.get(`/job/${material.job_id}/stream`, {
+      responseType: 'stream',
+      timeout: 0, // Disable timeout for long-lived streams
     });
 
-    static permanentDelete = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        await MaterialService.permanentDeleteMaterial(id, req.user.id);
-        res.status(200).json({
-            status: 'success',
-            message: 'Document permanently deleted'
-        });
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    response.data.pipe(res);
+
+    // Handle client disconnect — job continues in background
+    req.on('close', () => {
+      console.log(
+        `[MaterialController] Client disconnected for job: ${material.job_id} — engine continues independently`
+      );
+      // Do NOT destroy the engine stream. The job persists and can be recovered.
     });
+  });
 
-    static emptyTrash = asyncHandler(async (req, res) => {
-        const count = await MaterialService.emptyTrash(req.user.id);
-        res.status(200).json({
-            status: 'success',
-            message: `${count} item${count !== 1 ? 's' : ''} permanently deleted`
-        });
+  static delete = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const deleted = await MaterialService.deleteMaterial(id, req.user.id);
+
+    if (!deleted) {
+      res.status(404);
+      throw new Error('Document not found or already deleted');
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Document moved to trash successfully',
     });
+  });
 
-    static update = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const updates = req.body;
+  static getTrash = asyncHandler(async (req, res) => {
+    // Only paginate when explicitly requested via query params
+    const hasExplicitPagination = req.query.page !== undefined || req.query.limit !== undefined;
+    const pagination = hasExplicitPagination ? parsePagination(req.query) : null;
+    const paginationArg = pagination
+      ? { limit: pagination.limit, offset: pagination.offset }
+      : null;
 
-        const updated = await MaterialService.updateMaterial(req.user.id, id, updates);
+    const result = await MaterialService.getTrash(req.user.id, paginationArg);
 
-        res.status(200).json({
-            status: 'success',
-            data: updated
-        });
+    if (result && result.trash) {
+      const paginatedResponse = buildPaginatedResponse(result.trash, result.total, {
+        page: pagination.page,
+        limit: pagination.limit,
+      });
+      res.status(200).json({ status: 'success', ...paginatedResponse });
+    } else {
+      res.status(200).json({ status: 'success', data: result });
+    }
+  });
+
+  static restore = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const restored = await MaterialService.restoreMaterial(id, req.user.id);
+    res.status(200).json({
+      status: 'success',
+      message: 'Document restored successfully',
+      data: restored,
     });
+  });
 
-    static getSettings = asyncHandler(async (req, res) => {
-        const controls = await SettingsService.getStorageControls();
-        res.status(200).json({ status: 'success', data: controls });
+  static permanentDelete = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    await MaterialService.permanentDeleteMaterial(id, req.user.id);
+    res.status(200).json({
+      status: 'success',
+      message: 'Document permanently deleted',
     });
+  });
+
+  static emptyTrash = asyncHandler(async (req, res) => {
+    const count = await MaterialService.emptyTrash(req.user.id);
+    res.status(200).json({
+      status: 'success',
+      message: `${count} item${count !== 1 ? 's' : ''} permanently deleted`,
+    });
+  });
+
+  static update = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const updated = await MaterialService.updateMaterial(req.user.id, id, updates);
+
+    res.status(200).json({
+      status: 'success',
+      data: updated,
+    });
+  });
+
+  static getSettings = asyncHandler(async (req, res) => {
+    const controls = await SettingsService.getStorageControls();
+    res.status(200).json({ status: 'success', data: controls });
+  });
 }
 
 export default MaterialController;

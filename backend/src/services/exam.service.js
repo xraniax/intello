@@ -441,7 +441,61 @@ const getDifficultyForProgress = (currentCount, targetTotal, curve) => {
     return 'Intermediate'; // Default/Inter
 };
 
+const EXAM_ENGINE_SUBJECT_ID = process.env.EXAM_ENGINE_SUBJECT_ID || '00000000-0000-0000-0000-000000000000';
+
 class ExamService {
+    /**
+     * Standardizes any exam format (Engine, Fallback, DB) into a unified internal structure.
+     * Enforces the "Hard Contract" for all downstream consumers (grading, frontend).
+     */
+    static _normalizeExam(raw) {
+        if (!raw || typeof raw !== 'object') return { questions: [], answer_sheet: [] };
+
+        let content = raw;
+        // Handle nested ai_generated_content or content wrappers
+        if (raw.ai_generated_content && typeof raw.ai_generated_content === 'object') {
+            content = raw.ai_generated_content;
+        } else if (raw.content && typeof raw.content === 'object') {
+            content = raw.content;
+        }
+
+        // Extract questions from any known variation
+        let questions = content.questions || content.items || (Array.isArray(content) ? content : []);
+        if (content.result && content.result.questions) questions = content.result.questions;
+        if (!Array.isArray(questions)) questions = [];
+
+        // Extract answer sheet
+        const answerSheet = content.answer_sheet || (content.result && content.result.answer_sheet) || [];
+        
+        // Merge answer sheet into questions (Source of Truth for Grading)
+        if (Array.isArray(answerSheet) && answerSheet.length > 0) {
+            const sheetMap = new Map(answerSheet.map(a => [String(a.question_id || a.id), a]));
+            questions = questions.map(q => {
+                const sheetItem = sheetMap.get(String(q.id));
+                if (sheetItem) {
+                    return {
+                        ...q,
+                        // Priority: answer_sheet > existing correctAnswers
+                        correctAnswers: sheetItem.answer !== undefined 
+                            ? (Array.isArray(sheetItem.answer) ? sheetItem.answer : [sheetItem.answer]) 
+                            : q.correctAnswers,
+                        acceptedAnswers: sheetItem.answer !== undefined 
+                            ? (Array.isArray(sheetItem.answer) ? sheetItem.answer : [sheetItem.answer]) 
+                            : q.acceptedAnswers,
+                        explanation: sheetItem.explanation || q.explanation
+                    };
+                }
+                return q;
+            });
+        }
+
+        return {
+            ...raw,
+            type: 'exam',
+            questions, // Standardized flat structure for grading/rendering
+            answer_sheet: Array.isArray(answerSheet) ? answerSheet : []
+        };
+    }
     static async generateExam(userId, payload) {
         cleanupCache();
         cleanupAttemptCache();
@@ -542,16 +596,20 @@ class ExamService {
             createdAt,
         };
 
+        const examData = this._normalizeExam({
+            ...exam,
+            questions: fullQuestions,
+        });
+
         examCache.set(examId, {
             userId,
             subjectId: payload.subject_id,
             createdAtMs: Date.now(),
             startedAt: createdAt.toISOString(),
-            exam: {
-                ...exam,
-                questions: fullQuestions,
-            },
+            exam: examData.exam || examData, // Use normalized structure
         });
+
+        const materialExam = examData.exam || examData;
 
         // --- NEW: Persist to Materials table so it appears in history ---
         try {
@@ -571,7 +629,7 @@ class ExamService {
                 [userId, exam.title, 'exam']
             );
             if (materialRecord.rows[0]) {
-                await Material.updateAIResult(materialRecord.rows[0].id, userId, exam, {
+                await Material.updateAIResult(materialRecord.rows[0].id, userId, materialExam, {
                     materialType: 'exam',
                     count: payload.numberOfQuestions,
                 });
@@ -607,9 +665,13 @@ class ExamService {
             ])
         );
 
+        // --- MANDATORY NORMALIZATION LAYER ---
+        const normalizedExam = this._normalizeExam(record.exam);
+        const questionsToGrade = normalizedExam.questions || [];
+
         // Process questions: some may require async semantic grading
-        console.log(`[ExamService] SUBMITTING EXAM: ${payload.examId}, questions: ${record.exam.questions.length}`);
-        const detailsPromises = record.exam.questions.map(async (question) => {
+        console.log(`[ExamService] SUBMITTING EXAM: ${payload.examId}, questions: ${questionsToGrade.length}`);
+        const detailsPromises = questionsToGrade.map(async (question) => {
             const answer = answerMap.get(String(question.id)) || { selectedAnswers: [], answerText: '' };
 
             const selectedAnswers = answer.selectedAnswers;
@@ -796,28 +858,8 @@ class ExamService {
                 return null;
             }
 
-            let questions = contentObj?.questions || contentObj?.items || contentObj || [];
-            if (contentObj?.result && contentObj?.result?.questions) questions = contentObj.result.questions;
-            if (!Array.isArray(questions)) questions = Object.values(questions);
-
-            // ─── Answer Sheet Merging ───
-            // For 'exam' types, answers are often in a separate 'answer_sheet' array
-            const answerSheet = contentObj?.answer_sheet || (contentObj?.result?.answer_sheet) || [];
-            if (Array.isArray(answerSheet) && answerSheet.length > 0) {
-                const sheetMap = new Map(answerSheet.map(a => [String(a.question_id || a.id), a]));
-                questions = questions.map(q => {
-                    const sheetItem = sheetMap.get(String(q.id));
-                    if (sheetItem) {
-                        return {
-                            ...q,
-                            correctAnswers: sheetItem.answer !== undefined ? (Array.isArray(sheetItem.answer) ? sheetItem.answer : [sheetItem.answer]) : q.correctAnswers,
-                            acceptedAnswers: sheetItem.answer !== undefined ? (Array.isArray(sheetItem.answer) ? sheetItem.answer : [sheetItem.answer]) : q.acceptedAnswers,
-                            explanation: sheetItem.explanation || q.explanation
-                        };
-                    }
-                    return q;
-                });
-            }
+            const normalized = this._normalizeExam(contentObj);
+            const questions = normalized.questions;
 
 
             record = {

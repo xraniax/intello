@@ -27,12 +27,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      engine:
-        condition: service_healthy
       redis:
         condition: service_healthy
-      ollama_init:
-        condition: service_completed_successfully
     volumes:
       - ./backend:/app
       - ./db:/db:ro
@@ -116,7 +112,13 @@ services:
     container_name: ollama
     ports:
       - "11434:11434"
-    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped

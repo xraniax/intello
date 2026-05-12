@@ -16,6 +16,7 @@ from services.ingestion import ingest_file
 from services.retrieval import retrieve_chunks_by_topic
 from services.generation import generate_study_material
 from services.summary_pipeline import generate_summary, MAP_MAX_CHUNKS as SUMMARY_MAP_MAX_CHUNKS
+from services.exam_utils import normalize_exam, wrap_normalized_exam
 from utils.logging import get_job_logger
 
 logger = logging.getLogger(__name__)
@@ -368,8 +369,8 @@ def _normalize_generation_result(material: Any, material_type: str, topic: Optio
 
     # String outputs are allowed and wrapped in the normalized schema.
     normalized_content = material if isinstance(material, str) else material
-
-    return {
+    
+    result = {
         "type": material_type,
         "content": normalized_content,
         "metadata": {
@@ -383,6 +384,12 @@ def _normalize_generation_result(material: Any, material_type: str, topic: Optio
             },
         },
     }
+
+    if material_type == "exam":
+        norm_data = normalize_exam(result)
+        result = wrap_normalized_exam(result, norm_data)
+    
+    return result
 
 def _safe_remove(path: Optional[str]) -> None:
     if not path or not os.path.exists(path):

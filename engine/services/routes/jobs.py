@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 import celery_app
 from .._route_utils import _stage_error_response
 from ..document_processor import process_text_pipeline
+from ..exam_utils import normalize_exam, wrap_normalized_exam
 
 router = APIRouter()
 logger = logging.getLogger("engine-api")
@@ -24,45 +25,11 @@ _TEXT_JOBS_LOCK = asyncio.Lock()
 
 
 def _normalize_exam_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(payload, dict):
+    if not isinstance(payload, dict) or payload.get("type") != "exam":
         return payload
-    if payload.get("type") != "exam":
-        return payload
-
-    content = payload.get("content")
-    if not isinstance(content, dict):
-        return payload
-
-    questions = content.get("questions")
-    if not isinstance(questions, list):
-        return payload
-
-    normalized_questions = []
-    for idx, question in enumerate(questions, start=1):
-        if isinstance(question, dict):
-            normalized_questions.append({**question, "id": idx})
-        else:
-            normalized_questions.append(question)
-
-    answer_sheet = content.get("answer_sheet")
-    if isinstance(answer_sheet, list):
-        normalized_answer_sheet = []
-        for idx, item in enumerate(answer_sheet, start=1):
-            if isinstance(item, dict):
-                normalized_answer_sheet.append({**item, "question_id": idx})
-            else:
-                normalized_answer_sheet.append(item)
-    else:
-        normalized_answer_sheet = answer_sheet
-
-    return {
-        **payload,
-        "content": {
-            **content,
-            "questions": normalized_questions,
-            "answer_sheet": normalized_answer_sheet,
-        },
-    }
+    
+    normalized = normalize_exam(payload)
+    return wrap_normalized_exam(payload, normalized)
 
 
 def _extract_stream_text_from_generation_result(result: Dict[str, Any]) -> Optional[str]:

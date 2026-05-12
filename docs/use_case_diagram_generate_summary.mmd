@@ -1,0 +1,83 @@
+```mermaid
+flowchart TB
+    subgraph Actors
+        U[Student]
+        AI[Ollama AI Engine]
+        DB[(PostgreSQL Database)]
+    end
+
+    subgraph Core["CORE WORKFLOW (Mandatory)"]
+        direction TB
+        UC1["UC1: Generate Summary"]
+        UC2["UC2: Validate Documents"]
+        UC3["UC3: Retrieve Chunks"]
+        UC4["UC4: REDUCE Synthesis"]
+        UC5["UC5: Persist Result"]
+        
+        UC1 -.->|<<include>>| UC2
+        UC1 -.->|<<include>>| UC3
+        UC3 -.->|<<include>>| UC4
+        UC4 -.->|<<include>>| UC5
+    end
+
+    subgraph Smart["SMART FEATURES (Conditional)"]
+        direction TB
+        UC6["UC6: MAP Stage - Parallel Summarization"]
+        UC7["UC7: Adaptive Context Sizing"]
+        
+        MAP_NOTE["Trigger: >30K chars"]
+        ADAPT_NOTE["Dynamic VRAM allocation"]
+        
+        UC6 --> MAP_NOTE
+        UC7 --> ADAPT_NOTE
+    end
+
+    subgraph Stream["REAL-TIME STREAMING (Optional)"]
+        direction TB
+        UC8["UC8: Stream Progress"]
+        UC9["UC9: Live Token Streaming"]
+        
+        STREAM_NOTE["Progress markers, disconnect tolerance, 10min timeout"]
+        UC8 --> STREAM_NOTE
+    end
+
+    subgraph Resilience["RESILIENCE & FALLBACK"]
+        direction TB
+        UC10["UC10: Fallback Generation"]
+        UC11["UC11: Error Handling"]
+        
+        FALLBACK_NOTE["8K truncated context, sync backup, zero data loss"]
+        UC10 --> FALLBACK_NOTE
+    end
+
+    subgraph UserActions["USER ACTIONS"]
+        UC_SELECT["Select Source Documents"]
+        UC_CONFIG["Configure Options"]
+        UC_VIEW["View Summary"]
+    end
+
+    ' Flow connections
+    U --> UC_SELECT
+    U --> UC_CONFIG
+    UC_SELECT -.->|precedes| UC1
+    UC_CONFIG -.->|precedes| UC1
+    
+    UC6 -.->|<<extend>>| UC3
+    UC7 -.->|<<extend>>| UC4
+    UC8 -.->|<<extend>>| UC1
+    UC9 -.->|<<extend>>| UC4
+    UC10 -.->|<<extend>>| UC4
+    UC11 -.->|<<extend>>| UC1
+    
+    UC5 -.->|precedes| UC_VIEW
+    U --> UC_VIEW
+
+    ' System interactions
+    UC4 --> AI
+    UC6 --> AI
+    UC10 --> AI
+    
+    UC1 --> DB
+    UC3 --> DB
+    UC5 --> DB
+```

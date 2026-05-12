@@ -2,7 +2,8 @@ import json
 import logging
 import httpx
 from typing import Dict, Any
-from .ollama_config import get_ollama_base_url, get_ollama_generation_model
+from .ollama_config import get_ollama_base_url, get_ollama_generation_model, get_dynamic_timeout
+import time
 from .planner_schemas import PlannerAssistantRequest, PlannerAssistantResponse
 
 logger = logging.getLogger("engine-planner-assistant")
@@ -57,7 +58,14 @@ User Prompt: {request.prompt}
         prompt = f"{SYSTEM_PROMPT}\n\nCONTEXT:\n{context}\n\nStrictly JSON output:"
 
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            dynamic_timeout = get_dynamic_timeout(0)
+            start_time = time.time()
+            logger.info("[OLLAMA] [PLANNER] Generation started", extra={
+                "timestamp": start_time,
+                "timeout": str(dynamic_timeout)
+            })
+
+            async with httpx.AsyncClient(timeout=dynamic_timeout) as client:
                 resp = await client.post(
                     OLLAMA_GENERATE_URL,
                     json={
@@ -74,6 +82,11 @@ User Prompt: {request.prompt}
                 if resp.status_code != 200:
                     raise RuntimeError(f"Ollama returned {resp.status_code}: {resp.text}")
                 
+                duration = time.time() - start_time
+                logger.info("[OLLAMA] [PLANNER] Generation completed", extra={
+                    "duration": duration
+                })
+
                 result = resp.json()
                 response_text = result.get("response", "{}")
                 

@@ -1,0 +1,109 @@
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffdfba', 'primaryTextColor': '#000', 'primaryBorderColor': '#ff9f43', 'lineColor': '#666', 'secondaryColor': '#e3f2fd', 'tertiaryColor': '#e8f5e9'}}}%%
+
+flowchart LR
+    %% Actors
+    Student([Student])
+    AIEngine[/Ollama AI Engine/]
+    Database[(Database)]
+
+    %% Main Use Cases - Core Flow
+    subgraph CoreFlow["Core Mandatory Flow"]
+        direction TB
+        UC1{{Generate Summary}}
+        UC2[Validate Documents]
+        UC3[Retrieve Chunks]
+        UC4[REDUCE Synthesis]
+        UC5[Persist Result]
+    end
+
+    %% Smart Features
+    subgraph SmartFeatures["Smart Features (Auto-triggered)"]
+        direction TB
+        UC6{{MAP Stage}}
+        UC7[Adaptive Context]
+        
+        MAPDETAIL["Parallel chunk summarization<br/>Triggers: >30K chars<br/>Concurrency: 2x<br/>Timeout: 90s/chunk"]
+        ADAPTDETAIL["Dynamic VRAM allocation<br/>2048-32768 tokens<br/>Based on prompt length"]
+        
+        UC6 -.-> MAPDETAIL
+        UC7 -.-> ADAPTDETAIL
+    end
+
+    %% Streaming
+    subgraph Streaming["Real-Time Streaming"]
+        direction TB
+        UC8[Stream Progress]
+        UC9[Live Token Streaming]
+        
+        STREAMDETAIL["Progress markers [PROGRESS map N/M]<br/>Client disconnect tolerance<br/>10 min timeout"]
+        UC8 -.-> STREAMDETAIL
+    end
+
+    %% Resilience
+    subgraph Resilience["Resilience & Fallback"]
+        direction TB
+        UC10{{Fallback Generation}}
+        UC11[Error Handling]
+        
+        FALLDETAIL["8K truncated context<br/>Synchronous backup<br/>Zero data loss"]
+        UC10 -.-> FALLDETAIL
+    end
+
+    %% User Actions
+    subgraph UserActions["User Actions"]
+        direction TB
+        UC_SELECT[Select Source Documents]
+        UC_CONFIG[Configure Summary Options]
+        UC_VIEW[View Generated Summary]
+    end
+
+    %% Relationships - User to Actions
+    Student --> UC_SELECT
+    Student --> UC_CONFIG
+    Student --> UC1
+    Student --> UC_VIEW
+
+    %% Precedes relationships
+    UC_SELECT -.->|<<precedes>>| UC1
+    UC_CONFIG -.->|<<precedes>>| UC1
+    UC5 -.->|<<precedes>>| UC_VIEW
+
+    %% Include relationships (mandatory)
+    UC1 -.->|<<include>>| UC2
+    UC1 -.->|<<include>>| UC3
+    UC3 -.->|<<include>>| UC4
+    UC4 -.->|<<include>>| UC5
+
+    %% Extend relationships (conditional)
+    UC6 -.->|<<extend>>| UC3
+    UC7 -.->|<<extend>>| UC4
+    UC8 -.->|<<extend>>| UC1
+    UC9 -.->|<<extend>>| UC4
+    UC10 -.->|<<extend>>| UC4
+    UC11 -.->|<<extend>>| UC1
+
+    %% System interactions
+    UC4 --> AIEngine
+    UC6 --> AIEngine
+    UC10 --> AIEngine
+    
+    UC1 --> Database
+    UC3 --> Database
+    UC5 --> Database
+
+    %% Styling
+    classDef core fill:#fff3cd,stroke:#ff9f43,stroke-width:3px
+    classDef smart fill:#d4edda,stroke:#28a745,stroke-width:2px
+    classDef stream fill:#cce5ff,stroke:#007bff,stroke-width:2px
+    classDef resilience fill:#f8d7da,stroke:#dc3545,stroke-width:2px
+    classDef user fill:#ffe0b2,stroke:#ff9800,stroke-width:2px
+    classDef detail fill:#f8f9fa,stroke:#6c757d,stroke-dasharray: 5 5
+
+    class UC1,UC2,UC3,UC4,UC5 core
+    class UC6,UC7 smart
+    class UC8,UC9 stream
+    class UC10,UC11 resilience
+    class UC_SELECT,UC_CONFIG,UC_VIEW user
+    class MAPDETAIL,ADAPTDETAIL,STREAMDETAIL,FALLDETAIL detail
+```

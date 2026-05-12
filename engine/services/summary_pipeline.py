@@ -22,7 +22,14 @@ from typing import AsyncIterator, Dict, Any, List, Optional
 
 import httpx
 
-from .ollama_config import get_ollama_base_url, get_ollama_generation_model
+from .ollama_config import (
+    get_ollama_base_url,
+    get_ollama_generation_model,
+    get_dynamic_timeout,
+    _stream_ollama_generate,
+    OLLAMA_GENERATE_URL,
+    OLLAMA_GENERATION_MODEL,
+)
 
 logger = logging.getLogger("engine-summary-pipeline")
 
@@ -299,7 +306,7 @@ def _map_summarize_chunk(
     Falls back to the caller timeout only when MAP_CHUNK_TIMEOUT_SECONDS is
     unset or larger than the caller value.
     """
-    from .generation import _stream_ollama_generate
+
 
     # Use the tighter MAP-specific timeout to bound executor thread hold time.
     effective_timeout = min(timeout, MAP_CHUNK_TIMEOUT_SECONDS)
@@ -600,9 +607,12 @@ async def generate_summary_stream(
     }
 
     reduce_prompt_chars = len(prompt)
+    # Stability patch: dynamic timeout
+    dynamic_timeout = get_dynamic_timeout(0) # Summary reduce uses default or adaptive
+    
     logger.info(
-        "[SUMMARY][REDUCE_START] model=%s prompt_chars=%d context_chars=%d timeout=%d",
-        OLLAMA_GENERATION_MODEL, reduce_prompt_chars, len(context), OLLAMA_GENERATION_TIMEOUT,
+        "[SUMMARY][REDUCE_START] model=%s prompt_chars=%d context_chars=%d timeout=%s",
+        OLLAMA_GENERATION_MODEL, reduce_prompt_chars, len(context), str(dynamic_timeout),
     )
 
     retries = OLLAMA_REQUEST_RETRIES
@@ -614,13 +624,19 @@ async def generate_summary_stream(
         attempt_succeeded = False
 
         try:
-            async with httpx.AsyncClient(timeout=OLLAMA_GENERATION_TIMEOUT) as client:
+            start_time = time.time()
+            logger.info("[OLLAMA] [SUMMARY_REDUCE] Generation started", extra={
+                "attempt": attempt,
+                "timestamp": start_time,
+                "timeout": str(dynamic_timeout)
+            })
+            async with httpx.AsyncClient(timeout=dynamic_timeout) as client:
                 async with client.stream("POST", OLLAMA_GENERATE_URL, json=payload) as resp:
                     resp.raise_for_status()
                     logger.info(
                         "[SUMMARY][REDUCE_HTTP_OK] attempt=%d/%d status=%d ttfb_ms=%d",
                         attempt, retries, resp.status_code,
-                        int((time.perf_counter() - reduce_start) * 1000),
+                        int((time.time() - start_time) * 1000),
                     )
 
                     async for line in resp.aiter_lines():
@@ -648,12 +664,11 @@ async def generate_summary_stream(
                             yield piece
 
                         if chunk.get("done") is True:
-                            reduce_ms = int((time.perf_counter() - reduce_start) * 1000)
-                            overall_ms = int((time.perf_counter() - overall_start) * 1000)
-                            throughput = (token_count / (reduce_ms / 1000)) if reduce_ms > 0 else 0
+                            duration = time.time() - start_time
+                            overall_ms = int((time.time() - overall_start) * 1000)
                             logger.info(
-                                "[SUMMARY][REDUCE_DONE] attempt=%d/%d ms=%d tokens=%d chars=%d tok/s=%.1f total_ms=%d",
-                                attempt, retries, reduce_ms, token_count, total_chars_out, throughput, overall_ms,
+                                "[SUMMARY][REDUCE_DONE] attempt=%d/%d ms=%d tokens=%d chars=%d tok/s=%.1f overall_ms=%d",
+                                attempt, retries, int(duration * 1000), token_count, total_chars_out, (token_count/duration if duration > 0 else 0), overall_ms,
                             )
                             attempt_succeeded = True
                             return
@@ -716,8 +731,6 @@ def generate_summary(
 
     Runs MAP/REDUCE in a blocking fashion and returns the full summary text.
     """
-    from .generation import _stream_ollama_generate
-
     if not chunks:
         return "Not enough context to generate summary."
 
@@ -747,8 +760,9 @@ def generate_summary(
                 "[SUMMARY][SYNC_REDUCE] attempt=%d/%d timeout=%d",
                 attempt + 1, retries, timeout,
             )
+            dynamic_timeout = get_dynamic_timeout(0)
             start = time.perf_counter()
-            text = _stream_ollama_generate(payload, timeout=timeout, material_type="summary")
+            text = _stream_ollama_generate(payload, timeout=dynamic_timeout, material_type="summary")
             ms = int((time.perf_counter() - start) * 1000)
 
             if not text.strip():

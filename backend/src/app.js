@@ -117,6 +117,10 @@ const fileAccessLogger = (req, res, next) => {
   }
   
   // Log the access attempt
+  const authStatus = (typeof req.isAuthenticated === 'function') 
+    ? (req.isAuthenticated() ? 'authenticated' : 'not authenticated')
+    : 'session-less';
+
   console.log(`
 [FileAccessLog] ${new Date().toISOString()}
   Requested URL: ${requestedUrl}
@@ -127,8 +131,8 @@ const fileAccessLogger = (req, res, next) => {
   Resolved Filesystem Path: ${resolvedPath}
   File Exists (fs.existsSync): ${exists}
   File Size: ${fileSize}
-  User: ${req.user?.id || 'anonymous'}
-  Auth Status: ${req.isAuthenticated ? 'authenticated' : 'not authenticated'}
+  User: ${req.user ? `${req.user.name || req.user.email} (${req.user.id})` : 'anonymous'}
+  Auth Status: ${authStatus}
 `);
   
   // Store in request object for later use if needed

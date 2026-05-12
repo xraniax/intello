@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { MaterialService } from '../services/MaterialService';
-import { COMPLETED, FAILED, PROCESSING, SUCCESS, normalizeStatus } from '../constants/statusConstants';
+import {
+  COMPLETED,
+  FAILED,
+  PROCESSING,
+  SUCCESS,
+  normalizeStatus,
+} from '../constants/statusConstants';
 import toast from 'react-hot-toast';
 import { useUIStore } from './useUIStore';
 import { useAuthStore } from './useAuthStore';
@@ -10,369 +16,408 @@ import { useAuthStore } from './useAuthStore';
 // AbortController aborts any in-flight sync request when the slot is cleared.
 const pollingIntervals = new Map();
 
-export const useMaterialStore = create(devtools((set, get) => ({
+export const useMaterialStore = create(
+  devtools((set, get) => ({
     data: {
-        materials: [],
-        jobProgress: null, // { jobId, materialId, stage, progress, message, result }
-        isPublic: false,
-        materialMetadata: {} // { [id]: { generation: {}, ui: {} } }
+      materials: [],
+      jobProgress: null, // { jobId, materialId, stage, progress, message, result }
+      isPublic: false,
+      materialMetadata: {}, // { [id]: { generation: {}, ui: {} } }
     },
     error: null,
     actions: {
-        setJobProgress: (progress) =>
-            set((state) => ({
-                ...state,
-                data: { ...state.data, jobProgress: progress }
-            }), false, 'materials/setJobProgress'),
+      setJobProgress: (progress) =>
+        set(
+          (state) => ({
+            ...state,
+            data: { ...state.data, jobProgress: progress },
+          }),
+          false,
+          'materials/setJobProgress'
+        ),
 
-        setExpectedFlashcards: (materialId, count) =>
-            set((state) => ({
-                ...state,
-                data: {
-                    ...state.data,
-                    materialMetadata: {
-                        ...state.data.materialMetadata,
-                        [materialId]: {
-                            ...(state.data.materialMetadata[materialId] || { generation: {}, ui: {} }),
-                            generation: {
-                                ...(state.data.materialMetadata[materialId]?.generation || {}),
-                                expectedCount: count
-                            }
-                        }
-                    }
-                }
-            }), false, 'materials/setExpectedFlashcards'),
+      setExpectedFlashcards: (materialId, count) =>
+        set(
+          (state) => ({
+            ...state,
+            data: {
+              ...state.data,
+              materialMetadata: {
+                ...state.data.materialMetadata,
+                [materialId]: {
+                  ...(state.data.materialMetadata[materialId] || { generation: {}, ui: {} }),
+                  generation: {
+                    ...(state.data.materialMetadata[materialId]?.generation || {}),
+                    expectedCount: count,
+                  },
+                },
+              },
+            },
+          }),
+          false,
+          'materials/setExpectedFlashcards'
+        ),
 
-        setDifficulty: (materialId, level) =>
-            set((state) => ({
-                ...state,
-                data: {
-                    ...state.data,
-                    materialMetadata: {
-                        ...state.data.materialMetadata,
-                        [materialId]: {
-                            ...(state.data.materialMetadata[materialId] || { generation: {}, ui: {} }),
-                            generation: {
-                                ...(state.data.materialMetadata[materialId]?.generation || {}),
-                                difficulty: level
-                            }
-                        }
-                    }
-                }
-            }), false, 'materials/setDifficulty'),
+      setDifficulty: (materialId, level) =>
+        set(
+          (state) => ({
+            ...state,
+            data: {
+              ...state.data,
+              materialMetadata: {
+                ...state.data.materialMetadata,
+                [materialId]: {
+                  ...(state.data.materialMetadata[materialId] || { generation: {}, ui: {} }),
+                  generation: {
+                    ...(state.data.materialMetadata[materialId]?.generation || {}),
+                    difficulty: level,
+                  },
+                },
+              },
+            },
+          }),
+          false,
+          'materials/setDifficulty'
+        ),
 
-        setMaterialUIState: (materialId, key, value) =>
-            set((state) => ({
-                ...state,
-                data: {
-                    ...state.data,
-                    materialMetadata: {
-                        ...state.data.materialMetadata,
-                        [materialId]: {
-                            ...(state.data.materialMetadata[materialId] || { generation: {}, ui: {} }),
-                            ui: {
-                                ...(state.data.materialMetadata[materialId]?.ui || {}),
-                                [key]: value
-                            }
-                        }
-                    }
-                }
-            }), false, 'materials/setMaterialUIState'),
+      setMaterialUIState: (materialId, key, value) =>
+        set(
+          (state) => ({
+            ...state,
+            data: {
+              ...state.data,
+              materialMetadata: {
+                ...state.data.materialMetadata,
+                [materialId]: {
+                  ...(state.data.materialMetadata[materialId] || { generation: {}, ui: {} }),
+                  ui: {
+                    ...(state.data.materialMetadata[materialId]?.ui || {}),
+                    [key]: value,
+                  },
+                },
+              },
+            },
+          }),
+          false,
+          'materials/setMaterialUIState'
+        ),
 
-        clearMaterialMetadata: (materialId) =>
-            set((state) => {
-                const newMetadata = { ...state.data.materialMetadata };
-                delete newMetadata[materialId];
-                return {
-                    ...state,
-                    data: { ...state.data, materialMetadata: newMetadata }
-                };
-            }, false, 'materials/clearMaterialMetadata'),
-
-        clearAllMaterialMetadata: () =>
-            set((state) => ({
-                ...state,
-                data: { ...state.data, materialMetadata: {} }
-            }), false, 'materials/clearAllMaterialMetadata'),
-
-        getMaterialProgress: (materialId) => {
-            const material = get().data.materials.find(m => String(m.id) === String(materialId));
-            if (!material) return 0;
-
-            // Base progress on status
-            if (material.status !== 'completed' && material.status !== 'success') return 0;
-
-            // Check for derived completion data (e.g. flashcards mastered)
-            const metadata = get().data.materialMetadata[materialId];
-            const mastered = metadata?.ui?.masteredCount || 0;
-            const expected = metadata?.generation?.expectedCount || 10;
-
-            if (mastered > 0) return Math.min(Math.round((mastered / expected) * 100), 100);
-            return 100; // default for completed
-        },
-
-        updateMaterialOptimistically: (id, updates) =>
-            set((state) => ({
-                ...state,
-                data: {
-                    ...state.data,
-                    materials: state.data.materials.map(m => m.id === id ? { ...m, ...updates } : m)
-                }
-            })),
-
-        clearJobProgress: () =>
-            set((state) => ({
-                ...state,
-                data: { ...state.data, jobProgress: null }
-            })),
-
-        fetchMaterials: async () => {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                set((state) => ({ ...state, data: { ...state.data, materials: [], isPublic: true }, error: null }));
-                return [];
-            }
-            const uiActions = useUIStore.getState().actions;
-            uiActions.setLoading('materials', true, 'Loading your materials...', false);
-            set({ error: null });
-            try {
-                const res = await MaterialService.getHistory();
-                const materials = res.data.data || [];
-                set((state) => ({
-                    ...state,
-                    error: null,
-                    data: { ...state.data, materials, isPublic: false }
-                }));
-                return materials;
-            } catch (err) {
-                set({ error: err.message || 'Failed to fetch materials' });
-                throw err;
-            } finally {
-                uiActions.setLoading('materials', false);
-            }
-        },
-
-        uploadMaterial: async (formData) => {
-            const user = useAuthStore.getState().data.user;
-            if (!user) {
-                useUIStore.getState().actions.setModal('authPrompt');
-                return;
-            }
-            const uiActions = useUIStore.getState().actions;
-            uiActions.setLoading('upload', true, 'Uploading document...', false);
-            uiActions.clearError('upload');
-            set({ error: null });
-
-            try {
-                const res = await MaterialService.upload(formData);
-                const material = res.data.data;
-                const status = normalizeStatus(material.status);
-
-                if (material.job_id && status === PROCESSING) {
-                    get().actions.startPolling(material.id);
-                } else {
-                    set((state) => ({
-                        ...state,
-                        data: { ...state.data, jobProgress: null }
-                    }));
-                    await get().actions.fetchMaterials();
-                }
-
-                toast.success('Document seeded! AI is cultivating your material...');
-                return material;
-            } catch (err) {
-                const message = err.response?.data?.message || err.message || 'Upload failed';
-                const code = err.code || err.response?.data?.code;
-                const trashedMaterialId = err.data?.data?.trashedMaterialId || err.data?.trashedMaterialId || err.trashedMaterialId || err.materialId;
-                const fieldErrors = err.validationErrors || {};
-                set((state) => ({
-                    ...state,
-                    error: message,
-                    data: { ...state.data, jobProgress: null }
-                }));
-                if (code !== 'TRASH_DUPLICATE') {
-                    uiActions.setError('upload', message);
-                }
-                throw { message, code, trashedMaterialId, fieldErrors };
-            } finally {
-                uiActions.setLoading('upload', false);
-            }
-        },
-
-        clearPolling: (materialId) => {
-            const slot = pollingIntervals.get(materialId);
-            if (slot) {
-                slot.controller.abort();   // abort in-flight sync request
-                clearTimeout(slot.timerId);
-                pollingIntervals.delete(materialId);
-            }
-        },
-
-        clearAllPolling: () => {
-            for (const slot of pollingIntervals.values()) {
-                slot.controller.abort();   // abort every in-flight request
-                clearTimeout(slot.timerId);
-            }
-            pollingIntervals.clear();
-        },
-
-        cancelJob: async (materialId) => {
-            const user = useAuthStore.getState().data.user;
-            if (!user) {
-                useUIStore.getState().actions.setModal('authPrompt');
-                return;
-            }
-            try {
-                await MaterialService.cancel(materialId);
-                set((state) => ({
-                    ...state,
-                    data: { ...state.data, jobProgress: null }
-                }));
-                await get().actions.fetchMaterials();
-            } catch (err) {
-                set({ error: err.message || 'Failed to cancel job' });
-            }
-        },
-
-        startPolling: (materialId, onComplete = null) => {
-            if (pollingIntervals.has(materialId)) return;
-
-            const startTime = Date.now();
-            const MAX_POLLING_MS = 600_000; // 10 minutes
-
-            // Adaptive backoff: 3s for the first 30s, 6s up to 60s, 10s beyond.
-            const getDelay = (elapsed) => {
-                if (elapsed < 30_000) return 3_000;
-                if (elapsed < 60_000) return 6_000;
-                return 10_000;
+      clearMaterialMetadata: (materialId) =>
+        set(
+          (state) => {
+            const newMetadata = { ...state.data.materialMetadata };
+            delete newMetadata[materialId];
+            return {
+              ...state,
+              data: { ...state.data, materialMetadata: newMetadata },
             };
+          },
+          false,
+          'materials/clearMaterialMetadata'
+        ),
 
-            // Each tick creates its own AbortController so we can abort the
-            // in-flight request the moment clearPolling / clearAllPolling is called.
-            // The slot's controller is replaced per-tick; clearing aborts the latest one.
-            let tickController = new AbortController();
+      clearAllMaterialMetadata: () =>
+        set(
+          (state) => ({
+            ...state,
+            data: { ...state.data, materialMetadata: {} },
+          }),
+          false,
+          'materials/clearAllMaterialMetadata'
+        ),
 
-            const tick = async () => {
-                const elapsed = Date.now() - startTime;
+      getMaterialProgress: (materialId) => {
+        const material = get().data.materials.find((m) => String(m.id) === String(materialId));
+        if (!material) return 0;
 
-                if (elapsed > MAX_POLLING_MS) {
-                    console.warn(`[MaterialStore] Polling timeout for ${materialId}`);
-                    get().actions.clearPolling(materialId);
-                    set((state) => ({
-                        ...state,
-                        data: {
-                            ...state.data,
-                            jobProgress: {
-                                stage: FAILED.toLowerCase(),
-                                progress: 100,
-                                message: 'Generation session timed out. Please try again.'
-                            }
-                        }
-                    }));
-                    return;
-                }
+        // Base progress on status
+        if (material.status !== 'completed' && material.status !== 'success') return 0;
 
-                try {
-                    // Abort the previous tick's request (if still running) and
-                    // issue a fresh AbortController for this tick.
-                    tickController.abort();
-                    tickController = new AbortController();
+        // Check for derived completion data (e.g. flashcards mastered)
+        const metadata = get().data.materialMetadata[materialId];
+        const mastered = metadata?.ui?.masteredCount || 0;
+        const expected = metadata?.generation?.expectedCount || 10;
 
-                    // Update the stored controller so clearPolling always aborts the latest request.
-                    const slot = pollingIntervals.get(materialId);
-                    if (slot) slot.controller = tickController;
+        if (mastered > 0) return Math.min(Math.round((mastered / expected) * 100), 100);
+        return 100; // default for completed
+      },
 
-                    const response = await MaterialService.sync(materialId, tickController.signal);
-                    const material = response?.data?.data;
+      updateMaterialOptimistically: (id, updates) =>
+        set((state) => ({
+          ...state,
+          data: {
+            ...state.data,
+            materials: state.data.materials.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+          },
+        })),
 
-                    if (material) {
-                        const status = normalizeStatus(material.status);
+      clearJobProgress: () =>
+        set((state) => ({
+          ...state,
+          data: { ...state.data, jobProgress: null },
+        })),
 
-                        if (status === COMPLETED || status === SUCCESS) {
-                            get().actions.clearPolling(materialId);
-
-                            if (material.type !== 'document') {
-                                const result = material.ai_generated_content || material.content;
-                                set((state) => ({
-                                    ...state,
-                                    data: {
-                                        ...state.data,
-                                        jobProgress: {
-                                            stage: 'success',
-                                            progress: 100,
-                                            message: 'Refining knowledge complete!',
-                                            result: result,
-                                            materialId: materialId
-                                        }
-                                    }
-                                }));
-                            }
-                            const updatedMaterials = await get().actions.fetchMaterials();
-                            if (onComplete) {
-                                const mat = updatedMaterials.find(m => String(m.id) === String(materialId));
-                                if (mat) onComplete(mat);
-                            }
-                        } else if (status === FAILED) {
-                            get().actions.clearPolling(materialId);
-                            set((state) => ({
-                                ...state,
-                                data: {
-                                    ...state.data,
-                                    jobProgress: {
-                                        stage: FAILED.toLowerCase(),
-                                        progress: 100,
-                                        message: material.error_message || 'Processing failed'
-                                    }
-                                }
-                            }));
-                            setTimeout(() => {
-                                set((state) => ({
-                                    ...state,
-                                    data: { ...state.data, jobProgress: null }
-                                }));
-                            }, 5000);
-                        } else {
-                            const stageMessage = material.stage_message || '';
-                            let stage = status.toLowerCase();
-                            let progress = status === PROCESSING ? 40 : 10;
-
-                            if (stageMessage.toLowerCase().includes('ocr')) { stage = 'ocr'; progress = 30; }
-                            else if (stageMessage.toLowerCase().includes('chunk')) { stage = 'chunking'; progress = 60; }
-                            else if (stageMessage.toLowerCase().includes('embed')) { stage = 'embedding'; progress = 90; }
-
-                            set((state) => ({
-                                ...state,
-                                data: {
-                                    ...state.data,
-                                    jobProgress: {
-                                        jobId: material.job_id,
-                                        materialId: material.id,
-                                        stage,
-                                        progress,
-                                        message: stageMessage || 'AI is cultivating your material...'
-                                    }
-                                }
-                            }));
-                        }
-                    }
-                } catch (err) {
-                    if (err.name === 'AbortError') return; // intentional cancel — silent, skip reschedule
-                    console.error('[MaterialStore] Polling loop error:', err);
-                    const msg = err.message === 'cyclic object value'
-                        ? 'Circular data error during sync'
-                        : (err.message || 'Polling error');
-                    set({ error: msg });
-                }
-
-                // Schedule next tick only if the slot still exists (not cleared by COMPLETED/FAILED/timeout above).
-                const nextSlot = pollingIntervals.get(materialId);
-                if (nextSlot) nextSlot.timerId = setTimeout(tick, getDelay(Date.now() - startTime));
-            };
-
-            // Store the slot with the initial controller so clearPolling can
-            // abort the current in-flight request at any time
-            const timerId = setTimeout(tick, getDelay(0));
-            pollingIntervals.set(materialId, { timerId, controller: tickController });
+      fetchMaterials: async () => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          set((state) => ({
+            ...state,
+            data: { ...state.data, materials: [], isPublic: true },
+            error: null,
+          }));
+          return [];
         }
-    }
-})));
+        const uiActions = useUIStore.getState().actions;
+        uiActions.setLoading('materials', true, 'Loading your materials...', false);
+        set({ error: null });
+        try {
+          const res = await MaterialService.getHistory();
+          const materials = res.data.data || [];
+          set((state) => ({
+            ...state,
+            error: null,
+            data: { ...state.data, materials, isPublic: false },
+          }));
+          return materials;
+        } catch (err) {
+          set({ error: err.message || 'Failed to fetch materials' });
+          throw err;
+        } finally {
+          uiActions.setLoading('materials', false);
+        }
+      },
+
+      uploadMaterial: async (formData) => {
+        const user = useAuthStore.getState().data.user;
+        if (!user) {
+          useUIStore.getState().actions.setModal('authPrompt');
+          return;
+        }
+        const uiActions = useUIStore.getState().actions;
+        uiActions.setLoading('upload', true, 'Uploading document...', false);
+        uiActions.clearError('upload');
+        set({ error: null });
+
+        try {
+          const res = await MaterialService.upload(formData);
+          const material = res.data.data;
+          const status = normalizeStatus(material.status);
+
+          if (material.job_id && status === PROCESSING) {
+            get().actions.startPolling(material.id);
+          } else {
+            set((state) => ({
+              ...state,
+              data: { ...state.data, jobProgress: null },
+            }));
+            await get().actions.fetchMaterials();
+          }
+
+          toast.success('Document seeded! AI is cultivating your material...');
+          return material;
+        } catch (err) {
+          const resData = err.response?.data || {};
+          const message = resData.message || err.message || 'Upload failed';
+          const code = resData.code || err.code;
+          const errorData = resData.data || {};
+          const fieldErrors = err.validationErrors || {};
+          set((state) => ({
+            ...state,
+            error: message,
+            data: { ...state.data, jobProgress: null },
+          }));
+          if (code !== 'TRASH_DUPLICATE_MATERIAL' && code !== 'ACTIVE_DUPLICATE_MATERIAL') {
+            uiActions.setError('upload', message);
+          }
+          throw { message, code, data: errorData, fieldErrors };
+        } finally {
+          uiActions.setLoading('upload', false);
+        }
+      },
+
+      clearPolling: (materialId) => {
+        const slot = pollingIntervals.get(materialId);
+        if (slot) {
+          slot.controller.abort(); // abort in-flight sync request
+          clearTimeout(slot.timerId);
+          pollingIntervals.delete(materialId);
+        }
+      },
+
+      clearAllPolling: () => {
+        for (const slot of pollingIntervals.values()) {
+          slot.controller.abort(); // abort every in-flight request
+          clearTimeout(slot.timerId);
+        }
+        pollingIntervals.clear();
+      },
+
+      cancelJob: async (materialId) => {
+        const user = useAuthStore.getState().data.user;
+        if (!user) {
+          useUIStore.getState().actions.setModal('authPrompt');
+          return;
+        }
+        try {
+          await MaterialService.cancel(materialId);
+          set((state) => ({
+            ...state,
+            data: { ...state.data, jobProgress: null },
+          }));
+          await get().actions.fetchMaterials();
+        } catch (err) {
+          set({ error: err.message || 'Failed to cancel job' });
+        }
+      },
+
+      startPolling: (materialId, onComplete = null) => {
+        if (pollingIntervals.has(materialId)) return;
+
+        const startTime = Date.now();
+        const MAX_POLLING_MS = 600_000; // 10 minutes
+
+        // Adaptive backoff: 3s for the first 30s, 6s up to 60s, 10s beyond.
+        const getDelay = (elapsed) => {
+          if (elapsed < 30_000) return 3_000;
+          if (elapsed < 60_000) return 6_000;
+          return 10_000;
+        };
+
+        // Each tick creates its own AbortController so we can abort the
+        // in-flight request the moment clearPolling / clearAllPolling is called.
+        // The slot's controller is replaced per-tick; clearing aborts the latest one.
+        let tickController = new AbortController();
+
+        const tick = async () => {
+          const elapsed = Date.now() - startTime;
+
+          if (elapsed > MAX_POLLING_MS) {
+            console.warn(`[MaterialStore] Polling timeout for ${materialId}`);
+            get().actions.clearPolling(materialId);
+            set((state) => ({
+              ...state,
+              data: {
+                ...state.data,
+                jobProgress: {
+                  stage: FAILED.toLowerCase(),
+                  progress: 100,
+                  message: 'Generation session timed out. Please try again.',
+                },
+              },
+            }));
+            return;
+          }
+
+          try {
+            // Abort the previous tick's request (if still running) and
+            // issue a fresh AbortController for this tick.
+            tickController.abort();
+            tickController = new AbortController();
+
+            // Update the stored controller so clearPolling always aborts the latest request.
+            const slot = pollingIntervals.get(materialId);
+            if (slot) slot.controller = tickController;
+
+            const response = await MaterialService.sync(materialId, tickController.signal);
+            const material = response?.data?.data;
+
+            if (material) {
+              const status = normalizeStatus(material.status);
+
+              if (status === COMPLETED || status === SUCCESS) {
+                get().actions.clearPolling(materialId);
+
+                if (material.type !== 'document') {
+                  const result = material.ai_generated_content || material.content;
+                  set((state) => ({
+                    ...state,
+                    data: {
+                      ...state.data,
+                      jobProgress: {
+                        stage: 'success',
+                        progress: 100,
+                        message: 'Refining knowledge complete!',
+                        result: result,
+                        materialId: materialId,
+                      },
+                    },
+                  }));
+                }
+                const updatedMaterials = await get().actions.fetchMaterials();
+                if (onComplete) {
+                  const mat = updatedMaterials.find((m) => String(m.id) === String(materialId));
+                  if (mat) onComplete(mat);
+                }
+              } else if (status === FAILED) {
+                get().actions.clearPolling(materialId);
+                set((state) => ({
+                  ...state,
+                  data: {
+                    ...state.data,
+                    jobProgress: {
+                      stage: FAILED.toLowerCase(),
+                      progress: 100,
+                      message: material.error_message || 'Processing failed',
+                    },
+                  },
+                }));
+                setTimeout(() => {
+                  set((state) => ({
+                    ...state,
+                    data: { ...state.data, jobProgress: null },
+                  }));
+                }, 5000);
+              } else {
+                const stageMessage = material.stage_message || '';
+                let stage = status.toLowerCase();
+                let progress = status === PROCESSING ? 40 : 10;
+
+                if (stageMessage.toLowerCase().includes('ocr')) {
+                  stage = 'ocr';
+                  progress = 30;
+                } else if (stageMessage.toLowerCase().includes('chunk')) {
+                  stage = 'chunking';
+                  progress = 60;
+                } else if (stageMessage.toLowerCase().includes('embed')) {
+                  stage = 'embedding';
+                  progress = 90;
+                }
+
+                set((state) => ({
+                  ...state,
+                  data: {
+                    ...state.data,
+                    jobProgress: {
+                      jobId: material.job_id,
+                      materialId: material.id,
+                      stage,
+                      progress,
+                      message: stageMessage || 'AI is cultivating your material...',
+                    },
+                  },
+                }));
+              }
+            }
+          } catch (err) {
+            if (err.name === 'AbortError') return; // intentional cancel — silent, skip reschedule
+            console.error('[MaterialStore] Polling loop error:', err);
+            const msg =
+              err.message === 'cyclic object value'
+                ? 'Circular data error during sync'
+                : err.message || 'Polling error';
+            set({ error: msg });
+          }
+
+          // Schedule next tick only if the slot still exists (not cleared by COMPLETED/FAILED/timeout above).
+          const nextSlot = pollingIntervals.get(materialId);
+          if (nextSlot) nextSlot.timerId = setTimeout(tick, getDelay(Date.now() - startTime));
+        };
+
+        // Store the slot with the initial controller so clearPolling can
+        // abort the current in-flight request at any time
+        const timerId = setTimeout(tick, getDelay(0));
+        pollingIntervals.set(materialId, { timerId, controller: tickController });
+      },
+    },
+  }))
+);

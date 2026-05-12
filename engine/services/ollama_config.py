@@ -1,7 +1,12 @@
 import os
+import json
+import time
+import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
+import httpx
+import requests
 from dotenv import load_dotenv
 
 
@@ -95,3 +100,96 @@ def get_ollama_generation_model(required: bool = True) -> Optional[str]:
         "Configure a valid generation model (e.g. 'qwen2.5:3b') in engine/.env "
         "or your deployment environment before using the generation pipeline."
     )
+
+
+def get_dynamic_timeout(question_count: int) -> int:
+    """
+    Return a stable timeout for Ollama generational requests.
+    We use a flat 300s to tolerate long periods of silence between chunks
+    during large structured generations.
+    """
+    return 300
+
+
+# ── Configuration ────────────────────────────────────────────────────────────
+OLLAMA_BASE_URL = get_ollama_base_url()
+OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
+OLLAMA_GENERATION_MODEL = get_ollama_generation_model(required=True)
+
+logger = logging.getLogger("engine-ollama-client")
+
+
+def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: Any, material_type: str) -> str:
+    """Call Ollama /api/generate with streaming enabled and reconstruct full text."""
+    payload = dict(payload)
+    payload["stream"] = True
+    full_text = []
+
+    start_time = time.time()
+    logger.info("[OLLAMA] Generation started", extra={
+        "material_type": material_type,
+        "timestamp": start_time,
+        "timeout": str(timeout)
+    })
+
+    try:
+        response = requests.post(OLLAMA_GENERATE_URL, json=payload, stream=True, timeout=timeout)
+        response.raise_for_status()
+
+        for line in response.iter_lines():
+            if line:
+                chunk = json.loads(line)
+                if piece := chunk.get("response"):
+                    full_text.append(piece)
+                if chunk.get("done"):
+                    break
+        
+        duration = time.time() - start_time
+        logger.info("[OLLAMA] Generation completed", extra={
+            "material_type": material_type,
+            "duration": duration,
+            "chars": sum(len(p) for p in full_text)
+        })
+        return "".join(full_text)
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error("Ollama stream error for %s after %.2fs: %s", material_type, duration, e)
+        raise
+
+
+async def _async_stream_ollama_generate(payload: Dict[str, Any], *, timeout: Any, material_type: str) -> str:
+    """Async version of _stream_ollama_generate using httpx."""
+    payload = dict(payload)
+    payload["stream"] = True
+    full_text = []
+
+    start_time = time.time()
+    logger.info("[OLLAMA] Async Generation started", extra={
+        "material_type": material_type,
+        "timestamp": start_time,
+        "timeout": str(timeout)
+    })
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("POST", OLLAMA_GENERATE_URL, json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        if piece := chunk.get("response"):
+                            full_text.append(piece)
+                        if chunk.get("done"):
+                            break
+        
+        duration = time.time() - start_time
+        logger.info("[OLLAMA] Async Generation completed", extra={
+            "material_type": material_type,
+            "duration": duration,
+            "chars": sum(len(p) for p in full_text)
+        })
+        return "".join(full_text)
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error("Ollama async stream error for %s after %.2fs: %s", material_type, duration, e)
+        raise

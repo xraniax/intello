@@ -11,7 +11,15 @@ import httpx
 import requests
 from requests.exceptions import RequestException, Timeout
 
-from .ollama_config import get_ollama_base_url, get_ollama_generation_model
+from .ollama_config import (
+    get_ollama_base_url,
+    get_ollama_generation_model,
+    get_dynamic_timeout,
+    _stream_ollama_generate,
+    _async_stream_ollama_generate,
+    OLLAMA_GENERATE_URL,
+    OLLAMA_GENERATION_MODEL,
+)
 from .summary_pipeline import _build_summary_system_prompt
 
 logger = logging.getLogger("engine-generation")
@@ -33,50 +41,7 @@ MAP_CONCURRENCY = int(os.getenv("MAP_CONCURRENCY", "2"))
 STREAM_MAP_MAX_CHUNKS = int(os.getenv("STREAM_MAP_MAX_CHUNKS", "20"))
 
 
-def _stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_type: str) -> str:
-    """Call Ollama /api/generate with streaming enabled and reconstruct full text."""
-    payload = dict(payload)
-    payload["stream"] = True
-    full_text = []
 
-    try:
-        response = requests.post(OLLAMA_GENERATE_URL, json=payload, stream=True, timeout=timeout)
-        response.raise_for_status()
-
-        for line in response.iter_lines():
-            if line:
-                chunk = json.loads(line)
-                if piece := chunk.get("response"):
-                    full_text.append(piece)
-                if chunk.get("done"):
-                    break
-        return "".join(full_text)
-    except Exception as e:
-        logger.error("Ollama stream error for %s: %s", material_type, e)
-        raise
-
-
-async def _async_stream_ollama_generate(payload: Dict[str, Any], *, timeout: int, material_type: str) -> str:
-    """Async version of _stream_ollama_generate using httpx."""
-    payload = dict(payload)
-    payload["stream"] = True
-    full_text = []
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", OLLAMA_GENERATE_URL, json=payload) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line:
-                        chunk = json.loads(line)
-                        if piece := chunk.get("response"):
-                            full_text.append(piece)
-                        if chunk.get("done"):
-                            break
-        return "".join(full_text)
-    except Exception as e:
-        logger.error("Ollama async stream error for %s: %s", material_type, e)
-        raise
 
 def _strip_markdown_fences(text: str) -> str:
     """Best-effort cleanup for markdown fenced code blocks around JSON.
@@ -612,6 +577,9 @@ async def generate_study_material_stream(
     if material_type == "exam":
         logger.info(f"[EXAM COUNT] {count}")
 
+    # Stability patch: dynamic timeout based on question count
+    dynamic_timeout = get_dynamic_timeout(count or 5)
+
     context = _build_generation_context(chunks)
     prompt = build_prompt(
         material_type,
@@ -631,9 +599,9 @@ async def generate_study_material_stream(
 
     reduce_prompt_chars = len(prompt)
     logger.info(
-        "[TRACE][REDUCE_START] model=%s prompt_chars=%d context_chars=%d url=%s timeout=%d",
+        "[TRACE][REDUCE_START] model=%s prompt_chars=%d context_chars=%d url=%s timeout=%s",
         OLLAMA_GENERATION_MODEL, reduce_prompt_chars, len(context),
-        OLLAMA_GENERATE_URL, OLLAMA_GENERATION_TIMEOUT,
+        OLLAMA_GENERATE_URL, str(dynamic_timeout),
     )
 
     retries = OLLAMA_REQUEST_RETRIES
@@ -643,7 +611,7 @@ async def generate_study_material_stream(
         token_count = 0
         total_chars = 0
         try:
-            async with httpx.AsyncClient(timeout=OLLAMA_GENERATION_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=dynamic_timeout) as client:
                 async with client.stream(
                     "POST",
                     OLLAMA_GENERATE_URL,
@@ -768,6 +736,9 @@ def generate_study_material(
     else:
         payload["format"] = "json"
 
+    # Stability patch: override fixed timeout with dynamic strategy
+    timeout = get_dynamic_timeout(count or 5)
+
     for attempt in range(retries):
         try:
             logger.info(
@@ -775,7 +746,7 @@ def generate_study_material(
                 material_type,
                 attempt + 1,
                 retries,
-                timeout,
+                str(timeout),
             )
             req_started = time.perf_counter()
             generated_text = _stream_ollama_generate(payload, timeout=timeout, material_type=material_type)

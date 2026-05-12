@@ -113,4 +113,37 @@ describe('ExamService - Semantic Grading Regression Tests', () => {
         
         expect(mockAxiosPost).toHaveBeenCalled();
     });
+
+    it('successfully grades Format 2 (Flat/Fallback) exams via automatic normalization', async () => {
+        const flatExamId = 'exam-flat';
+        // Mock a DB record in Format 2 (Flat: questions at root, no content wrapper)
+        mockQuery.mockResolvedValue({
+            rows: [{
+                id: flatExamId,
+                subject_id: 'sub-789',
+                title: 'Flat Exam',
+                type: 'exam',
+                ai_generated_content: JSON.stringify({
+                    questions: [{ id: 'q-flat', type: 'short_answer', question: 'Flat?' }],
+                    answer_sheet: [{ question_id: 'q-flat', answer: 'Yes', explanation: 'Correct' }]
+                }),
+                created_at: new Date().toISOString()
+            }]
+        });
+
+        mockAxiosPost.mockResolvedValue({
+            data: { normalized_score: 1.0, feedback: 'Great' }
+        });
+
+        const payload = {
+            examId: flatExamId,
+            answers: [{ questionId: 'q-flat', answerText: 'Yes' }]
+        };
+
+        const result = await ExamService.submitExam(userId, payload);
+        
+        expect(result.score).toBe(1);
+        expect(result.details[0].isCorrect).toBe(true);
+        expect(result.details[0].correctAnswerText).toBe('Yes'); // Merged from answer_sheet
+    });
 });

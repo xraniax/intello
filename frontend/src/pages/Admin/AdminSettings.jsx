@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { adminService } from '@/features/admin/services/AdminService';
 import {
-    Save, HardDrive, RefreshCw, AlertCircle, FileType,
+    Save, HardDrive, RefreshCw, AlertCircle,
     ShieldCheck, Trash2, Users, Upload, ToggleLeft, ToggleRight, X,
     Activity
 } from 'lucide-react';
@@ -120,16 +120,7 @@ const ToggleRow = ({ label, description, value, onChange }) => (
 );
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-const COMMON_MIME_TYPES = [
-    { label: 'PDF', value: 'application/pdf' },
-    { label: 'JPEG', value: 'image/jpeg' },
-    { label: 'JPG', value: 'image/jpg' },
-    { label: 'PNG', value: 'image/png' },
-    { label: 'WEBP', value: 'image/webp' },
-    { label: 'Word', value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
-    { label: 'PowerPoint', value: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
-    { label: 'Text', value: 'text/plain' },
-];
+
 
 const AdminSettings = () => {
     const [loading, setLoading] = useState(true);
@@ -139,8 +130,6 @@ const AdminSettings = () => {
     const [maxClusterSizeGb, setMaxClusterSizeGb] = useState(100);
     const [maxFileSizeMb, setMaxFileSizeMb] = useState(10);
     const [trashTtlDays, setTrashTtlDays] = useState(30);
-    const [allowedTypes, setAllowedTypes] = useState([]);
-    const [mimeInput, setMimeInput] = useState('');
     const [allowPublicRegistration, setAllowPublicRegistration] = useState(true);
     const [studentCount, setStudentCount] = useState(0);
     const [budget, setBudget] = useState(null);
@@ -161,7 +150,6 @@ const AdminSettings = () => {
             setMaxClusterSizeGb(s.max_cluster_size_gb ?? (s.max_cluster_size_bytes ? Math.round(s.max_cluster_size_bytes / 1073741824) : 100));
             setMaxFileSizeMb(s.max_file_size_mb ?? 10);
             setTrashTtlDays(s.trash_ttl_days ?? 30);
-            setAllowedTypes(s.allowed_types || []);
             setAllowPublicRegistration(s.allow_public_registration !== false);
             setStats(statsData);
             
@@ -205,10 +193,6 @@ const AdminSettings = () => {
             toast.error(`Cannot save: Theoretical allocation (${theoreticalTotalGb.toFixed(2)} GB) exceeds platform ceiling.`);
             return;
         }
-        if (!allowedTypes.length) {
-            toast.error('At least one allowed MIME type is required.');
-            return;
-        }
         if (defaultQuotaMb <= 0 || maxFileSizeMb <= 0 || maxClusterSizeGb <= 0 || trashTtlDays <= 0) {
             toast.error('All numeric limits must be greater than zero.');
             return;
@@ -222,7 +206,6 @@ const AdminSettings = () => {
                     max_cluster_size_bytes: parseInt(maxClusterSizeGb) * 1073741824,
                     max_file_size_mb: parseInt(maxFileSizeMb),
                     trash_ttl_days: parseInt(trashTtlDays),
-                    allowed_types: allowedTypes,
                     allow_public_registration: allowPublicRegistration,
                 }
             });
@@ -248,17 +231,7 @@ const AdminSettings = () => {
         }
     };
 
-    const addMime = (val) => {
-        const trimmed = val.trim();
-        if (trimmed && !allowedTypes.includes(trimmed)) {
-            setAllowedTypes(prev => [...prev, trimmed]);
-        }
-        setMimeInput('');
-    };
 
-    const handleMimeKey = (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); addMime(mimeInput); }
-    };
 
     if (loading) {
         return (
@@ -409,45 +382,12 @@ const AdminSettings = () => {
                         </div>
 
                         <div className="space-y-3">
-                            <label className="block text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                <FileType className="w-3.5 h-3.5" /> Allowed MIME Types
+                            <label className="block text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 text-indigo-500">
+                                Global Storage Enforcement
                             </label>
-                            <div className="flex flex-wrap gap-2 mb-2">
-                                {COMMON_MIME_TYPES.map(m => (
-                                    <button
-                                        key={m.value}
-                                        type="button"
-                                        onClick={() => addMime(m.value)}
-                                        disabled={allowedTypes.includes(m.value)}
-                                        className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${
-                                            allowedTypes.includes(m.value)
-                                                ? 'bg-teal-50 text-teal-700 border-teal-100 opacity-60 cursor-default'
-                                                : 'bg-gray-50 text-gray-500 border-gray-100 hover:bg-gray-100 hover:text-gray-800'
-                                        }`}
-                                    >
-                                        {m.label}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="w-full bg-gray-50 focus-within:bg-white border border-transparent focus-within:border-teal-400 rounded-xl px-3 py-2.5 transition-all shadow-sm focus-within:ring-4 focus-within:ring-teal-100 min-h-[3rem] flex flex-wrap gap-2 items-center">
-                                {allowedTypes.map(t => (
-                                    <span key={t} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-100 text-teal-800 text-xs font-bold whitespace-nowrap">
-                                        {t}
-                                        <button type="button" onClick={() => setAllowedTypes(prev => prev.filter(x => x !== t))} className="hover:text-teal-900 transition-colors">
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                    </span>
-                                ))}
-                                <input
-                                    type="text"
-                                    value={mimeInput}
-                                    onChange={e => setMimeInput(e.target.value)}
-                                    onKeyDown={handleMimeKey}
-                                    className="flex-1 bg-transparent border-none outline-none text-gray-800 font-mono text-xs placeholder-gray-400 min-w-[150px]"
-                                    placeholder="Type MIME and press Enter..."
-                                />
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-medium">Click quick tags above or type a MIME type (e.g. <code className="bg-gray-100 px-1 rounded">application/pdf</code>) and press Enter.</p>
+                            <p className="text-[10px] text-gray-400 font-medium leading-relaxed">
+                                The system currently supports <span className="text-gray-600 font-bold">PDF documents and Images</span> (PNG, JPEG, WEBP). Mime-type enforcement is handled at the platform level to ensure processing stability.
+                            </p>
                         </div>
                     </div>
                 </Section>

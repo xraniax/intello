@@ -15,9 +15,9 @@ from .document_processor import process_document, process_text_pipeline
 from .embeddings import embed_step, ollama_tags_url
 from .processor import process_subject
 from .retrieval import retrieve_chunks_by_topic
-from .generation import generate_study_material, generate_study_material_stream, evaluate_quiz, generate_chat_response, OLLAMA_GENERATE_URL, OLLAMA_GENERATION_MODEL
+from .generation import generate_study_material, generate_study_material_stream, evaluate_quiz, generate_chat_response
 from .summary_pipeline import generate_summary_stream
-from .ollama_config import get_ollama_base_url, get_engine_env_source
+from .ollama_config import get_ollama_base_url, get_engine_env_source, OLLAMA_GENERATE_URL, OLLAMA_GENERATION_MODEL
 from .google_client import (
     GoogleDriveConfigError,
     GoogleDriveNotConfiguredError,
