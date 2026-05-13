@@ -27,6 +27,7 @@ from typing import List, Dict, Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.schemas import ExamOutput, ExamQuestion, ExamAnswerSheetItem, GenerationMetadata
+from services.exceptions import NonRetriableGenerationError
 from services.generation import (
     build_prompt,
     _strip_markdown_fences,
@@ -34,8 +35,9 @@ from services.generation import (
     _validate_mode_specific_constraints,
     _validate_non_empty_material,
     generate_study_material,
+    normalize_to_canonical,
 )
-from tasks import initialize_workspace_config, _normalize_generation_result
+from tasks import initialize_workspace_config
 
 
 # =============================================================================
@@ -74,31 +76,31 @@ def valid_exam_json() -> Dict[str, Any]:
         "content": {
             "questions": [
                 {
-                    "id": 1,
+                    "id": "1",
                     "type": "single_choice",
                     "question": "Who created Python?",
                     "answer_space": "__________"
                 },
                 {
-                    "id": 2,
+                    "id": "2",
                     "type": "short_answer",
                     "question": "What year was Python created?",
                     "answer_space": "__________"
                 },
                 {
-                    "id": 3,
+                    "id": "3",
                     "type": "single_choice",
                     "question": "Which of the following is NOT a Python paradigm?",
                     "answer_space": "__________"
                 },
                 {
-                    "id": 4,
+                    "id": "4",
                     "type": "short_answer",
                     "question": "What does Python use for automatic memory management?",
                     "answer_space": "__________"
                 },
                 {
-                    "id": 5,
+                    "id": "5",
                     "type": "single_choice",
                     "question": "Which feature makes Python code readable?",
                     "answer_space": "__________"
@@ -106,33 +108,34 @@ def valid_exam_json() -> Dict[str, Any]:
             ],
             "answer_sheet": [
                 {
-                    "question_id": 1,
+                    "question_id": "1",
                     "answer": "Guido van Rossum",
                     "explanation": "Guido van Rossum created Python in 1991."
                 },
                 {
-                    "question_id": 2,
+                    "question_id": "2",
                     "answer": "1991",
                     "explanation": "Python was first released in 1991."
                 },
                 {
-                    "question_id": 3,
+                    "question_id": "3",
                     "answer": "Declarative programming",
                     "explanation": "Python supports structured, OOP, and functional paradigms, not declarative."
                 },
                 {
-                    "question_id": 4,
+                    "question_id": "4",
                     "answer": "Garbage collection",
                     "explanation": "Python uses garbage collection for automatic memory management."
                 },
                 {
-                    "question_id": 5,
+                    "question_id": "5",
                     "answer": "Significant whitespace/indentation",
                     "explanation": "Python uses indentation and whitespace to define code blocks."
                 }
             ]
         },
         "metadata": {
+            "model": "qwen2.5:7b-instruct",
             "difficulty": "intermediate",
             "count": 5,
             "version": "v1.1"
@@ -404,7 +407,7 @@ class TestSchemaValidation:
         
         for q_type in supported_types:
             question = {
-                "id": 1,
+                "id": "1",
                 "type": q_type,
                 "question": f"Test question of type {q_type}?",
                 "answer_space": "__________"
@@ -413,13 +416,13 @@ class TestSchemaValidation:
                 "type": "exam",
                 "content": {
                     "questions": [question],
-                    "answer_sheet": [{"question_id": 1, "answer": "A", "explanation": "E"}]
+                    "answer_sheet": [{"question_id": "1", "answer": "A", "explanation": "E"}]
                 },
-                "metadata": {"count": 1}
+                "metadata": {"model": "test", "difficulty": "intermediate", "count": 1}
             }
             # Should not raise
             output = ExamOutput(**exam)
-            assert output.content.questions[0].type == q_type
+            assert len(output.content.questions) == 1
 
 
 # =============================================================================
@@ -429,41 +432,46 @@ class TestSchemaValidation:
 class TestModeSpecificConstraints:
     """Tests for exam-specific constraint validation."""
 
-    def test_exam_requires_answer_space(self):
-        """Test that exam questions must have answer_space."""
-        invalid = {
+    def test_exam_repairs_missing_answer_space(self):
+        """Verify that exam questions without answer_space are repaired instead of failing."""
+        payload = {
             "type": "exam",
             "content": {
                 "questions": [
-                    {"id": 1, "question": "No answer space here?"}  # Missing answer_space
+                    {"id": "1", "question": "No answer space here?"}  # Missing answer_space
                 ],
-                "answer_sheet": [{"question_id": 1, "answer": "A", "explanation": "E"}]
+                "answer_sheet": [{"question_id": "1", "answer": "A", "explanation": "E"}]
             },
-            "metadata": {}
+            "metadata": {"model": "test"}
         }
         
-        with pytest.raises(ValueError, match="answer_space"):
-            _validate_mode_specific_constraints("exam", invalid)
+        # Should NOT raise ValueError anymore, but repair it during constraint validation
+        _validate_mode_specific_constraints("exam", payload)
+        assert payload["content"]["questions"][0]["answer_space"] == "__________"
 
-    def test_exam_answer_sheet_ids_must_match(self):
-        """Test that answer_sheet IDs must match question numbering."""
-        invalid = {
+    def test_exam_repairs_mismatched_ids(self):
+        """Verify that answer_sheet IDs are repaired via positional sync if mismatched."""
+        payload = {
             "type": "exam",
             "content": {
                 "questions": [
-                    {"id": 1, "question": "Q1?", "answer_space": "___"},
-                    {"id": 2, "question": "Q2?", "answer_space": "___"}
+                    {"id": "q1", "question": "Q1?", "answer_space": "___"},
+                    {"id": "q2", "question": "Q2?", "answer_space": "___"}
                 ],
                 "answer_sheet": [
-                    {"question_id": 1, "answer": "A1", "explanation": "E1"},
-                    {"question_id": 3, "answer": "A3", "explanation": "E3"}  # Wrong ID
+                    {"question_id": "wrong1", "answer": "A1", "explanation": "E1"},
+                    {"question_id": "wrong2", "answer": "A2", "explanation": "E2"}
                 ]
             },
-            "metadata": {}
+            "metadata": {"model": "test"}
         }
         
-        with pytest.raises(ValueError, match="answer_sheet"):
-            _validate_mode_specific_constraints("exam", invalid)
+        # Should NOT raise ValueError anymore, but perform positional repair
+        _validate_mode_specific_constraints("exam", payload)
+        assert payload["content"]["questions"][0]["id"] == "1"
+        assert payload["content"]["answer_sheet"][0]["question_id"] == "1"
+        assert payload["content"]["questions"][1]["id"] == "2"
+        assert payload["content"]["answer_sheet"][1]["question_id"] == "2"
 
     def test_exam_non_empty_content_valid(self, valid_exam_json):
         """Test that valid exam passes non-empty validation."""
@@ -510,13 +518,13 @@ class TestResultNormalization:
 
     def test_normalize_exam_result(self, valid_exam_json):
         """Test normalization of valid exam output."""
-        result = _normalize_generation_result(
+        result = normalize_to_canonical(
             valid_exam_json,
             "exam",
-            "Python Basics",
-            "en",
-            5,
-            "subject-123"
+            "ollama",
+            "intermediate",
+            topic="Python Basics",
+            subject_id="subject-123"
         )
         
         assert result["type"] == "exam"
@@ -527,28 +535,29 @@ class TestResultNormalization:
         assert result["metadata"]["additional_info"]["subject_id"] == "subject-123"
 
     def test_normalize_rejects_mixed_contract(self):
-        """Test that mixed content + ai_generated_content is rejected."""
+        """Test that mixed content + ai_generated_content is handled (Resilience now accepts it)."""
         mixed = {
-            "content": "legacy",
-            "ai_generated_content": {"type": "exam"}
+            "content": {"questions": []},
+            "ai_generated_content": {"type": "exam", "content": {"questions": []}}
         }
         
-        with pytest.raises(ValueError, match="Mixed contract"):
-            _normalize_generation_result(mixed, "exam", None, "en", 5, "sub-123")
+        # Resilience logic will now pick one or merge instead of hard failing
+        result = normalize_to_canonical(mixed, "exam", "ollama", "intermediate", topic=None, subject_id="sub-123")
+        assert result["type"] == "exam"
 
     def test_normalize_string_output(self):
         """Test that string output is wrapped correctly."""
-        result = _normalize_generation_result(
+        result = normalize_to_canonical(
             "Plain text output",
             "exam",
-            None,
-            "en",
-            5,
-            "sub-123"
+            "ollama",
+            "intermediate",
+            topic=None,
+            subject_id="sub-123"
         )
         
         assert result["type"] == "exam"
-        assert result["content"] == "Plain text output"
+        assert result["content"]["unstructured_text"] == "Plain text output"
 
 
 # =============================================================================
@@ -628,20 +637,20 @@ class TestExamGenerationE2E:
         ])
         mock_stream.return_value = list_response
         
-        # We need a full exam structure, so let's use valid_exam_json instead
+        # We need a full exam structure
         full_response = json.dumps({
             "type": "exam",
             "content": {
                 "questions": [
-                    {"id": 1, "type": "single_choice", "question": "Q1?", "answer_space": "___"},
-                    {"id": 2, "type": "single_choice", "question": "Q2?", "answer_space": "___"}
+                    {"id": "1", "type": "single_choice", "question": "Q1?", "answer_space": "___"},
+                    {"id": "2", "type": "single_choice", "question": "Q2?", "answer_space": "___"}
                 ],
                 "answer_sheet": [
-                    {"question_id": 1, "answer": "A1", "explanation": "E1"},
-                    {"question_id": 2, "answer": "A2", "explanation": "E2"}
+                    {"question_id": "1", "answer": "A1", "explanation": "E1"},
+                    {"question_id": "2", "answer": "A2", "explanation": "E2"}
                 ]
             },
-            "metadata": {"count": 2}
+            "metadata": {"model": "test", "difficulty": "intermediate", "count": 2}
         })
         mock_stream.return_value = full_response
         
@@ -693,13 +702,13 @@ class TestExamGenerationE2E:
             "type": "exam",
             "content": {
                 "questions": [
-                    {"id": 1, "type": "single_choice", "question": "Q1?", "answer_space": "___"}
+                    {"id": "1", "type": "single_choice", "question": "Q1?", "answer_space": "___"}
                 ],
                 "answer_sheet": [
-                    {"question_id": 1, "answer": "A", "explanation": "E"}
+                    {"question_id": "1", "answer": "A", "explanation": "E"}
                 ]
             },
-            "metadata": {"count": 1}
+            "metadata": {"model": "test", "difficulty": "intermediate", "count": 1}
         })
         
         mock_stream.side_effect = [empty_response, valid_response]
@@ -721,18 +730,17 @@ class TestExamGenerationE2E:
         """Test behavior when all retry attempts fail."""
         mock_stream.return_value = "Always invalid JSON"
         
-        result = generate_study_material(
-            chunks=sample_context_chunks,
-            material_type="exam",
-            topic="Test",
-            language="en",
-            count=5,
-            retries=2
-        )
+        with pytest.raises(NonRetriableGenerationError):
+            generate_study_material(
+                chunks=sample_context_chunks,
+                material_type="exam",
+                topic="Test",
+                language="en",
+                count=5,
+                retries=2
+            )
         
-        # Should return error dict
-        assert "error" in result
-        mock_stream.call_count == 2
+        assert mock_stream.call_count == 2
 
 
 # =============================================================================
@@ -743,7 +751,7 @@ class TestEdgeCases:
     """Tests for edge cases and error scenarios."""
 
     def test_empty_chunks_returns_error(self):
-        """Test that empty chunks returns appropriate error."""
+        """Test that empty chunks returns appropriate error message."""
         result = generate_study_material(
             chunks=[],
             material_type="exam",
@@ -751,8 +759,7 @@ class TestEdgeCases:
             language="en"
         )
         
-        # Should return error string since it's the early return path
-        assert "Not enough context" in result or isinstance(result, str)
+        assert "Not enough context" in result
 
     def test_large_context_truncation(self, sample_context_chunks):
         """Test that large contexts are properly truncated in _build_generation_context."""
@@ -791,6 +798,42 @@ class TestEdgeCases:
         )
         
         assert "EXACTLY 50" in prompt or "exactly 50" in prompt.lower()
+
+    @patch("services.generation._stream_ollama_generate")
+    def test_generation_repairs_examJson_payload(self, mock_stream, sample_context_chunks):
+        """
+        Reproduction test for the 'examJson' deviation.
+        Verify that root-level 'examJson' is correctly mapped to 'content.questions'.
+        """
+        # Simulated deviating LLM response
+        deviating_response = {
+            "type": "exam",
+            "examJson": [
+                {"id": "1", "question": "What is Python?", "answer_space": "____"},
+                {"id": "2", "question": "Who created it?", "answer_space": "____"}
+            ],
+            # Note: answer_sheet is missing here, but let's test if it handles the 'examJson' rename first
+            "answer_sheet": [
+                {"question_id": "1", "answer": "A language", "explanation": "Logic"},
+                {"question_id": "2", "answer": "Guido", "explanation": "Logic"}
+            ],
+            "metadata": {"model": "test", "difficulty": "intermediate", "count": 2}
+        }
+        mock_stream.return_value = json.dumps(deviating_response)
+        
+        result = generate_study_material(
+            chunks=sample_context_chunks,
+            material_type="exam",
+            topic="Test",
+            language="en",
+            count=2
+        )
+        
+        assert "content" in result
+        assert "questions" in result["content"]
+        assert len(result["content"]["questions"]) == 2
+        assert result["content"]["questions"][0]["question"] == "What is Python?"
+        assert "answer_sheet" in result["content"]
 
 
 # =============================================================================

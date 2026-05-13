@@ -104,11 +104,31 @@ def get_ollama_generation_model(required: bool = True) -> Optional[str]:
 
 def get_dynamic_timeout(question_count: int) -> int:
     """
-    Return a stable timeout for Ollama generational requests.
-    We use a flat 300s to tolerate long periods of silence between chunks
-    during large structured generations.
+    Return a dynamic timeout for Ollama generational requests.
+    Base timeout from OLLAMA_GENERATION_TIMEOUT, with an additional buffer per question
+    to accommodate long generations on various hardware (CPU/GPU).
     """
-    return 300
+    env_timeout = int(os.getenv("OLLAMA_GENERATION_TIMEOUT", 300))
+    
+    # We add 15s per question above a baseline of 5 questions.
+    # For a 50-question exam, this adds 45 * 15 = 675s.
+    # Total for 50 questions with 300s base: 975s (~16 minutes).
+    buffer_per_question = 15
+    baseline_questions = 5
+    
+    dynamic_buffer = max(0, (question_count - baseline_questions)) * buffer_per_question
+    
+    total_timeout = env_timeout + dynamic_buffer
+    
+    logger.info(
+        "Calculated dynamic timeout: %ds (base: %ds, count: %d, buffer: %ds)",
+        total_timeout,
+        env_timeout,
+        question_count,
+        dynamic_buffer
+    )
+    
+    return total_timeout
 
 
 # ── Configuration ────────────────────────────────────────────────────────────

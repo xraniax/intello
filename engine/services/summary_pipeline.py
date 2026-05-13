@@ -602,7 +602,9 @@ async def generate_summary_stream(
         "system": _build_summary_system_prompt(),
         "keep_alive": -1,
         "options": {
-            "num_ctx": adaptive_num_ctx
+            "num_ctx": adaptive_num_ctx,
+            "num_predict": 2048,
+            "temperature": 0.7,
         }
     }
 

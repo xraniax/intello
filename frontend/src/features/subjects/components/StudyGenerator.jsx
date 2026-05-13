@@ -65,6 +65,12 @@ const StudyGenerator = ({
     const [count, setCount] = React.useState(10);
     const [examTypes, setExamTypes] = React.useState(['mcq', 'essay']);
 
+    const maxQuestions = genType === 'mock_exam' ? 10 : 50;
+
+    React.useEffect(() => {
+        if (count > maxQuestions) setCount(maxQuestions);
+    }, [genType, maxQuestions, count]);
+
     const activeType = TYPES.find(t => t.id === genType) || TYPES[0];
     const showCount = genType !== 'summary';
     const showExamTypes = genType === 'mock_exam';
@@ -82,7 +88,7 @@ const StudyGenerator = ({
         );
     };
 
-    const clampCount = (val) => Math.min(50, Math.max(3, val));
+    const clampCount = (val) => Math.min(maxQuestions, Math.max(3, val));
 
     return (
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -157,7 +163,7 @@ const StudyGenerator = ({
                                 <Minus className="w-3 h-3" />
                             </button>
                             <input
-                                type="range" min="3" max="50" step="1"
+                                type="range" min="3" max={maxQuestions} step="1"
                                 value={count}
                                 onChange={(e) => setCount(parseInt(e.target.value))}
                                 className="flex-1 accent-indigo-600 h-1.5 rounded-lg appearance-none bg-gray-200 cursor-pointer"
@@ -170,7 +176,7 @@ const StudyGenerator = ({
                             </button>
                         </div>
                         <div className="flex justify-between text-[9px] text-gray-300 font-bold px-0.5">
-                            <span>3</span><span>50</span>
+                            <span>3</span><span>{maxQuestions}</span>
                         </div>
                     </div>
                 )}

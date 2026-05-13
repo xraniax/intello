@@ -813,6 +813,12 @@ class MaterialService {
   }
 
   static async deleteMaterial(materialId, userId) {
+    // 1. If job is active, cancel it before soft-deleting
+    try {
+      await this.cancelJob(userId, materialId).catch(() => {});
+    } catch (e) {
+      // Ignore errors if job doesn't exist
+    }
     return await Material.delete(materialId, userId);
   }
 
@@ -834,6 +840,12 @@ class MaterialService {
   }
 
   static async permanentDeleteMaterial(materialId, userId) {
+    // 1. If job is active, cancel it before hard-deleting
+    try {
+      await this.cancelJob(userId, materialId).catch(() => {});
+    } catch (e) {
+      // Ignore
+    }
     await MaterialService._garbageCollectFile(materialId);
     return await Material.permanentDelete(materialId, userId);
   }

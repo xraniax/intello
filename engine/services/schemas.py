@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -51,7 +51,7 @@ class QuestionTypePreference(BaseModel):
 
 class GenerationPolicy(BaseModel):
     version: str = "1.1"
-    total_count: int = Field(default=10, ge=1, le=50)
+    total_count: int = Field(default=10, ge=1, le=10)
     difficulty: Literal["introductory", "intermediate", "advanced"]
     distribution: List[QuestionTypePreference]
 
@@ -135,21 +135,25 @@ class UnifiedChatResponse(BaseModel):
 # --- Structured Output Models ---
 
 class ExamQuestion(BaseModel):
-    id: int
-    type: Literal["single_choice", "multiple_select", "short_answer", "fill_blank", "matching", "problem", "scenario", "mcq", "essay"] = "single_choice"
+    id: str
     question: str
-    answer_space: str = "__________"
+    options: List[str] = Field(default_factory=list)
+    answer: Optional[str] = None
+    answer_space: Optional[str] = None
+    difficulty: Optional[str] = "intermediate"
 
 class ExamAnswerSheetItem(BaseModel):
-    question_id: int
+    question_id: str
     answer: str
-    explanation: str
+    explanation: Optional[str] = None
 
 class GenerationMetadata(BaseModel):
+    model: str
+    provider: str = "ollama"
     difficulty: str = "intermediate"
     count: Optional[int] = None
-    telemetry: Optional[dict] = None
     version: str = "v1"
+    additional_info: Dict[str, Any] = Field(default_factory=dict)
 
 class ExamContent(BaseModel):
     questions: List[ExamQuestion]
@@ -165,7 +169,7 @@ class QuizQuestion(BaseModel):
     question: str
     options: Optional[List[str]] = None
     correct_answer: str
-    explanation: str
+    explanation: Optional[str] = None
 
 class QuizContent(BaseModel):
     questions: List[QuizQuestion]

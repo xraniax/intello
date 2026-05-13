@@ -198,8 +198,8 @@ async def cancel_job(payload: dict):
         return {"status": "success", "stage": "job_cancel", "job_id": job_id, "message": "Cancellation requested"}
 
     try:
-        celery_app.celery_app.control.revoke(job_id, terminate=False)
-        return {"status": "success", "stage": "job_cancel", "job_id": job_id, "message": "Cancellation requested"}
+        celery_app.celery_app.control.revoke(job_id, terminate=True, signal='SIGKILL')
+        return {"status": "success", "stage": "job_cancel", "job_id": job_id, "message": "Cancellation requested (SIGKILL)"}
     except Exception as e:
         logger.exception("Job cancellation failed")
         return _stage_error_response("job_cancel", "Failed to cancel job", details=str(e), status_code=500)
@@ -214,9 +214,20 @@ async def stream_job_status(job_id: str):
         iteration = 0
         unknown_iterations = 0
         last_status = None
+        # Safety cap: 15 minutes (900 iterations)
+        MAX_STREAM_ITERATIONS = 900 
 
         while True:
             iteration += 1
+            if iteration > MAX_STREAM_ITERATIONS:
+                logger.error("[STREAM_TERMINATE] job_id=%s reason=iteration_ceiling_reached", job_id)
+                payload = {
+                    "chunk": "Stream timed out after 5 minutes. Please check job status manually.",
+                    "status": "FAILURE",
+                    "is_final": True
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                break
             try:
                 resolved = await _resolve_job(job_id)
 
@@ -258,6 +269,14 @@ async def stream_job_status(job_id: str):
                         # after its countdown. Keep polling; do NOT treat as terminal.
                         # Celery will transition to SUCCESS or FAILURE on its own.
                         chunk_text = "Retrying generation..."
+                        
+                        # Add visibility into retry count
+                        try:
+                            task_info = task_result.info or {}
+                            if isinstance(task_info, dict) and "retry_count" in task_info:
+                                chunk_text = f"Retrying generation (Attempt {task_info['retry_count']}/3)..."
+                        except:
+                            pass
                     else:
                         chunk_text = status
 

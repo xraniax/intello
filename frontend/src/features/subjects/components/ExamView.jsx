@@ -372,7 +372,8 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
     const [isExporting, setIsExporting] = useState(false);
 
     const handleDownload = async () => {
-        const element = document.getElementById(viewMode === 'results' ? 'results-content' : 'exam-content') || document.body;
+        // Target the full printable exam container to ensure all questions are exported
+        const element = document.getElementById('printable-exam') || document.body;
         if (!element) return;
 
         setIsExporting(true);
@@ -799,7 +800,7 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
 
 const PrintableExam = ({ exam, result, answers }) => {
     return (
-        <div className="hidden print:block fixed inset-0 bg-white z-[9999] overflow-auto p-12 text-gray-900 font-serif">
+        <div id="printable-exam" className="hidden print:block fixed inset-0 bg-white z-[9999] overflow-auto p-12 text-gray-900 font-serif">
             <div className="max-w-4xl mx-auto border-b-2 border-gray-900 pb-8 mb-12">
                 <h1 className="text-3xl font-bold mb-2 uppercase tracking-tight">{exam?.title || 'Exam Paper'}</h1>
                 <div className="flex justify-between text-xs font-bold uppercase tracking-widest text-gray-500">

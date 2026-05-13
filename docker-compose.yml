@@ -110,6 +110,7 @@ services:
   ollama:
     image: ollama/ollama
     container_name: ollama
+    runtime: nvidia
     ports:
       - "11434:11434"
     deploy:

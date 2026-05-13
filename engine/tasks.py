@@ -17,6 +17,8 @@ from services.retrieval import retrieve_chunks_by_topic
 from services.generation import generate_study_material
 from services.summary_pipeline import generate_summary, MAP_MAX_CHUNKS as SUMMARY_MAP_MAX_CHUNKS
 from services.exam_utils import normalize_exam, wrap_normalized_exam
+from services.exceptions import NonRetriableGenerationError
+from pydantic import ValidationError
 from utils.logging import get_job_logger
 
 logger = logging.getLogger(__name__)
@@ -112,7 +114,7 @@ def task_ocr(self, file_path, document_id, subject_id, user_id=None):
 
     from services.preprocessing import preprocess_step
     try:
-        pre = preprocess_step(file_path, job_id=job_id)
+        pre = preprocess_step(file_path, request_id=job_id)
         text = pre.get("cleaned_text", "")
         duration = time.perf_counter() - start_time
         
@@ -188,7 +190,7 @@ def task_embed(self, data):
 
     from services.embeddings import embed_step
     try:
-        embeddings = embed_step(chunks, job_id=job_id)
+        embeddings = embed_step(chunks, request_id=job_id)
         duration = time.perf_counter() - start_time
         log.info(f"STEP: EMBEDDING SUCCESS (duration: {duration:.2f}s)")
         return {
@@ -311,85 +313,7 @@ def initialize_workspace_config(subject_id: str, existing_opts: Optional[dict] =
     return config
 
 
-def _normalize_generation_result(material: Any, material_type: str, topic: Optional[str], language: str, top_k: int, subject_id: str) -> dict:
-    """Normalize generation output to the ai_generated_content contract only."""
-    if isinstance(material, dict) and material.get("error"):
-        raise RuntimeError(str(material.get("error")))
-
-    if isinstance(material, dict) and "content" in material and "ai_generated_content" in material:
-        raise ValueError("Mixed contract detected - legacy content leak")
-
-    if isinstance(material, dict) and "ai_generated_content" in material:
-        payload = material.get("ai_generated_content")
-        if not isinstance(payload, dict):
-            raise ValueError("Invalid engine response: ai_generated_content must be an object")
-        if "content" not in payload:
-            raise ValueError("Invalid engine response: ai_generated_content.content is required")
-
-        metadata = payload.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-
-        return {
-            "type": payload.get("type") or material_type,
-            "content": payload.get("content"),
-            "metadata": {
-                "model": os.getenv("OLLAMA_GENERATION_MODEL", "unknown"),
-                "provider": "ollama",
-                **metadata,
-                "additional_info": {
-                    "topic": topic,
-                    "language": language,
-                    "top_k": top_k,
-                    "subject_id": subject_id,
-                },
-            },
-        }
-
-    # Direct output from generate_study_material: {type, content, metadata}
-    if isinstance(material, dict) and "content" in material and "type" in material:
-        metadata = material.get("metadata") or {}
-        if not isinstance(metadata, dict):
-            metadata = {}
-        return {
-            "type": material.get("type") or material_type,
-            "content": material.get("content"),
-            "metadata": {
-                "model": os.getenv("OLLAMA_GENERATION_MODEL", "unknown"),
-                "provider": "ollama",
-                **metadata,
-                "additional_info": {
-                    "topic": topic,
-                    "language": language,
-                    "top_k": top_k,
-                    "subject_id": subject_id,
-                },
-            },
-        }
-
-    # String outputs are allowed and wrapped in the normalized schema.
-    normalized_content = material if isinstance(material, str) else material
-    
-    result = {
-        "type": material_type,
-        "content": normalized_content,
-        "metadata": {
-            "model": os.getenv("OLLAMA_GENERATION_MODEL", "unknown"),
-            "provider": "ollama",
-            "additional_info": {
-                "topic": topic,
-                "language": language,
-                "top_k": top_k,
-                "subject_id": subject_id,
-            },
-        },
-    }
-
-    if material_type == "exam":
-        norm_data = normalize_exam(result)
-        result = wrap_normalized_exam(result, norm_data)
-    
-    return result
+# DELETED: _normalize_generation_result has been moved to services/generation.py
 
 def _safe_remove(path: Optional[str]) -> None:
     if not path or not os.path.exists(path):
@@ -692,48 +616,25 @@ def task_generate_material(
                 effective_language,
                 user_id=user_id,
                 difficulty=difficulty,
-                count=count
+                count=count,
+                subject_id=subject_id
             )
 
-        # Fast-path normalization for summary strings (S-7)
-        if material_type == "summary" and isinstance(material, str):
-            ai_generated_content = {
-                "type": "summary",
-                "content": material,
-                "metadata": {
-                    "model": os.getenv("OLLAMA_GENERATION_MODEL", "unknown"),
-                    "provider": "ollama",
-                    "additional_info": {
-                        "topic": effective_topic,
-                        "language": effective_language,
-                        "top_k": top_k,
-                        "subject_id": subject_id,
-                    },
-                },
-            }
-        else:
-            ai_generated_content = _normalize_generation_result(
-                material,
-                material_type,
-                effective_topic,
-                effective_language,
-                top_k,
-                subject_id,
-            )
-        
+        # SUCCESS Return path
         return {
             "status": "SUCCESS",
             "material_type": material_type,
-            "ai_generated_content": ai_generated_content,
+            "ai_generated_content": material,
         }
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        # Non-retriable: programming errors or bad input that a retry cannot fix.
-        # ValueError covers "No document chunks found"; the others cover code bugs
-        # that should surface immediately rather than burn retry budget.
-        logger.exception("Task Generation failed with non-retriable error (%s)", type(e).__name__)
+    except (KeyError, TypeError, AttributeError, NonRetriableGenerationError, RuntimeError) as e:
+        # Non-retriable: programming errors or exhausted internal retries.
+        # These should surface immediately rather than burn retry budget.
+        retry_count = self.request.retries
+        logger.error("[TASK_FAIL] id=%s retry=%d/3 terminal_reason=%s error=%s", self.request.id, retry_count, type(e).__name__, str(e))
         raise
     except Exception as e:
-        logger.exception("Task Generation failed")
+        retry_count = self.request.retries
+        logger.warning("[TASK_RETRY] id=%s retry=%d/3 reason=%s error=%s", self.request.id, retry_count, type(e).__name__, str(e))
         # Retry with exponential backoff on failure (likely Ollama timeout)
         raise self.retry(exc=e, countdown=2 ** self.request.retries * 15)
     finally:

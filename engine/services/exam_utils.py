@@ -14,8 +14,13 @@ def normalize_exam(exam: Dict[str, Any]) -> Dict[str, Any]:
     # Extract questions and answer_sheet according to requested logic
     if "content" in exam and isinstance(exam, dict):
         content = exam["content"]
-        questions = content.get("questions", [])
-        answer_sheet = content.get("answer_sheet", [])
+        if isinstance(content, dict):
+            questions = content.get("questions", [])
+            answer_sheet = content.get("answer_sheet", [])
+        else:
+            # content is likely a raw string from fallback generation
+            questions = []
+            answer_sheet = []
     else:
         # Fallback / legacy format
         questions = exam.get("questions", [])

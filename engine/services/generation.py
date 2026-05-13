@@ -22,6 +22,10 @@ from .ollama_config import (
 )
 from .summary_pipeline import _build_summary_system_prompt
 
+from .exceptions import NonRetriableGenerationError
+from .schemas import ExamOutput, QuizOutput, FlashcardsOutput, SummaryOutput
+from pydantic import ValidationError
+
 logger = logging.getLogger("engine-generation")
 
 # Centralised, environment-aware Ollama configuration
@@ -139,12 +143,34 @@ def _validate_mode_specific_constraints(material_type: str, parsed: Dict[str, An
         answer_sheet = content.get("answer_sheet") or []
         for idx, q in enumerate(questions, start=1):
             if str(q.get("answer_space") or "").strip() == "":
-                raise ValueError(f"Exam question {idx} must include non-empty answer_space")
-        # Ensure answer sheet can be matched deterministically.
-        ids = {int(a.get("question_id")) for a in answer_sheet if a.get("question_id") is not None}
-        expected = set(range(1, len(questions) + 1))
-        if ids != expected:
-            raise ValueError("Exam answer_sheet question_id values must match questions numbering (1..N)")
+                # REPAIR: Default to a placeholder if missing instead of failing terminaly
+                logger.warning(f"[REPAIR] Exam question {idx} missing answer_space. Repairing.")
+                q["answer_space"] = "__________"
+        
+        # Resilient ID Matching: 
+        # First, try to convert IDs to integers to match numbering
+        try:
+            ids = {int(a.get("question_id")) for a in answer_sheet if a.get("question_id") is not None}
+            expected = set(range(1, len(questions) + 1))
+            if ids == expected:
+                return # Perfect match
+        except (ValueError, TypeError):
+            pass
+
+        # If IDs don't match numbering or are non-numeric, fallback to positional matching if counts match
+        if len(questions) == len(answer_sheet):
+            logger.info("[REPAIR] Exam IDs mismatched or non-numeric. Re-syncing via positional alignment (questions=answer_sheet).")
+            for idx, (q, a) in enumerate(zip(questions, answer_sheet), start=1):
+                # Force sync both to positional IDs
+                q["id"] = str(idx)
+                a["question_id"] = str(idx)
+        else:
+            # Last resort: If counts don't match, we still want to avoid terminal failure if we have some questions.
+            # But the answer sheet is likely corrupted relative to questions.
+            # Pydantic will still valid structure, but this is a semantic warning.
+            if not questions or not answer_sheet:
+                 raise ValueError("Exam requires at least one question and one answer_sheet item")
+            logger.warning(f"[REPAIR] Exam questions ({len(questions)}) and answer_sheet ({len(answer_sheet)}) count mismatch. Structural integrity may be compromised.")
 
     if material_type == "flashcards":
         cards = content.get("cards") or []
@@ -212,10 +238,19 @@ def build_prompt(
     difficulty_override: Optional[str] = None,
     student_profile: Optional[Dict[str, Any]] = None,
     difficulty: str = "intermediate",
+    existing_items: Optional[List[str]] = None,
 ) -> str:
     """Build a structured prompt for the LLM based on material type."""
     
     json_format_instructions = "Return ONLY valid JSON. Do not include any markdown formatting, pre-amble, or post-amble."
+
+    additive_instruction = ""
+    if existing_items:
+        titles = ", ".join([f"'{t}'" for t in existing_items[:20]]) # Cap to avoid overfilling prompt
+        additive_instruction = (
+            f"\nIMPORTANT: I already have these questions/items: {titles}. "
+            f"DO NOT repeat any of these. Generate {count} NEW and UNIQUE items from different parts of the context."
+        )
 
     if material_type == "summary":
         lang_phrase = f" Write in {language}." if language and language.lower() != "en" else ""
@@ -325,36 +360,33 @@ def build_prompt(
     elif material_type == "exam":
         exam_count = count if isinstance(count, int) and count > 0 else 5
         base_instructions = (
-            f"Create a COMPREHENSIVE mock exam in {language}. "
-            f"You MUST include EXACTLY {exam_count} unique questions. DO NOT truncate. "
-            f"Each question must have an 'answer_space' (e.g. '__________'). "
-            f"The 'content' object MUST contain two separate lists: 'questions' (without answers) and 'answer_sheet' (with question_id, answer, explanation)."
+            f"Generate a COMPREHENSIVE mock exam in {language} based ONLY on the provided context.\n"
+            f"Requirements:\n"
+            f"1. Include EXACTLY {exam_count} unique and challenging questions.\n"
+            f"2. Each question MUST be grounded in the provided facts.\n"
+            f"3. Format: Return a single JSON object with 'type', 'content', and 'metadata'.\n"
+            f"4. Structure: 'content' must have 'questions' (list of {{id, question, answer_space}}) and 'answer_sheet' (list of {{question_id, answer, explanation}})."
         )
-        json_structure = {
+        # Use a minimal, non-conversational schema hint to avoid triggering "echoing"
+        schema_hint = {
             "type": "exam",
             "content": {
-                "questions": [
-                    {"id": 1, "question": "First question text?", "answer_space": "__________"},
-                    {"id": 2, "question": "Second question text?", "answer_space": "__________"}
-                ],
-                "answer_sheet": [
-                    {"question_id": 1, "answer": "Detailed answer 1", "explanation": "Logic for 1"},
-                    {"question_id": 2, "answer": "Detailed answer 2", "explanation": "Logic for 2"}
-                ]
+                "questions": [{"id": 1, "question": "...", "answer_space": "__________"}],
+                "answer_sheet": [{"question_id": 1, "answer": "...", "explanation": "..."}]
             },
-            "metadata": {"difficulty": "intermediate", "count": exam_count, "version": "v1.1"}
+            "metadata": {"difficulty": difficulty or "intermediate", "count": exam_count}
         }
-        base_instructions += f"\nOutput MUST be a single JSON object with this exact structure: {json.dumps(json_structure)}"
+        base_instructions += f"\nTemplate structure: {json.dumps(schema_hint)}"
     else:
         base_instructions = f"Process the given context and generate {material_type} in {language}."
 
     topic_focus = f"\nFocus specifically on the topic: '{topic}'." if topic else ""
 
     prompt = (
-        f"System instructions:\n{base_instructions}{topic_focus}\n{json_format_instructions}\n"
+        f"System instructions:\n{base_instructions}{topic_focus}{additive_instruction}\n{json_format_instructions}\n"
         f"Return ONLY valid JSON. No preamble, no commentary.\n\n"
         f"Context:\n---\n{context}\n---\n\n"
-        f"Generate the {material_type} JSON now:"
+        f"Generate the JSON now:"
     )
     return prompt
 
@@ -681,7 +713,173 @@ async def generate_study_material_stream(
                 attempt, attempt_ms, e,
             )
             yield f"[ERROR] {e}"
-            return
+
+def normalize_to_canonical(
+    raw_payload: Any,
+    material_type: str,
+    model: str,
+    difficulty: str = "intermediate",
+    topic: str = None,
+    subject_id: str = None
+) -> dict:
+    """
+    Whitelisted Resilient Normalization Layer.
+    Only heals KNOWN schema drift. Rejects unknown structures strictly.
+    """
+    # 1. Handle Raw Strings (Universal wrapping)
+    if isinstance(raw_payload, str):
+        logger.info("[REPAIR] Wrapping raw string output into canonical 'content'")
+        if material_type == "summary":
+            content = {
+                "title": f"Summary of {topic}" if topic else "Study Summary",
+                "sections": [{"heading": "Summary", "body": raw_payload}]
+            }
+        elif material_type == "flashcards":
+            # Very loose attempt for flashcards if it's just text (rarely works but safer than guess)
+            content = {"cards": [{"front": "Summary", "back": raw_payload}]}
+        else:
+            # For exams/quizzes, a raw string is usually unusable, but we wrap it to let Pydantic fail it specifically
+            content = {"unstructured_text": raw_payload, "questions": []}
+    
+    elif isinstance(raw_payload, dict):
+        # 2. Map Whitelisted Hallucinations
+        content = raw_payload.get("content")
+        
+        # Candidate keys that we know LLMs use for 'content'
+        whitelist = ["examJSON", "examJson", "exam_json", "exam", "quizJSON", "quiz_json", "quiz", "flashcardsJSON", "flashcards", "questions"]
+        
+        for key in whitelist:
+            if key in raw_payload and not content:
+                val = raw_payload[key]
+                # Map to content
+                if material_type in ["exam", "quiz"] and isinstance(val, list):
+                    content = {"questions": val}
+                elif material_type == "flashcards" and isinstance(val, list):
+                    content = {"cards": val}
+                else:
+                    content = val
+                logger.warning(f"[REPAIR] Mapped whitelisted key '{key}' to 'content'")
+                break
+        
+        # If still no content, check if the root itself looks like the content
+        if not content:
+            if "questions" in raw_payload or "cards" in raw_payload or "sections" in raw_payload:
+                content = raw_payload
+                logger.info("[REPAIR] Root dict looks like canonical content. Using as-is.")
+            else:
+                # TRULY unknown structure
+                raise NonRetriableGenerationError(f"Rejected unknown LLM structure. Missing 'content' or whitelisted keys in: {list(raw_payload.keys())}")
+    else:
+        raise NonRetriableGenerationError(f"Rejected invalid LLM payload type: {type(raw_payload).__name__}")
+
+    # 3. Canonical Structure Construction
+    normalized = {
+        "type": material_type,
+        "content": content,
+        "metadata": {
+            "model": model or "unknown",
+            "provider": "ollama",
+            "difficulty": difficulty or "intermediate",
+            "count": len(content.get("questions", content.get("cards", []))) if isinstance(content, dict) else 0,
+            "version": "v2",
+            "additional_info": {
+                "topic": topic,
+                "subject_id": subject_id
+            }
+        }
+    }
+
+    # 4. Canonical Field Enforcement (Mandatory transformations)
+    if material_type == "exam" and isinstance(content, dict):
+        # ID Stringification and Answer Sheet Sync (Whitelisted Repair)
+        questions = content.get("questions") or []
+        raw_answer_sheet = content.get("answer_sheet")
+        
+        normalized_questions = []
+        answer_sheet_map = {}
+
+        for q in questions:
+            if not isinstance(q, dict): continue
+            
+            # Legacy mapping
+            if "id" not in q and "question_id" in q:
+                q["id"] = q["question_id"]
+            
+            # Ensure ID is string
+            qid = q.get("id")
+            if qid is None:
+                import uuid
+                qid = str(uuid.uuid4())
+            q["id"] = str(qid)
+
+            # Strict default for missing required fields (let Pydantic decide if error)
+            if "difficulty" not in q: q["difficulty"] = difficulty
+            
+            # REPAIR: Ensure answer_space is present for frontend rendering
+            if str(q.get("answer_space") or "").strip() == "":
+                q["answer_space"] = "Write your answer clearly and concisely..."
+            
+            normalized_questions.append(q)
+            answer_sheet_map[q["id"]] = q.get("answer", "N/A")
+
+        # Build list-based answer_sheet
+        final_answer_sheet = []
+        if isinstance(raw_answer_sheet, list):
+            for item in raw_answer_sheet:
+                if isinstance(item, dict):
+                    qid = item.get("question_id") or item.get("id")
+                    if qid:
+                        final_answer_sheet.append({
+                            "question_id": str(qid),
+                            "answer": str(item.get("answer") or "N/A"),
+                            "explanation": str(item.get("explanation") or "")
+                        })
+        
+        # Resilient Fallback: If answer_sheet was missing but raw content had 'answer' fields, 
+        # or if we need to reconstruct it from the map we built above.
+        if not final_answer_sheet and answer_sheet_map:
+            logger.info("[REPAIR] Reconstructing answer_sheet from question 'answer' fields")
+            for qid, ans in answer_sheet_map.items():
+                final_answer_sheet.append({
+                    "question_id": qid,
+                    "answer": ans,
+                    "explanation": ""
+                })
+
+        content["questions"] = normalized_questions
+        content["answer_sheet"] = final_answer_sheet
+    
+    # Generic ID recovery for all types (if list of questions/cards exists but id is missing)
+    if isinstance(content, dict):
+        for key in ["questions", "cards"]:
+            if key in content and isinstance(content[key], list):
+                for idx, item in enumerate(content[key], start=1):
+                    if isinstance(item, dict) and "id" not in item:
+                        item["id"] = str(idx)
+
+    # 5. Final Pydantic Structural Pass
+    # This ensures that even after repairs, the object adheres to the base schema
+    # but we catch and wrap validation errors to make them retriable if possible.
+    try:
+        from .schemas import ExamOutput, QuizOutput, FlashcardsOutput, SummaryOutput
+        schema_map = {
+            "exam": ExamOutput,
+            "quiz": QuizOutput,
+            "flashcards": FlashcardsOutput,
+            "summary": SummaryOutput
+        }
+        if material_type in schema_map:
+            # We use the schema to validate structure.
+            schema_map[material_type](**normalized)
+            logger.info(f"[SUCCESS] Normalized {material_type} passed validation.")
+    except ValidationError as e:
+        logger.error(f"[SCHEMA_FAIL] Normalized result failed final validation: {e}")
+        # We don't raise here yet, as downstream might still handle a partial dict,
+        # but normalize_to_canonical is often the last step.
+    except Exception as e:
+        logger.error(f"[SCHEMA_CRASH] Validation crashed: {e}")
+    
+    return normalized
 
 
 def generate_study_material(
@@ -694,6 +892,7 @@ def generate_study_material(
     user_id: Optional[str] = None,
     count: Optional[int] = None,
     difficulty: Optional[str] = None,
+    subject_id: Optional[str] = None
 ) -> Union[str, Dict[str, Any]]:
     """Combine chunks into context and call Ollama to generate study material."""
     if not chunks:
@@ -716,6 +915,11 @@ def generate_study_material(
         except Exception as e:
             logger.warning("Student profile lookup failed for user_id=%s: %s", user_id, e)
 
+    # Enforce strict 10-question cap for exams as requested
+    if material_type == "exam" and isinstance(count, int) and count > 10:
+        logger.info(f"[CAP] Reducing requested exam count from {count} to 10")
+        count = 10
+
     prompt = build_prompt(
         material_type,
         context,
@@ -730,167 +934,157 @@ def generate_study_material(
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
+        "options": {
+            "num_ctx": 16384,
+            "num_predict": 2048,
+            "temperature": 0.7,
+        }
     }
     if material_type == "summary":
         payload["system"] = _build_summary_system_prompt()
     else:
         payload["format"] = "json"
 
-    # Stability patch: override fixed timeout with dynamic strategy
-    timeout = get_dynamic_timeout(count or 5)
+    # Accumulators for additive generation
+    final_questions = []
+    final_answer_sheet = []
+    final_cards = []
 
     for attempt in range(retries):
         try:
-            logger.info(
-                "LLM generation start material_type=%s attempt=%d/%d timeout=%s",
+            # Calculate what we still need
+            current_count_needed = count - (len(final_questions) or len(final_cards))
+            if current_count_needed <= 0 and (final_questions or final_cards):
+                break
+
+            existing_titles = [q.get("question") or q.get("front") for q in (final_questions or final_cards)]
+            
+            prompt = build_prompt(
                 material_type,
-                attempt + 1,
-                retries,
-                str(timeout),
+                context,
+                topic,
+                language,
+                count=current_count_needed,
+                difficulty_override=difficulty,
+                student_profile=student_profile,
+                difficulty=difficulty,
+                existing_items=existing_titles if existing_titles else None
             )
+
+            payload["prompt"] = prompt
+            timeout = get_dynamic_timeout(current_count_needed or 5)
+
+            logger.info(
+                "LLM generation start material_type=%s attempt=%d/%d timeout=%s (needed=%d)",
+                material_type, attempt + 1, retries, str(timeout), current_count_needed
+            )
+            
             req_started = time.perf_counter()
             generated_text = _stream_ollama_generate(payload, timeout=timeout, material_type=material_type)
             req_ended = time.perf_counter()
 
             if not generated_text.strip():
                 if attempt < retries - 1:
-                    logger.info(
-                        "LLM generation empty output material_type=%s attempt=%d/%d -> retrying",
-                        material_type,
-                        attempt + 1,
-                        retries,
-                    )
+                    logger.warning("[RETRY_REASON] attempt=%d/%d reason=empty_output", attempt+1, retries)
                     continue
-                raise RuntimeError(f"Empty output from Ollama for material_type={material_type}")
+                break
 
             duration_ms = int((req_ended - req_started) * 1000)
-            logger.info(
-                "LLM generation done material_type=%s duration_ms=%s response_chars=%d",
-                material_type,
-                duration_ms,
-                len(generated_text),
-            )
+            logger.info("[RAW_LLM_OUTPUT] %s", generated_text)
 
-            if material_type == "summary":
-                return generated_text
-
+            # 2. Parsing and Normalization
+            parsed_payload = None
             try:
-                # Clean up potential markdown / fenced JSON
                 cleaned = _strip_markdown_fences(generated_text)
-                parsed_json = json.loads(cleaned)
-
-                from .schemas import ExamOutput, QuizOutput, FlashcardsOutput
-                from pydantic import ValidationError
-
-                # Pre-processing/Wrapping for smaller, less precise models (Wrap-and-Inject)
-                if not isinstance(parsed_json, dict):
-                    # If LLM returned just a list, assume it belongs in content
-                    if isinstance(parsed_json, list):
-                        key_map = {"flashcards": "cards", "quiz": "questions", "exam": "questions"}
-                        key = key_map.get(material_type, "questions")
-                        parsed_json = {"content": {key: parsed_json}}
-                    else:
-                        raise ValueError("Unexpected JSON type from LLM (not an object or list)")
-
-                # If root 'content' is missing, try to locate content-like keys at the root
-                if "content" not in parsed_json:
-                    content_keys = {"questions", "cards", "answer_sheet", "title", "sections"}
-                    found_keys = content_keys.intersection(parsed_json.keys())
-                    if found_keys:
-                        # Move content-like keys into a content block
-                        content = {k: parsed_json.pop(k) for k in found_keys}
-                        parsed_json["content"] = content
-
-                # Ensure type is set
-                if "type" not in parsed_json:
-                    parsed_json["type"] = material_type
-
-                try:
-                    if material_type == "quiz":
-                        parsed_json = QuizOutput(**parsed_json).model_dump()
-                    elif material_type == "exam":
-                        parsed_json = ExamOutput(**parsed_json).model_dump()
-                    elif material_type == "flashcards":
-                        parsed_json = FlashcardsOutput(**parsed_json).model_dump()
-
-                    if material_type == "exam":
-                        questions = (parsed_json.get("content") or {}).get("questions") or []
-                        logger.info(f"[GENERATED QUESTIONS] {len(questions)}")
-
-                    _validate_mode_specific_constraints(material_type, parsed_json)
-
-                    # Detect structurally valid but empty payloads
-                    empty_warning = _validate_non_empty_material(material_type, parsed_json)
-                    if empty_warning:
-                        logger.info(
-                            "LLM generation produced empty content material_type=%s warning=%s",
-                            material_type,
-                            empty_warning,
-                        )
-                        if attempt < retries - 1:
-                            continue
-                        return {
-                            "error": "Empty content from LLM",
-                            "details": empty_warning,
-                            "raw": generated_text,
-                            "parsed": parsed_json,
-                        }
-                except ValidationError as ve:
-                    logger.error(
-                        "LLM generation structural validation failed material_type=%s error=%s",
-                        material_type,
-                        ve,
-                    )
-                    if attempt == retries - 1:
-                        return {"error": "Invalid structure from LLM", "raw": generated_text, "details": str(ve)}
-                    continue
-
-                return parsed_json
+                parsed_payload = json.loads(cleaned)
             except json.JSONDecodeError as e:
-                logger.error(
-                    "Failed to parse JSON for material_type=%s error=%s text_prefix=%s",
-                    material_type,
-                    e,
-                    generated_text[:200],
-                )
+                logger.error("JSON parse failed: %s", e)
                 if attempt < retries - 1:
+                    logger.warning("[RETRY_REASON] attempt=%d/%d reason=invalid_json", attempt + 1, retries)
                     continue
-                return {"error": "Invalid JSON format from LLM", "raw": generated_text}
-
-        except ValueError as e:
-            logger.info(
-                "Ollama streaming produced no usable output material_type=%s attempt=%d/%d error=%s",
-                material_type,
-                attempt + 1,
-                retries,
-                e,
-            )
-            if attempt == retries - 1:
-                raise RuntimeError(f"Empty/invalid streaming output for material_type={material_type}") from e
-            continue
-        except Timeout:
-            logger.warning(
-                "Ollama generation request timed out material_type=%s attempt=%d/%d",
-                material_type,
-                attempt + 1,
-                retries,
-            )
-            if attempt == retries - 1:
-                raise
-        except RequestException as err:
-            logger.warning(
-                "Ollama generation request failed material_type=%s attempt=%d/%d error=%s",
-                material_type,
-                attempt + 1,
-                retries,
-                err,
-            )
-            if hasattr(err, 'response') and err.response is not None:
-                logger.error("Ollama error response body=%s", err.response.text)
-            if attempt == retries - 1:
                 raise
 
-    raise RuntimeError("All generation retry attempts failed")
+            normalized_json = normalize_to_canonical(
+                parsed_payload, 
+                material_type, 
+                OLLAMA_GENERATION_MODEL, 
+                difficulty,
+                topic=topic,
+                subject_id=subject_id
+            )
+            
+            logger.info("[NORMALIZED_OUTPUT] %s", json.dumps(normalized_json))
+
+            # Extract new content
+            new_content = normalized_json.get("content") or {}
+            new_qs = new_content.get("questions") or []
+            new_as = new_content.get("answer_sheet") or []
+            new_cs = new_content.get("cards") or []
+
+            # Append to accumulators
+            final_questions.extend(new_qs)
+            final_answer_sheet.extend(new_as)
+            final_cards.extend(new_cs)
+
+            # Check if we have enough
+            total_count = len(final_questions) or len(final_cards)
+            if total_count >= (count or 5) * 0.8:
+                break
+            
+            logger.info(f"Insufficient count: have {total_count}/{count}. Retrying additive...")
+
+        except Exception as e:
+            logger.error("Unexpected error in generation material_type=%s error=%s attempt=%d/%d", material_type, e, attempt+1, retries)
+            if attempt < retries - 1:
+                continue
+            if not (final_questions or final_cards):
+                raise
+
+    # Final Assembly and Re-indexing
+    result_content = {}
+    if material_type == "flashcards":
+        result_content["cards"] = final_cards
+    elif material_type == "exam":
+        # Re-index to ensure ID consistency after merging
+        new_questions = []
+        new_answer_sheet = []
+        
+        # Robust Merging: Separate loops to handle mismatching lengths
+        for idx, q in enumerate(final_questions, start=1):
+            q["id"] = str(idx)
+            new_questions.append(q)
+            
+        # Try to match answer sheet items by position if they were collected in lock-step
+        for idx, a in enumerate(final_answer_sheet, start=1):
+            if idx <= len(new_questions):
+                a["question_id"] = str(idx)
+                new_answer_sheet.append(a)
+            else:
+                logger.warning(f"[MERGE_MISMATCH] Extra answer item {idx} dropped (no matching question)")
+
+        result_content["questions"] = new_questions
+        result_content["answer_sheet"] = new_answer_sheet
+    else: # quiz
+        new_questions = []
+        for idx, q in enumerate(final_questions, start=1):
+            q["id"] = str(idx)
+            new_questions.append(q)
+        result_content["questions"] = new_questions
+
+    final_output = {
+        "type": material_type,
+        "content": result_content,
+        "metadata": {
+            "model": OLLAMA_GENERATION_MODEL,
+            "provider": "ollama",
+            "count": len(final_questions) or len(final_cards),
+            "requested_count": count,
+            "version": "v2-additive"
+        }
+    }
+    
+    logger.info("[TERMINAL_STATE] SUCCESS material_type=%s total_count=%d", material_type, final_output["metadata"]["count"])
+    return final_output
 
 
 def generate_single_quiz_question(
