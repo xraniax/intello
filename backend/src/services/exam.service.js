@@ -15,6 +15,7 @@ const EXAM_CACHE_LIMIT = 500;
 const FORBIDDEN_TOKENS = /\b(almost|correct|incorrect)\b/i;
 const MAX_GENERATION_ATTEMPTS = 10;
 const MAX_REGEN_ROUNDS = 5;
+const OVERFETCH_FACTOR = 1.5;
 const SUPPORTED_TYPES = [
     'single_choice',
     'multiple_select',
@@ -536,7 +537,7 @@ class ExamService {
             const currentDifficulty = getDifficultyForProgress(accepted.length, targetCount, payload.difficulty);
 
             const batch = await requestQuestionBatch({
-                numberOfQuestions: missing,
+                numberOfQuestions: Math.ceil(missing * OVERFETCH_FACTOR),
                 difficulty: currentDifficulty,
                 topics: payload.topics,
                 allowedTypes,
