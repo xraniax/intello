@@ -70,6 +70,8 @@ class GenerateRequest(BaseModel):
     source_filenames: Optional[List[str]] = None
     # Material UUIDs (from backend) to restrict retrieval context.
     material_ids: Optional[List[UUID]] = None
+    # For one-shot streams, the backend may pre-create a material record and pass its ID here.
+    material_id: Optional[UUID] = None
 
 class ChatRequest(BaseModel):
     subject_id: UUID
@@ -137,6 +139,7 @@ class UnifiedChatResponse(BaseModel):
 class ExamQuestion(BaseModel):
     id: str
     question: str
+    type: Optional[str] = "mcq"  # e.g., mcq, essay, fill_blank, matching
     options: List[str] = Field(default_factory=list)
     answer: Optional[str] = None
     answer_space: Optional[str] = None

@@ -92,6 +92,8 @@ const MaterialsPanel = ({
     isExpanded,
     onRetry,
     generationStartTime,
+    streamProgress,
+    onStop,
 }) => {
     // Merged state using redis-fix pattern but individual variables for legacy compatibility where needed or just full object
     const [genOptions, setGenOptions] = useState({
@@ -435,52 +437,12 @@ const MaterialsPanel = ({
                             error={genError}
                             onRetry={onRetry}
                             startTime={generationStartTime}
+                            progress={streamProgress}
+                            onStop={onStop}
                         />
                     )}
 
-                    {genResult ? (
-                        <div className="animate-in slide-in-from-bottom-4 duration-500">
-                            {(() => {
-                                let parsedResult = genResult;
-                                if (typeof genResult === 'string' && (genResult.trim().startsWith('{') || genResult.trim().startsWith('['))) {
-                                    try { parsedResult = JSON.parse(genResult); } catch { }
-                                }
-
-                                if (genType === 'summary') {
-                                    return <SummaryView summaryData={parsedResult} title="Draft Summary" isExpanded={isExpanded} />;
-                                }
-                                if (genType === 'quiz') {
-                                    return (
-                                        <div className="space-y-4">
-                                            <h3 className="text-base font-black text-gray-700 px-1">Quiz Preview</h3>
-                                            <div className="border rounded-[2rem] overflow-hidden shadow-lg" style={{ borderColor: 'rgba(124, 92, 252, 0.15)' }}>
-                                                <QuizView quizData={parsedResult} isExpanded={isExpanded} />
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                if (genType === 'flashcards') {
-                                    return (
-                                        <div className="space-y-4">
-                                            <h3 className="text-base font-black text-gray-700 px-1">Flashcard Preview</h3>
-                                            <div className="border rounded-[2rem] overflow-hidden shadow-lg" style={{ borderColor: 'rgba(124, 92, 252, 0.15)' }}>
-                                                <FlashcardsView flashcardsData={parsedResult} isExpanded={isExpanded} />
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                if (genType === 'mock_exam') {
-                                    // Exam renders in its own tab (created by useMaterialGeneration)
-                                    return null;
-                                }
-                                return (
-                                    <div className="border rounded-2xl p-6 text-sm whitespace-pre-wrap font-mono leading-relaxed" style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border-soft)', color: 'var(--c-text)' }}>
-                                        {typeof parsedResult === 'object' ? JSON.stringify(parsedResult, null, 2) : String(parsedResult)}
-                                    </div>
-                                );
-                            })()}
-                        </div>
-                    ) : isGenerating ? (
+                    {isGenerating ? (
                         <GenerationLoadingOverlay
                             isGenerating={isGenerating}
                             genType={genType}
@@ -488,6 +450,8 @@ const MaterialsPanel = ({
                             error={genError}
                             onRetry={onRetry}
                             startTime={generationStartTime}
+                            progress={streamProgress}
+                            onStop={onStop}
                         />
                     ) : (
                         <div className="py-16 text-center space-y-4 opacity-40">

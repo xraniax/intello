@@ -15,7 +15,7 @@ from services.google_drive import download_file_from_drive
 from services.ingestion import ingest_file
 from services.retrieval import retrieve_chunks_by_topic
 from services.generation import generate_study_material
-from services.summary_pipeline import generate_summary, MAP_MAX_CHUNKS as SUMMARY_MAP_MAX_CHUNKS
+from services.summary_pipeline import generate_summary, MAP_MAX_CHUNKS as SUMMARY_MAP_MAX_CHUNKS, SUMMARY_MAX_CONTEXT_CHARS
 from services.exam_utils import normalize_exam, wrap_normalized_exam
 from services.exceptions import NonRetriableGenerationError
 from pydantic import ValidationError
@@ -579,9 +579,12 @@ def task_generate_material(
             chunk_texts = chunks
         elif material_type == "summary":
             from services.retrieval import retrieve_sequential_chunks
-            # FIX S-1: Cap retrieval to prevent OOM on large subjects.
+            # Smart limit: fetch enough chunks for the one-shot path.
+            # Chunks average ~1500 chars each; targeting slightly over threshold
+            # so the pipeline can decide. Map-reduce will activate naturally for truly large docs.
+            ONE_SHOT_CHUNK_LIMIT = max(20, SUMMARY_MAX_CONTEXT_CHARS // 1500)
             chunks_with_scores = retrieve_sequential_chunks(
-                db, subject_id, limit=SUMMARY_MAP_MAX_CHUNKS, 
+                db, subject_id, limit=ONE_SHOT_CHUNK_LIMIT, 
                 source_filenames=source_filenames or [],
                 material_ids=material_ids
             )
@@ -607,6 +610,7 @@ def task_generate_material(
                 topic=effective_topic,
                 language=effective_language,
                 difficulty=difficulty,
+                summary_mode=request_options.get("summary_mode"),
             )
         else:
             material = generate_study_material(
@@ -617,7 +621,8 @@ def task_generate_material(
                 user_id=user_id,
                 difficulty=difficulty,
                 count=count,
-                subject_id=subject_id
+                subject_id=subject_id,
+                options=request_options
             )
 
         # SUCCESS Return path

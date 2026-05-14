@@ -24,7 +24,7 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-async def stream_llm_response(generator: AsyncIterator[str], *, source: str) -> AsyncGenerator[str, None]:
+async def stream_llm_response(generator: AsyncIterator[str], *, source: str, metadata: dict = None) -> AsyncGenerator[str, None]:
     """Normalize raw text chunks into a unified SSE contract.
 
     Contract:
@@ -58,6 +58,11 @@ async def stream_llm_response(generator: AsyncIterator[str], *, source: str) -> 
 
     async def _get_next():
         return await iterator.__anext__()
+
+    # ── Force Immediate Headers ──
+    # Yielding a dummy keep-alive ensures FastAPI sends headers (200 OK)
+    # immediately, unblocking the browser's fetch call.
+    yield ": stream-started\n\n"
 
     def _start_batch_timer():
         """Reset the batch deadline to now + flush_interval."""
@@ -134,6 +139,28 @@ async def stream_llm_response(generator: AsyncIterator[str], *, source: str) -> 
                 yield _sse({"type": "progress", "stage": progress_msg or "processing"})
                 continue
 
+            if text.startswith("[METADATA]"):
+                # Flush any pending delta buffer before the non-delta event.
+                flush_payload = _build_flush()
+                if flush_payload:
+                    yield flush_payload
+                try:
+                    meta_json = text[10:].strip()
+                    meta_data = json.loads(meta_json)
+                    yield _sse({"type": "metadata", **meta_data})
+                except Exception as e:
+                    logger.warning("[STREAM_CORE] Failed to parse metadata JSON: %s", e)
+                continue
+
+            if text.startswith("[ERROR]"):
+                # Flush any pending delta buffer before the non-delta event.
+                flush_payload = _build_flush()
+                if flush_payload:
+                    yield flush_payload
+                err_msg = text[7:].strip()
+                yield _sse({"type": "error", "message": err_msg or "Unknown engine error"})
+                continue
+
             # ── Accumulate delta token into the batch buffer ─────────────
             chunk_count += 1
             total_chars += len(text)
@@ -205,4 +232,7 @@ async def stream_llm_response(generator: AsyncIterator[str], *, source: str) -> 
             logger.debug("[STREAM_CORE] source=%s iterator close failed", source)
 
         if not is_closing:
-            yield _sse({"type": "final", "done": True})
+            final_payload = {"type": "final", "done": True}
+            if metadata:
+                final_payload.update(metadata)
+            yield _sse(final_payload)

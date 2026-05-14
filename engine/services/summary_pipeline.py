@@ -38,24 +38,30 @@ OLLAMA_BASE_URL = get_ollama_base_url()
 OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_GENERATION_MODEL = get_ollama_generation_model(required=True)
 
-OLLAMA_GENERATION_TIMEOUT = int(os.getenv("OLLAMA_GENERATION_TIMEOUT", "300"))
+OLLAMA_GENERATION_TIMEOUT = int(os.getenv("OLLAMA_GENERATION_TIMEOUT", "600"))
 OLLAMA_REQUEST_RETRIES = int(os.getenv("OLLAMA_REQUEST_RETRIES", "4"))
 OLLAMA_REQUEST_RETRY_DELAY_SECONDS = float(os.getenv("OLLAMA_REQUEST_RETRY_DELAY_SECONDS", "2"))
 
 # Summary-specific context limits — larger than the shared 15K to accommodate
 # post-MAP synthesis material.  MAP summaries are already compressed so 30K
 # gives the REDUCE stage enough room without hitting Ollama context limits.
+# Threshold for switching between "One-Shot" (fast) and "Map-Reduce" (comprehensive).
+# Increased to 100k characters so almost all common 10-60 page PDFs stay in the fast path.
 SUMMARY_MAX_CONTEXT_CHARS = int(os.getenv("SUMMARY_MAX_CONTEXT_CHARS", "30000"))
 
-# MAP stage configuration.
+# Target size for coalescing chunks during the MAP phase. 4500 chars (approx 3 chunks) 
+# reduces sequential overhead of LLM calls significantly on slower hardware.
+MAP_BLOCK_CHARS = int(os.getenv("MAP_BLOCK_CHARS", "4500"))
+
+# Absolute max chunks to retrieve to prevent OOM/timeouts on massive subjects.
 MAP_MAX_CHUNKS = int(os.getenv("MAP_MAX_CHUNKS", "80"))
-MAP_CONCURRENCY = int(os.getenv("MAP_CONCURRENCY", "2"))
-STREAM_MAP_MAX_CHUNKS = int(os.getenv("STREAM_MAP_MAX_CHUNKS", "20"))
+MAP_CONCURRENCY = int(os.getenv("MAP_CONCURRENCY", "1"))
+STREAM_MAP_MAX_CHUNKS = int(os.getenv("STREAM_MAP_MAX_CHUNKS", "30"))
 
 # Per-chunk MAP timeout.  MAP prompts are short extractions — they don't need
-# the full 300 s generation budget.  A stuck chunk releases its concurrency
+# the full generation budget.  A stuck chunk releases its concurrency
 # slot after this many seconds, unblocking the rest of the batch.
-MAP_CHUNK_TIMEOUT_SECONDS = int(os.getenv("MAP_CHUNK_TIMEOUT_SECONDS", "90"))
+MAP_CHUNK_TIMEOUT_SECONDS = int(os.getenv("MAP_CHUNK_TIMEOUT_SECONDS", "180"))
 
 # Retry delay for MAP chunks specifically. Shorter than the shared generation
 # delay (2 s default) because holding an executor thread idle hurts concurrency.
@@ -128,6 +134,21 @@ def _build_summary_system_prompt() -> str:
 
 # ── User Prompt ──────────────────────────────────────────────────────────────
 
+def map_mode_to_difficulty(summary_mode: Optional[str]) -> str:
+    """Map a summary mode identifier to a canonical difficulty level."""
+    if not summary_mode:
+        return "intermediate"
+    
+    mapping = {
+        "key_concepts": "introductory",
+        "teach_me_mode": "introductory",
+        "concise_summary": "intermediate",
+        "detailed_explanation": "advanced",
+        "exam_ready_notes": "advanced",
+    }
+    return mapping.get(summary_mode, "intermediate")
+
+
 def build_summary_prompt(
     context: str,
     language: str = "en",
@@ -137,68 +158,86 @@ def build_summary_prompt(
 ) -> str:
     """Build the user-facing REDUCE prompt, injecting a mode-specific depth strategy.
 
-    The system prompt holds the invariant contract (grounding, structure, multi-doc rules).
     This function injects the depth frame or learning style based on summary_mode.
+    If summary_mode is not selected, it falls back to the canonical depth strategies
+    driven by the difficulty parameter.
     """
+    # 1. If difficulty is "adaptive" and no mode is set, default to teach_me_mode.
+    #    The engine does not have a real adaptive algorithm for summaries (only for quizzes).
+    #    "Teach Me Mode" is the closest semantic match: it adapts to the learner
+    #    by using simple language, analogies, and a progressive tutor style.
+    if difficulty == "adaptive" and not summary_mode:
+        summary_mode = "teach_me_mode"
+        logger.info("[TRACE][SYNC] adaptive summary defaulted to teach_me_mode")
+
+    # 2. Sync difficulty with summary_mode if difficulty is default/ambiguous
+    if summary_mode and difficulty in ("intermediate", "adaptive"):
+        difficulty = map_mode_to_difficulty(summary_mode)
+        logger.info("[TRACE][SYNC] Mapped summary_mode '%s' to difficulty '%s'", summary_mode, difficulty)
+
     lang_phrase = f" Write in {language}." if language and language.lower() != "en" else ""
 
-    # Pedagogical Depth Strategies
+    # 2. Derive Depth Signal from difficulty
+    if difficulty in ("introductory", "beginner", "easy"):
+        depth_signal = (
+            "DEPTH STRATEGY: INTRODUCTORY\n"
+            "Coverage: 1-2 essential concepts per topic cluster. Skip sub-concepts.\n"
+            "Explanation: Surface-level summary of what and why."
+        )
+    elif difficulty in ("advanced", "hard"):
+        depth_signal = (
+            "DEPTH STRATEGY: ADVANCED\n"
+            "Coverage: Exhaustive coverage of all material, preserving all nuances."
+        )
+    else:
+        depth_signal = (
+            "DEPTH STRATEGY: INTERMEDIATE\n"
+            "Coverage: All major concepts with moderate depth."
+        )
+
+    # 3. Derive Mode-specific Instruction
+    mode_instruction = ""
     if summary_mode == "key_concepts":
-        depth_strategy = (
+        mode_instruction = (
             "MODE: KEY CONCEPTS\n"
             "Goal: Extract ONLY essential points and definitions.\n"
             "Format: Bullet-point format for rapid revision.\n"
             "Constraint: No filler content, no elaborate reasoning. Focus on 'the what'."
         )
     elif summary_mode == "concise_summary":
-        depth_strategy = (
+        mode_instruction = (
             "MODE: CONCISE SUMMARY\n"
             "Goal: Balanced compression of content.\n"
             "Format: Short, highly structured paragraphs.\n"
             "Constraint: Explain the core concepts without exhaustive detail."
         )
     elif summary_mode == "detailed_explanation":
-        depth_strategy = (
+        mode_instruction = (
             "MODE: DETAILED EXPLANATION\n"
             "Goal: Step-by-step reasoning and context.\n"
             "Format: Comprehensive sections with depth.\n"
             "Constraint: Include reasoning, background context, and all supporting details."
         )
     elif summary_mode == "exam_ready_notes":
-        depth_strategy = (
+        mode_instruction = (
             "MODE: EXAM READY NOTES\n"
             "Goal: Optimization for exam preparation.\n"
             "Format: Headings + definitions + formulas + quick-recall facts.\n"
             "Constraint: Use a highly structured revision format."
         )
     elif summary_mode == "teach_me_mode":
-        depth_strategy = (
+        mode_instruction = (
             "MODE: TEACH ME (TUTOR STYLE)\n"
             "Goal: Progressive learning through simple language.\n"
             "Format: Conversational, tutor-style explanation.\n"
             "Constraint: Use analogies and simple language to explain complex ideas."
         )
-    else:
-        # Fallback to legacy difficulty logic if summary_mode is not provided
-        if difficulty in ("introductory", "beginner", "easy"):
-            depth_strategy = (
-                "DEPTH STRATEGY: BEGINNER\n"
-                "Coverage: 1-2 essential concepts per topic cluster. Skip sub-concepts.\n"
-                "Explanation: Surface-level summary of what and why."
-            )
-        elif difficulty in ("advanced", "hard"):
-            depth_strategy = (
-                "DEPTH STRATEGY: ADVANCED\n"
-                "Coverage: Exhaustive coverage of all material, preserving all nuances."
-            )
-        else:
-            depth_strategy = (
-                "DEPTH STRATEGY: INTERMEDIATE\n"
-                "Coverage: All major concepts with moderate depth."
-            )
+
+    # Combine signals
+    combined_strategy = f"{mode_instruction}\n{depth_signal}" if mode_instruction else depth_signal
 
     prompt = (
-        f"{depth_strategy}{lang_phrase}\n\n"
+        f"{combined_strategy}{lang_phrase}\n\n"
         f"Text to summarize:\n---\n{context}\n---\n\n"
         f"Summary:"
     )
@@ -315,6 +354,13 @@ def _map_summarize_chunk(
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
+        "options": {
+            "num_predict": 512,      # Cap output to prevent chatty MAP summaries
+            "temperature": 0.1,      # Deterministic extraction
+            "top_k": 20,
+            "top_p": 0.9,
+            "num_ctx": 4096,         # MAP chunks are small, so 4k is plenty
+        },
         "keep_alive": -1,
     }
 
@@ -355,14 +401,35 @@ def _prepare_eligible_chunks(
     chunks: List[str],
     max_chunks: int,
 ) -> List[str]:
-    """Filter and cap chunks for MAP processing."""
-    eligible = [c for c in chunks if len(c.strip()) >= _MIN_CHUNK_CHARS]
-    if len(eligible) > max_chunks:
+    """Filter, coalesce, and cap chunks for MAP processing.
+    
+    Restoration refinement: Individual 1500-char chunks are merged into
+    blocks of ~4500 chars (MAP_BLOCK_CHARS) to reduce the total number
+    of sequential LLM calls and fixed startup overhead.
+    """
+    raw_eligible = [c for c in chunks if len(c.strip()) >= _MIN_CHUNK_CHARS]
+    
+    coalesced = []
+    current_block = []
+    current_len = 0
+    for chunk in raw_eligible:
+        if current_len + len(chunk) > MAP_BLOCK_CHARS and current_block:
+            coalesced.append("\n\n".join(current_block))
+            current_block = [chunk]
+            current_len = len(chunk)
+        else:
+            current_block.append(chunk)
+            current_len += len(chunk)
+    if current_block:
+        coalesced.append("\n\n".join(current_block))
+    
+    if len(coalesced) > max_chunks:
         logger.warning(
-            "[SUMMARY][MAP] capping %d eligible chunks to %d", len(eligible), max_chunks,
+            "[SUMMARY][MAP] capping %d blocks to %d", len(coalesced), max_chunks,
         )
-        eligible = eligible[:max_chunks]
-    return eligible
+        coalesced = coalesced[:max_chunks]
+        
+    return coalesced
 
 
 def generate_map_summaries(
@@ -545,6 +612,7 @@ async def generate_summary_stream(
             "[SUMMARY][MAP_SKIP] total_chars=%d <= max_context=%d",
             total_chars, SUMMARY_MAX_CONTEXT_CHARS,
         )
+        yield "[PROGRESS] Generating one-shot summary..."
     else:
         map_start = time.perf_counter()
         logger.info(
@@ -736,15 +804,45 @@ def generate_summary(
     if not chunks:
         return "Not enough context to generate summary."
 
-    # ── MAP ──
-    logger.info("[SUMMARY][SYNC] starting MAP for %d chunks, difficulty=%s, mode=%s", len(chunks), difficulty, summary_mode)
-    mapped = generate_map_summaries(
-        chunks, language, difficulty, timeout, retries,
-        max_chunks=MAP_MAX_CHUNKS,
-        summary_mode=summary_mode,
+    # ── Pre-flight check ──
+    total_chars = sum(len(c) for c in chunks)
+    logger.info(
+        "[SUMMARY][SYNC] total_chars=%d threshold=%d chunks=%d",
+        total_chars, SUMMARY_MAX_CONTEXT_CHARS, len(chunks),
     )
-    if mapped:
-        chunks = mapped
+
+    # Guard: if the document has almost no text (e.g. a scanned image with minimal OCR),
+    # there is nothing meaningful to summarize. Return a clear, helpful message immediately
+    # instead of burning 10+ minutes on LLM calls that will produce empty output.
+    _MIN_SUMMARY_CHARS = 200
+    if total_chars < _MIN_SUMMARY_CHARS:
+        logger.warning(
+            "[SUMMARY][SYNC_SKIP] total_chars=%d < min=%d — document has too little text to summarize",
+            total_chars, _MIN_SUMMARY_CHARS,
+        )
+        return (
+            "This document doesn't contain enough readable text to generate a summary. "
+            "If it's a scanned image or PDF, try re-uploading with OCR enabled."
+        )
+
+    # ── MAP ── (only when content genuinely exceeds the one-shot threshold)
+    if total_chars > SUMMARY_MAX_CONTEXT_CHARS:
+        logger.info(
+            "[SUMMARY][SYNC_MAP] total_chars=%d > threshold=%d — running MAP",
+            total_chars, SUMMARY_MAX_CONTEXT_CHARS,
+        )
+        mapped = generate_map_summaries(
+            chunks, language, difficulty, timeout, retries,
+            max_chunks=MAP_MAX_CHUNKS,
+            summary_mode=summary_mode,
+        )
+        if mapped:
+            chunks = mapped
+    else:
+        logger.info(
+            "[SUMMARY][SYNC_MAP_SKIP] total_chars=%d <= threshold=%d — using one-shot path",
+            total_chars, SUMMARY_MAX_CONTEXT_CHARS,
+        )
 
     # ── REDUCE ──
     context = _build_summary_context(chunks)

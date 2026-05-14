@@ -39,7 +39,7 @@ const SubjectDetail = () => {
         filePanelCollapsed, setFilePanelCollapsed,
         genType, setGenType, handleGenerate, isGenerating,
         genResult, setGenResult, genError, jobProgress,
-        retryGeneration, generationStartTime,
+        retryGeneration, generationStartTime, streamProgress, stopMaterialGeneration,
         isListening, isSpeaking, stopSpeaking, listen, speak,
         handleVoiceInput, handleTTS,
         sessions, activeSessionId, sessionsLoading, savedMessages, savedLoading, renameSession, deleteSession,
@@ -63,7 +63,7 @@ const SubjectDetail = () => {
         tabs, isExpanded, subjectId: id, subjectName: subject?.name,
         genType, setGenType, handleGenerate, isGenerating,
         jobProgress, selectedUploads, genResult, setGenResult, genError,
-        retryGeneration, generationStartTime, requireAuth,
+        retryGeneration, generationStartTime, generatingMaterialId: ws.generatingMaterialId, streamProgress, stopGeneration: stopMaterialGeneration, requireAuth,
     };
 
     if (loading && (!subject || isAnyBlocking)) {

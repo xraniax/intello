@@ -7,6 +7,7 @@ import { toast } from 'react-hot-toast';
 import { MaterialService } from '@/services/MaterialService';
 import AnalyticsService from '@/services/AnalyticsService';
 import { ExportService } from '@/services/ExportService';
+import logo from '@/assets/logo.png';
 import pdfStyles from '@/assets/styles/pdf-v1.css?inline';
 import { extractExamData } from '@/features/subjects/utils/examUtils';
 
@@ -801,19 +802,34 @@ const ExamView = ({ examData: rawExamData, examId: propExamId, subjectId, isExpa
 const PrintableExam = ({ exam, result, answers }) => {
     return (
         <div id="printable-exam" className="hidden print:block fixed inset-0 bg-white z-[9999] overflow-auto p-12 text-gray-900 font-serif">
-            <div className="max-w-4xl mx-auto border-b-2 border-gray-900 pb-8 mb-12">
-                <h1 className="text-3xl font-bold mb-2 uppercase tracking-tight">{exam?.title || 'Exam Paper'}</h1>
-                <div className="flex justify-between text-xs font-bold uppercase tracking-widest text-gray-500">
-                    <div>Cognify Academic Intelligence</div>
-                    <div>Date: {new Date().toLocaleDateString()}</div>
+            {/* Branded Header */}
+            <div className="max-w-4xl mx-auto flex justify-between items-end border-b-4 border-[#2d3a74] pb-6 mb-12">
+                <div className="flex items-center gap-4">
+                    <img src={logo} alt="Cognify Logo" className="w-16 h-16 object-contain" />
+                    <div>
+                        <h1 className="text-4xl font-black text-[#2d3a74] uppercase tracking-tighter leading-none">
+                            Cogni<span className="text-[#8ce0c9]">fy</span>
+                        </h1>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-gray-400 mt-1">Academic Intelligence Division</p>
+                    </div>
+                </div>
+                <div className="text-right">
+                    <div className="text-2xl font-bold text-[#2d3a74]">{exam?.title || 'Examination Paper'}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mt-1">Date: {new Date().toLocaleDateString()}</div>
                 </div>
             </div>
 
             {result && (
-                <div className="mb-12 p-8 border-4 border-gray-900 rounded-3xl text-center bg-gray-50">
-                    <div className="text-sm font-bold uppercase tracking-[0.4em] text-gray-400 mb-2">Examination Result</div>
-                    <div className="text-6xl font-black mb-1">{result.score} / {result.total}</div>
-                    <div className="text-xs font-bold uppercase tracking-[0.2em]">{Math.round((result.score / result.total) * 100)}% Mastery Achievement</div>
+                <div className="mb-12 overflow-hidden rounded-3xl border-2 border-[#2d3a74] flex">
+                    <div className="bg-[#2d3a74] text-white p-8 flex flex-col justify-center items-center min-w-[200px]">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.3em] opacity-60 mb-2">Final Score</div>
+                        <div className="text-5xl font-black">{result.score} / {result.total}</div>
+                    </div>
+                    <div className="flex-1 bg-gray-50 p-8 flex flex-col justify-center">
+                        <div className="text-sm font-bold text-[#2d3a74] mb-1">Mastery Achievement Confirmed</div>
+                        <div className="text-3xl font-black text-[#8ce0c9]">{Math.round((result.score / result.total) * 100)}%</div>
+                        <div className="mt-2 text-[10px] text-gray-400 font-medium italic">This document serves as an official record of the assessment performed via Cognify AI.</div>
+                    </div>
                 </div>
             )}
 
@@ -823,28 +839,29 @@ const PrintableExam = ({ exam, result, answers }) => {
                     const userAnswer = answers?.[q.id];
                     
                     return (
-                        <div key={`print-${q.id}`} className="break-inside-avoid border-b border-gray-100 pb-8">
-                            <div className="flex gap-4 mb-4">
-                                <div className="p-2 border-2 border-gray-900 font-bold text-lg min-w-[40px] text-center">
+                        <div key={`print-${q.id}`} className="break-inside-avoid border-b border-gray-100 pb-10">
+                            <div className="flex gap-6 mb-4">
+                                <div className="p-3 bg-[#2d3a74] text-white font-black text-xl min-w-[50px] h-[50px] flex items-center justify-center rounded-lg shadow-sm">
                                     {idx + 1}
                                 </div>
-                                <div className="pt-1">
-                                    <p className="text-xl font-bold mb-4 leading-tight">{q.question}</p>
+                                <div className="pt-2 flex-1">
+                                    <p className="text-2xl font-bold mb-6 text-[#1a1f3d] leading-tight">{q.question}</p>
                                     
                                     {/* Options for Choices */}
                                     {(q.type === 'single_choice' || q.type === 'multiple_select') && (
-                                        <div className="space-y-2 ml-4">
+                                        <div className="grid grid-cols-2 gap-4 ml-2">
                                             {(q.options || []).map((opt, oIdx) => {
                                                 const isUserSelection = userAnswer?.selectedAnswers?.includes(oIdx);
                                                 const isCorrectSelection = detail?.correctAnswers?.includes(oIdx);
                                                 
                                                 return (
-                                                    <div key={`print-opt-${oIdx}`} className="flex items-center gap-3">
-                                                        <div className={`w-4 h-4 border-2 border-gray-900 ${isUserSelection ? 'bg-gray-900' : ''}`} />
-                                                        <span className={`text-base ${isCorrectSelection && result ? 'font-black underline' : ''}`}>
+                                                    <div key={`print-opt-${oIdx}`} className={`flex items-center gap-3 p-3 rounded-xl border-2 ${isUserSelection ? 'border-[#2d3a74] bg-gray-50' : 'border-gray-100'}`}>
+                                                        <div className={`w-5 h-5 rounded-full border-2 border-[#2d3a74] flex items-center justify-center`}>
+                                                            {isUserSelection && <div className="w-2.5 h-2.5 rounded-full bg-[#2d3a74]" />}
+                                                        </div>
+                                                        <span className={`text-base font-medium ${isCorrectSelection && result ? 'text-[#2d3a74] font-black' : 'text-gray-700'}`}>
                                                             {opt}
-                                                            {isCorrectSelection && result && <span className="ml-2 text-xs font-bold">[CORRECT]</span>}
-                                                            {isUserSelection && result && !isCorrectSelection && <span className="ml-2 text-xs font-bold">[YOUR ANSWER]</span>}
+                                                            {isCorrectSelection && result && <span className="ml-2 text-[10px] font-bold bg-[#8ce0c9]/20 text-[#2d3a74] px-1.5 py-0.5 rounded uppercase">Correct</span>}
                                                         </span>
                                                     </div>
                                                 );
@@ -854,21 +871,23 @@ const PrintableExam = ({ exam, result, answers }) => {
 
                                     {/* Evaluation for Text-based */}
                                     {result && detail && !['single_choice', 'multiple_select'].includes(q.type) && (
-                                        <div className="mt-4 p-4 border-2 border-dashed border-gray-300 rounded-xl space-y-2">
-                                            <div className="text-[10px] font-bold uppercase text-gray-500">Your Response:</div>
-                                            <div className="text-sm italic">{detail.userAnswerText || "(No response)"}</div>
+                                        <div className="mt-4 p-6 bg-gray-50 border-l-4 border-[#2d3a74] rounded-r-2xl space-y-3">
+                                            <div>
+                                                <div className="text-[10px] font-bold uppercase text-gray-400 mb-1">Your Response:</div>
+                                                <div className="text-sm font-bold text-gray-800 italic">"{detail.userAnswerText || "(No response)"}"</div>
+                                            </div>
                                             {!detail.isCorrect && (
-                                                <>
-                                                    <div className="text-[10px] font-bold uppercase text-gray-900 mt-2">Reference Answer:</div>
-                                                    <div className="text-sm font-bold underline">{detail.correctAnswerText || detail.acceptedAnswers?.[0]}</div>
-                                                </>
+                                                <div className="pt-2 border-t border-gray-200">
+                                                    <div className="text-[10px] font-bold uppercase text-[#2d3a74] mb-1">Accepted Reference:</div>
+                                                    <div className="text-sm font-black underline decoration-[#8ce0c9] decoration-2">{detail.correctAnswerText || detail.acceptedAnswers?.[0]}</div>
+                                                </div>
                                             )}
                                         </div>
                                     )}
                                     
                                     {result && detail && detail.explanation && (
-                                        <div className="mt-4 text-xs text-gray-600 italic">
-                                            <strong>Insight:</strong> {detail.explanation}
+                                        <div className="mt-6 text-xs text-gray-500 leading-relaxed bg-[#8ce0c9]/5 p-4 rounded-xl italic border border-[#8ce0c9]/20">
+                                            <strong className="text-[#2d3a74] not-italic mr-1">Instructor Insight:</strong> {detail.explanation}
                                         </div>
                                     )}
                                 </div>
@@ -878,8 +897,18 @@ const PrintableExam = ({ exam, result, answers }) => {
                 })}
             </div>
 
-            <div className="mt-24 border-t-2 border-gray-900 pt-8 text-center text-[10px] font-bold uppercase tracking-[0.5em] text-gray-400">
-                End of Examination Paper - Generated by Cognify AI
+            {/* Branded Footer / Signature */}
+            <div className="mt-24 pt-12 border-t-2 border-gray-100 flex justify-between items-center">
+                <div className="space-y-1">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.5em] text-gray-300">Validation Authority</div>
+                    <div className="text-lg font-black text-[#2d3a74]">Cognify <span className="text-[#8ce0c9]">AI</span> Systems</div>
+                    <div className="text-[9px] text-gray-400">Authenticated Resource ID: {Math.random().toString(36).substring(7).toUpperCase()}</div>
+                </div>
+                <div className="text-right">
+                    <div className="w-48 h-px bg-gray-300 mb-4 ml-auto" />
+                    <div className="font-serif italic text-2xl text-[#2d3a74] pr-4">Cognify Academic</div>
+                    <div className="text-[9px] font-bold uppercase text-gray-400 mt-2">Official Digital Signature</div>
+                </div>
             </div>
         </div>
     );

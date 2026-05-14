@@ -10,6 +10,7 @@ import { useSubjectStore } from '@/store/useSubjectStore';
 import { ACCENTS, accentFor } from '@/pages/dashboard/dashboardUtils';
 import Orb from '@/pages/dashboard/Orb';
 import AnimatedStat from '@/pages/dashboard/AnimatedStat';
+import logo from '@/assets/logo.png';
 
 const NAV_ITEMS = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, accent: ACCENTS[0] },
@@ -77,6 +78,19 @@ const MainLayout = ({ children }) => {
                         opacity: 'var(--glow-opacity, 0)',
                     }}
                 />
+
+                {/* Brand Header */}
+                <div className="px-8 pt-4 pb-2 relative z-10 flex items-center gap-3">
+                    <div className="w-10 h-10 flex items-center justify-center">
+                        <img src={logo} alt="Cognify" className="w-full h-full object-contain" />
+                    </div>
+                    <div className="flex flex-col">
+                        <span className="text-xl font-black tracking-tight text-[#2d3a74] leading-none">
+                            Cogni<span className="text-[#8ce0c9]">fy</span>
+                        </span>
+                        <span className="text-[8px] font-black uppercase tracking-[0.2em] text-gray-400 mt-1">Growth Engine</span>
+                    </div>
+                </div>
 
                 {/* User card */}
                 <div className="p-4 relative z-10">

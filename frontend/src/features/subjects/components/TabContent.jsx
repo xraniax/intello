@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { BookOpen, Cloud, Sparkles, AlertTriangle, Trash2 } from 'lucide-react';
 import { BASE_URL } from '@/services/api';
@@ -10,10 +11,15 @@ import FlashcardsView from './FlashcardsView';
 import ExamView from './ExamView';
 import SummaryView from './SummaryView';
 import { extractExamData } from '../utils/examUtils';
+import { useRating } from '../hooks/useRating';
+import { useRatingStore } from '@/store/useRatingStore';
+import RatingModal from '@/components/Rating/RatingModal';
+import RatingBadge from '@/components/Rating/RatingBadge';
 
 const TabContent = ({
     tabId,
     tabs,
+    materials,
     isExpanded,
     subjectId,
     subjectName,
@@ -26,8 +32,47 @@ const TabContent = ({
     genError,
     retryGeneration,
     generationStartTime,
+    streamProgress,
+    generatingMaterialId,
+    stopGeneration,
     requireAuth,
 }) => {
+    const isLiveGenerating = isGenerating && String(tabId) === String(generatingMaterialId);
+    // Resolve tab early so hooks can read material.id unconditionally
+    let tab = tabs?.find((t) => t.id === tabId);
+    
+    // Auto-sync tab with the latest backend material data after generation finishes
+    if (materials && materials.length > 0 && tab) {
+        const freshMaterial = materials.find(m => String(m.id) === String(tabId) || (tab.material && String(m.id) === String(tab.material.id)));
+        if (freshMaterial) {
+            tab = { ...tab, material: freshMaterial, content: freshMaterial.content };
+        }
+    }
+
+    const ratingMaterialId = tab?.material?.id ?? null;
+
+    const isContentTab = tabId !== 'generator' && !!tab?.material && tab?.type !== 'upload';
+    const { engagementSeconds, openRatingModal, hasRated } = useRating(ratingMaterialId, {
+        active: isContentTab,
+        thresholdSeconds: 60,
+    });
+    const { modalOpen, ratings, actions: ratingActions } = useRatingStore();
+    const isRatingModalOpen = modalOpen === ratingMaterialId && !!ratingMaterialId;
+    const existingRating = ratingMaterialId ? (ratings[ratingMaterialId] ?? null) : null;
+
+    const ratingPortal = isRatingModalOpen
+        ? createPortal(
+            <RatingModal
+                materialId={ratingMaterialId}
+                materialTitle={tab?.title ?? 'this material'}
+                engagementSeconds={engagementSeconds}
+                existingRating={existingRating}
+                onClose={ratingActions.closeModal}
+            />,
+            document.body
+          )
+        : null;
+
     if (tabId === 'generator') {
         return (
             <MaterialsPanel
@@ -43,11 +88,12 @@ const TabContent = ({
                 isExpanded={isExpanded}
                 onRetry={retryGeneration}
                 generationStartTime={generationStartTime}
+                streamProgress={streamProgress}
+                onStop={stopGeneration}
             />
         );
     }
 
-    const tab = tabs.find(t => t.id === tabId);
     if (!tab) return null;
 
     if (tab.type === 'quiz' && tab.quizMode === 'adaptive') {
@@ -212,7 +258,8 @@ const TabContent = ({
     }
 
     // Use robust extraction utility to handle nested AI payloads
-    let parsedContent = extractExamData(material.ai_generated_content || material.content || '');
+    const contentToParse = isLiveGenerating ? genResult : (material.ai_generated_content || material.content || '');
+    let parsedContent = extractExamData(contentToParse);
 
     if (typeof parsedContent === 'object' && parsedContent) {
         parsedContent.id = material.id;
@@ -223,11 +270,17 @@ const TabContent = ({
         return (
             <div className="flex-1 h-full flex flex-col overflow-y-auto bg-transparent">
                 {DeletedBanner}
+                {hasRated && (
+                    <div className="flex justify-end px-4 pt-3">
+                        <RatingBadge rating={existingRating?.overall_rating} onEdit={openRatingModal} compact />
+                    </div>
+                )}
                 <div className="flex-1">
                     <MaterialErrorBoundary type="quiz">
                         <QuizView key={tab.id} quizMode="static" quizData={parsedContent} isExpanded={isExpanded} subjectId={subjectId} topic={subjectName || null} language="en" />
                     </MaterialErrorBoundary>
                 </div>
+                {ratingPortal}
             </div>
         );
     }
@@ -236,11 +289,17 @@ const TabContent = ({
         return (
             <div className="flex-1 h-full flex flex-col overflow-y-auto bg-transparent">
                 {DeletedBanner}
+                {hasRated && (
+                    <div className="flex justify-end px-4 pt-3">
+                        <RatingBadge rating={existingRating?.overall_rating} onEdit={openRatingModal} compact />
+                    </div>
+                )}
                 <div className="flex-1">
                     <MaterialErrorBoundary type="flashcards">
                         <FlashcardsView flashcardsData={parsedContent} subjectId={subjectId} isExpanded={isExpanded} />
                     </MaterialErrorBoundary>
                 </div>
+                {ratingPortal}
             </div>
         );
     }
@@ -249,11 +308,17 @@ const TabContent = ({
         return (
             <div className="flex-1 h-full flex flex-col overflow-y-auto bg-transparent">
                 {DeletedBanner}
+                {hasRated && (
+                    <div className="flex justify-end px-4 pt-3">
+                        <RatingBadge rating={existingRating?.overall_rating} onEdit={openRatingModal} compact />
+                    </div>
+                )}
                 <div className="flex-1">
                     <MaterialErrorBoundary type="exam">
                         <ExamView examData={parsedContent} examId={material.id} subjectId={subjectId} isExpanded={isExpanded} />
                     </MaterialErrorBoundary>
                 </div>
+                {ratingPortal}
             </div>
         );
     }
@@ -262,30 +327,48 @@ const TabContent = ({
         return (
             <div className="flex-1 h-full flex flex-col overflow-y-auto bg-transparent">
                 {DeletedBanner}
+                {hasRated && (
+                    <div className="flex justify-end px-4 pt-3">
+                        <RatingBadge rating={existingRating?.overall_rating} onEdit={openRatingModal} compact />
+                    </div>
+                )}
                 <div className="flex-1">
                     <MaterialErrorBoundary type="exam">
                         <ExamView key={material.id} examData={parsedContent} examId={material.id} subjectId={subjectId} isExpanded={isExpanded} />
                     </MaterialErrorBoundary>
                 </div>
+                {ratingPortal}
             </div>
         );
     }
 
     if (tab.type === 'summary' || material.type === 'summary') {
-        const summaryMode = material.ai_generated_content?.metadata?.summary_mode || material.ai_generated_content?.summary_mode;
+        const summaryMode = isLiveGenerating
+            ? genType
+            : (material.ai_generated_content?.metadata?.summary_mode || material.ai_generated_content?.summary_mode);
+        // summaries are markdown strings — bypass extractExamData (which is exam-only)
+        const summaryContent = isLiveGenerating
+            ? genResult
+            : (material.ai_generated_content || material.content || '');
         return (
             <div className="flex-1 h-full flex flex-col overflow-y-auto">
                 {DeletedBanner}
+                {hasRated && (
+                    <div className="flex justify-end px-4 pt-3">
+                        <RatingBadge rating={existingRating?.overall_rating} onEdit={openRatingModal} compact />
+                    </div>
+                )}
                 <div className="flex-1">
                     <MaterialErrorBoundary type="summary">
-                        <SummaryView 
-                            summaryData={parsedContent} 
-                            title={tab.title} 
-                            isExpanded={isExpanded} 
+                        <SummaryView
+                            summaryData={summaryContent}
+                            title={tab.title}
+                            isExpanded={isExpanded}
                             summaryMode={summaryMode}
                         />
                     </MaterialErrorBoundary>
                 </div>
+                {ratingPortal}
             </div>
         );
     }
@@ -302,6 +385,11 @@ const TabContent = ({
                             <Sparkles className={`${isExpanded ? 'w-5 h-5' : 'w-4 h-4'}`} style={{ color: 'var(--c-primary)' }} />
                         </div>
                         <h3 className={`${isExpanded ? 'text-2xl' : 'text-lg'} font-black tracking-tight capitalize transition-all`} style={{ color: 'var(--c-text)' }}>{tab.type.replace('_', ' ')} Insight</h3>
+                        {hasRated && (
+                            <div className="ml-auto">
+                                <RatingBadge rating={existingRating?.overall_rating} onEdit={openRatingModal} compact />
+                            </div>
+                        )}
                     </div>
                     <div className={`border rounded-[2.5rem] shadow-xl text-gray-800 leading-relaxed transition-all duration-500 relative overflow-hidden group ${isExpanded ? 'p-12 text-base' : 'p-8 text-sm'}`} style={{ background: 'var(--c-surface)', borderColor: 'var(--c-border-soft)' }}>
                         <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-[4rem] group-hover:scale-110 transition-transform opacity-30" style={{ background: 'var(--c-primary-light)' }}></div>
@@ -309,6 +397,7 @@ const TabContent = ({
                     </div>
                 </div>
             </div>
+            {ratingPortal}
         </div>
     );
 };

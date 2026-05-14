@@ -547,12 +547,28 @@ class MaterialService {
 
     const finalSubjectId =
       subjectId || (sourceDocuments.length > 0 ? sourceDocuments[0].subject_id : null);
-    if (!finalSubjectId) throw new Error('No subject context available for generation.');
-
     const materialType = TASK_TYPE_TO_MATERIAL_TYPE[taskType] || 'summary';
-
-    // Build GPS so difficulty reaches the engine prompt builder
     const gps = this._buildGPS(taskType, genOptions);
+    const displayType = materialType.charAt(0).toUpperCase() + materialType.slice(1);
+    const subject = await Subject.findById(finalSubjectId, userId);
+    const subjectName = subject ? subject.name : 'Unknown Subject';
+    let contextTitle =
+      sourceDocuments.length === 1
+        ? sourceDocuments[0].title
+        : sourceDocuments.length > 1
+          ? 'Multiple Sources'
+          : subjectName;
+    const baseTitle = `${displayType} of ${contextTitle}`;
+    const finalTitle = await this._resolveUniqueTitle(userId, finalSubjectId, baseTitle);
+
+    const materialRecord = await Material.create(
+      userId,
+      finalSubjectId,
+      finalTitle,
+      '',
+      materialType,
+      PROCESSING
+    );
 
     const enginePayload = {
       subject_id: finalSubjectId,
@@ -564,21 +580,21 @@ class MaterialService {
       user_id: userId,
       generation_options: gps,
       material_ids: safeIds,
+      material_id: materialRecord.id,
       ...(sourceFilenames.length > 0 && { source_filenames: sourceFilenames }),
     };
 
     console.log(
-      '[TRACE][BACKEND_SVC_ENGINE_REQ] type=%s subject=%s files=%d elapsed_ms=%d payload_keys=%s',
+      '[TRACE][BACKEND_SVC_ENGINE_REQ] type=%s subject=%s material_id=%s elapsed_ms=%d',
       materialType,
       finalSubjectId,
-      sourceFilenames.length,
-      Date.now() - startMs,
-      Object.keys(enginePayload).join(',')
+      materialRecord.id,
+      Date.now() - startMs
     );
 
     const resp = await engineClient.post('/generate/stream', enginePayload, {
       responseType: 'stream',
-      timeout: 600000, // 10 minutes — matches frontend GENERATION_TIMEOUT_MS
+      timeout: 600000, // 10 minutes
     });
 
     console.log(

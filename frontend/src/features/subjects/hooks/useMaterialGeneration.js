@@ -3,7 +3,7 @@ import { useMaterialStore } from '@/store/useMaterialStore';
 import { MaterialService } from '@/services/MaterialService';
 import { extractExamData } from '@/features/subjects/utils/examUtils';
 
-const GENERATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — MAP+REDUCE for large docs needs headroom
+const GENERATION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes — unified with engine timeout
 
 // ── Streaming flush config ──────────────────────────────────────────────────
 // Chunks accumulate in a ref and flush to React state at this interval.
@@ -43,13 +43,17 @@ export const useMaterialGeneration = ({
             });
         }
         setActiveTabId(String(mat.id));
-        setGenResult('');
+        // Do NOT reset genResult here — if called during streaming (on first delta),
+        // clearing it would wipe all accumulated content. After streaming, the tab
+        // renders from material.ai_generated_content, so genResult is irrelevant.
     }, [setTabs, setActiveTabId, tabsRef]);
 
     const [materialGenError, setMaterialGenError] = useState('');
     const [isGeneratingMaterial, setIsGeneratingMaterial] = useState(false);
     const [genResult, setGenResult] = useState('');
     const [generationStartTime, setGenerationStartTime] = useState(null);
+    const [streamProgress, setStreamProgress] = useState('');
+    const [generatingMaterialId, setGeneratingMaterialId] = useState(null);
 
     // Enhancement Refs
     const hasRenamedRef = useRef(false);
@@ -144,6 +148,8 @@ export const useMaterialGeneration = ({
     const finishGenerating = useCallback(() => {
         setIsGeneratingMaterial(false);
         setGenerationStartTime(null);
+        setStreamProgress('');
+        setGeneratingMaterialId(null);
         if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
@@ -186,6 +192,7 @@ export const useMaterialGeneration = ({
         streamBufferRef.current = '';
         setIsGeneratingMaterial(true);
         setGenerationStartTime(Date.now());
+        setStreamProgress('Connecting to engine...');
         hasRenamedRef.current = false;
         activeMaterialIdRef.current = null;
         activeGenTypeRef.current = genType;
@@ -317,23 +324,53 @@ export const useMaterialGeneration = ({
                             throw err;
                         }
 
-                        if (parsed.type === 'delta' && typeof parsed.data === 'string') {
-                            deltaCount++;
-                            if (deltaCount === 1) {
-                                console.log('[TRACE][FE_FIRST_DELTA] time_ms=%d', Math.round(performance.now() - feStartMs));
-                            }
-                            // Accumulate into the ref — the flush timer pushes to state.
-                            streamBufferRef.current += parsed.data;
+                        if (parsed.type === 'metadata' && parsed.material_id) {
+                            const mid = parsed.material_id;
+                            console.log('[TRACE][FE_SSE_METADATA] material_id: %s (buffered)', mid);
+                            activeMaterialIdRef.current = mid;
+                            setGeneratingMaterialId(mid);
+                            // Do NOT open the tab yet - wait for content (buffered opening)
+                            continue;
                         }
 
-                        // Backward compatibility for older payloads.
-                        if (parsed.delta) {
-                            deltaCount++;
-                            streamBufferRef.current += String(parsed.delta);
+                        if (parsed.type === 'delta' || typeof parsed.delta === 'string') {
+                            const deltaText = parsed.data || parsed.delta;
+                            if (typeof deltaText === 'string') {
+                                deltaCount++;
+                                if (deltaCount === 1) {
+                                    console.log('[TRACE][FE_FIRST_DELTA] time_ms=%d - opening tab', Math.round(performance.now() - feStartMs));
+                                    // First content received! Open the tab now.
+                                    if (activeMaterialIdRef.current) {
+                                        fetchMaterials().then(mats => {
+                                            const mat = mats.find(m => String(m.id) === String(activeMaterialIdRef.current));
+                                            if (mat) openMaterialTab(mat);
+                                        });
+                                    }
+                                }
+                                streamBufferRef.current += deltaText;
+                            }
+                        }
+
+                        if (parsed.type === 'progress' && parsed.stage) {
+                            setStreamProgress(parsed.stage);
                         }
 
                         if ((parsed.type === 'final' && parsed.done === true) || parsed.done === true) {
                             finalReceived = true;
+                            const mid = parsed.material_id || activeMaterialIdRef.current;
+                            if (mid) {
+                                console.log('[TRACE][FE_SSE_FINAL] material_id detected: %s', mid);
+                                activeMaterialIdRef.current = mid;
+                                setGeneratingMaterialId(mid);
+                                
+                                // Safety: if for some reason we never got a delta, open the tab on final
+                                if (deltaCount === 0) {
+                                    fetchMaterials().then(mats => {
+                                        const mat = mats.find(m => String(m.id) === String(mid));
+                                        if (mat) openMaterialTab(mat);
+                                    });
+                                }
+                            }
                             console.log('[TRACE][FE_SSE_FINAL] deltas=%d duration_ms=%d', deltaCount, Math.round(performance.now() - feStartMs));
                             streamDone = true;
                             break;
@@ -352,6 +389,15 @@ export const useMaterialGeneration = ({
             console.log('[TRACE][FE_STREAM_COMPLETE] deltas=%d final=%s error=%s total_ms=%d close=normal', deltaCount, finalReceived, errorReceived, totalMs);
             streamControllerRef.current = null;
             finishGenerating();
+            
+            // Auto-navigate to the newly created material
+            if (activeMaterialIdRef.current) {
+                const mats = await fetchMaterials();
+                const mat = mats.find(m => String(m.id) === String(activeMaterialIdRef.current));
+                if (mat) {
+                    openMaterialTab(mat);
+                }
+            }
             return;
         } catch (streamErr) {
             stopFlushTimer();
@@ -463,6 +509,14 @@ export const useMaterialGeneration = ({
             handleGenerateMaterial(params.genType, params.singleId, params.genOptions);
         }
     }, [handleGenerateMaterial]);
+ 
+    const stopGenerationMaterial = useCallback(() => {
+        if (streamControllerRef.current) {
+            streamControllerRef.current.abort();
+            streamControllerRef.current = null;
+        }
+        finishGenerating();
+    }, [finishGenerating]);
 
     return {
         materialGenError,
@@ -474,6 +528,9 @@ export const useMaterialGeneration = ({
         jobProgress,
         handleGenerateMaterial,
         retryGeneration,
+        generatingMaterialId,
         generationStartTime,
+        streamProgress,
+        stopGenerationMaterial,
     };
 };

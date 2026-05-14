@@ -53,6 +53,17 @@ class Chunk(Base):
     document = relationship("Document", back_populates="chunks")
 
 class Subject(Base):
+    """Links to app `subjects` table."""
     __tablename__ = "subjects"
-
     id = Column(UUID(as_uuid=True), primary_key=True)
+    name = Column(String)
+
+class Material(Base):
+    """Links to app `materials` table. Used to update generation status."""
+    __tablename__ = "materials"
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    subject_id = Column(UUID(as_uuid=True), ForeignKey("subjects.id"))
+    status = Column(String)
+    ai_generated_content = Column(Text)  # JSON-encoded string in Postgres
+    completed_at = Column(DateTime(timezone=True))
+    processed_at = Column(DateTime(timezone=True))

@@ -45,10 +45,45 @@ const GenerationLoadingOverlay = ({
     error = '',
     onRetry,
     startTime,
+    progress = '',
+    onStop,
 }) => {
     const [elapsed, setElapsed] = useState(0);
     const [tipIndex, setTipIndex] = useState(0);
+    const [logs, setLogs] = useState([]);
     const intervalRef = useRef(null);
+    const logScrollRef = useRef(null);
+
+    // Activity Log logic
+    useEffect(() => {
+        if (progress) {
+            setLogs(prev => {
+                // Avoid duplicate consecutive logs
+                if (prev.length > 0 && prev[prev.length - 1].message === progress) return prev;
+                const timestamp = new Date().toLocaleTimeString([], { 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit',
+                    hour12: false 
+                });
+                return [...prev, { timestamp, message: progress }];
+            });
+        }
+    }, [progress]);
+
+    // Auto-scroll logs
+    useEffect(() => {
+        if (logScrollRef.current) {
+            logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
+        }
+    }, [logs]);
+
+    // Reset logs when generation starts
+    useEffect(() => {
+        if (isGenerating && !error && elapsed === 0) {
+            setLogs([]);
+        }
+    }, [isGenerating, error, elapsed]);
 
     // Elapsed timer
     useEffect(() => {
@@ -112,7 +147,7 @@ const GenerationLoadingOverlay = ({
     // ── Loading State ────────────────────────────────────────────
     return (
         <div
-            className="generation-overlay animate-in fade-in"
+            className="generation-overlay animate-in fade-in max-w-md mx-auto"
             role="status"
             aria-live="polite"
             aria-busy="true"
@@ -121,14 +156,7 @@ const GenerationLoadingOverlay = ({
             {/* Animated Progress Ring */}
             <div className="generation-overlay__ring-wrapper">
                 <svg className="generation-overlay__ring" viewBox="0 0 100 100">
-                    {/* Track */}
-                    <circle
-                        cx="50" cy="50" r="42"
-                        fill="none"
-                        stroke="rgba(99,102,241,0.1)"
-                        strokeWidth="6"
-                    />
-                    {/* Progress arc */}
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(99,102,241,0.1)" strokeWidth="6" />
                     <circle
                         cx="50" cy="50" r="42"
                         fill="none"
@@ -152,41 +180,71 @@ const GenerationLoadingOverlay = ({
                 </div>
             </div>
 
-            {/* Primary Message */}
             <h3 className="text-base font-black text-gray-800 mt-5 mb-1 tracking-tight">
                 Generating your {count}-item {friendlyType(genType)}
             </h3>
-            <p className="text-sm text-gray-500 font-medium">
-                This may take {estimatedLabel}. You'll see it as soon as it's ready.
-            </p>
+            
+            {/* Activity Log - NEW */}
+            <div className="w-full mt-6 space-y-3">
+                <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Activity Log</span>
+                    <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-tight">Live Feedback</span>
+                    </div>
+                </div>
+                
+                <div 
+                    ref={logScrollRef}
+                    className="w-full h-32 bg-gray-50/50 border border-gray-100 rounded-2xl p-3 overflow-y-auto custom-scrollbar flex flex-col gap-2"
+                    style={{ background: 'linear-gradient(to bottom, rgba(249,250,251,0.8), rgba(249,250,251,0.4))' }}
+                >
+                    {logs.length === 0 ? (
+                        <div className="flex-1 flex flex-col items-center justify-center opacity-30 gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                            <span className="text-[10px] font-medium italic">Establishing connection...</span>
+                        </div>
+                    ) : (
+                        logs.map((log, i) => (
+                            <div 
+                                key={i} 
+                                className="flex gap-3 items-start animate-in slide-in-from-left-2 duration-300"
+                            >
+                                <span className="text-[9px] font-mono font-bold text-indigo-400/70 whitespace-nowrap pt-0.5">
+                                    [{log.timestamp}]
+                                </span>
+                                <span className="text-[10px] font-bold text-gray-600 leading-tight">
+                                    {log.message}
+                                </span>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
 
             {/* Tip Cycler */}
-            <div className="mt-4 h-5 overflow-hidden">
-                <p
-                    key={tipIndex}
-                    className="text-xs text-indigo-500/80 font-bold tracking-wide animate-in fade-in"
-                >
+            <div className="mt-6 px-4 py-2 bg-indigo-50/50 border border-indigo-100/50 rounded-xl">
+                 <p key={tipIndex} className="text-[10px] text-indigo-600 font-bold tracking-wide animate-in fade-in">
                     {TIPS[tipIndex]}
                 </p>
             </div>
 
-            {/* Elapsed Timer */}
-            <div className="flex items-center gap-1.5 mt-5 text-xs text-gray-400 font-bold">
-                <Clock className="w-3.5 h-3.5" />
-                <span>{formatElapsed(elapsed)} elapsed</span>
-            </div>
+            {/* Controls & Metrics */}
+            <div className="flex items-center justify-between w-full mt-8 pt-6 border-t border-gray-100">
+                <div className="flex items-center gap-1.5 text-xs text-gray-400 font-bold">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{formatElapsed(elapsed)} elapsed</span>
+                </div>
 
-            {/* Progress Dots */}
-            <div className="flex gap-1.5 mt-4">
-                {[0, 1, 2].map(i => (
-                    <div
-                        key={i}
-                        className="w-2 h-2 rounded-full bg-indigo-300"
-                        style={{
-                            animation: `progress-dot-bounce 1.4s ease-in-out ${i * 0.16}s infinite`,
-                        }}
-                    />
-                ))}
+                {onStop && (
+                    <button
+                        onClick={onStop}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:border-indigo-200 hover:bg-indigo-50 text-gray-500 hover:text-indigo-600 rounded-xl font-bold text-[10px] transition-all active:scale-95"
+                    >
+                        <div className="w-1.5 h-1.5 bg-gray-400 group-hover:bg-indigo-500 rounded-sm" />
+                        Stop Generation
+                    </button>
+                )}
             </div>
         </div>
     );

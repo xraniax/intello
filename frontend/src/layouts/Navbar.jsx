@@ -4,6 +4,7 @@ import { Menu, X, LayoutDashboard, UserCircle, LogOut, Shield, Sparkles, Zap, Tr
 import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
+import logo from '../assets/logo.png';
 
 const Navbar = () => {
     const user     = useAuthStore((s) => s.data.user);
@@ -52,32 +53,23 @@ const Navbar = () => {
             }}
         >
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-2.5 group">
+            <Link to="/" className="flex items-center gap-3 group">
                 <motion.div
-                    whileHover={{ rotate: [0, -12, 12, -6, 0], scale: 1.08 }}
+                    whileHover={{ scale: 1.05 }}
                     transition={{ duration: 0.5, type: 'spring', damping: 8 }}
-                    className="w-8 h-8 rounded-[10px] flex items-center justify-center relative overflow-hidden"
-                    style={{ background: 'var(--grad-primary)', boxShadow: 'var(--shadow-primary)' }}
+                    className="w-10 h-10 flex items-center justify-center relative"
                 >
-                    {/* Ambient inner glow that pulses */}
-                    <motion.div
-                        className="absolute inset-0 rounded-[10px]"
-                        style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.3), transparent)' }}
-                        animate={{ opacity: [0.4, 0.8, 0.4] }}
-                        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                    <img
+                        src={logo}
+                        alt="Cognify"
+                        className="w-full h-full object-contain"
                     />
-                    <motion.div
-                        animate={{ rotate: [0, 8, -8, 0] }}
-                        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-                    >
-                        <Sparkles className="w-4 h-4 text-white relative z-10" />
-                    </motion.div>
                 </motion.div>
                 <span
-                    className="text-[15px] font-bold tracking-tight"
-                    style={{ color: 'var(--c-text)', letterSpacing: '-0.025em' }}
+                    className="text-lg font-black tracking-tight"
+                    style={{ color: '#2d3a74', letterSpacing: '-0.025em' }}
                 >
-                    Cogni<span style={{ color: 'var(--c-primary)' }}>fy</span>
+                    Cogni<span style={{ color: '#8ce0c9' }}>fy</span>
                 </span>
             </Link>
 

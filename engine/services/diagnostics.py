@@ -17,7 +17,7 @@ async def audit_gpu_offload() -> Dict[str, Any]:
         start = time.perf_counter()
         async with httpx.AsyncClient() as client:
             await client.post(f"{OLLAMA_BASE_URL}/api/generate", json={
-                "model": "qwen2.5:7b-instruct",
+                "model": OLLAMA_GENERATION_MODEL,
                 "prompt": "ping",
                 "stream": False,
                 "options": {"num_predict": 1}

@@ -239,6 +239,7 @@ def build_prompt(
     student_profile: Optional[Dict[str, Any]] = None,
     difficulty: str = "intermediate",
     existing_items: Optional[List[str]] = None,
+    options: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Build a structured prompt for the LLM based on material type."""
     
@@ -359,22 +360,72 @@ def build_prompt(
 
     elif material_type == "exam":
         exam_count = count if isinstance(count, int) and count > 0 else 5
+
+        # ── Adaptive difficulty resolution ──────────────────────────────────
+        # Priority: explicit user override > student profile accuracy > fallback
+        adaptive_difficulty = difficulty or "intermediate"
+        adaptive_weak_topics: List[str] = []
+
+        if student_profile and not difficulty_override:
+            try:
+                accuracy = float(student_profile.get("accuracy", 0.5))
+            except (TypeError, ValueError):
+                accuracy = 0.5
+
+            if accuracy < 0.4:
+                adaptive_difficulty = "beginner"
+            elif accuracy < 0.65:
+                adaptive_difficulty = "intermediate"
+            else:
+                adaptive_difficulty = "advanced"
+
+            adaptive_weak_topics = [
+                str(t) for t in (student_profile.get("weak_topics") or []) if t
+            ]
+            logger.info(
+                "[ADAPTIVE][EXAM] Resolved difficulty=%s weak_topics=%s (accuracy=%.3f)",
+                adaptive_difficulty, adaptive_weak_topics, accuracy,
+            )
+        elif difficulty_override:
+            adaptive_difficulty = str(difficulty_override).strip()
+
+        # ── Question Type Distribution Resolution ──────────────────────────
+        # Extract requested question types from GPS distribution
+        distribution = (options or {}).get("generation_options", {}).get("distribution", [])
+        if not distribution and options:
+             # Fallback to direct types if distribution is missing
+             distribution = [{"type": t, "count": 1} for t in options.get("types", [])]
+
+        type_instructions = ""
+        if distribution:
+            type_counts = [f"{d.get('count', '')}x {d.get('type')}" for d in distribution if d.get("type")]
+            if type_counts:
+                type_instructions = f"\n6. QUESTION MIX: Use this specific distribution of question types: " + ", ".join(type_counts) + "."
+
         base_instructions = (
             f"Generate a COMPREHENSIVE mock exam in {language} based ONLY on the provided context.\n"
             f"Requirements:\n"
             f"1. Include EXACTLY {exam_count} unique and challenging questions.\n"
             f"2. Each question MUST be grounded in the provided facts.\n"
-            f"3. Format: Return a single JSON object with 'type', 'content', and 'metadata'.\n"
-            f"4. Structure: 'content' must have 'questions' (list of {{id, question, answer_space}}) and 'answer_sheet' (list of {{question_id, answer, explanation}})."
+            f"3. Difficulty level: {adaptive_difficulty}.\n"
+            f"4. Format: Return a single JSON object with 'type', 'content', and 'metadata'.\n"
+            f"5. Structure: 'content' must have 'questions' (list of {{id, question, type, options, answer_space}}) and 'answer_sheet' (list of {{question_id, answer, explanation}})."
+            f"{type_instructions}"
         )
+        if adaptive_weak_topics:
+            base_instructions += (
+                f"\n7. PRIORITY FOCUS: Emphasize questions on these topics where the student has shown weakness: "
+                + ", ".join(adaptive_weak_topics) + "."
+            )
+
         # Use a minimal, non-conversational schema hint to avoid triggering "echoing"
         schema_hint = {
             "type": "exam",
             "content": {
-                "questions": [{"id": 1, "question": "...", "answer_space": "__________"}],
-                "answer_sheet": [{"question_id": 1, "answer": "...", "explanation": "..."}]
+                "questions": [{"id": "1", "question": "...", "type": "mcq", "options": ["A", "B"], "answer_space": "__________"}],
+                "answer_sheet": [{"question_id": "1", "answer": "...", "explanation": "..."}]
             },
-            "metadata": {"difficulty": difficulty or "intermediate", "count": exam_count}
+            "metadata": {"difficulty": adaptive_difficulty, "count": exam_count}
         }
         base_instructions += f"\nTemplate structure: {json.dumps(schema_hint)}"
     else:
@@ -389,182 +440,6 @@ def build_prompt(
         f"Generate the JSON now:"
     )
     return prompt
-
-
-def _map_summarize_chunk(chunk_text: str, language: str, timeout: int, retries: int) -> str:
-    """Summarize a single chunk for the MAP stage."""
-    prompt = (
-        f"System instructions:\n"
-        f"You are a highly efficient assistant. Compress the following text into a concise summary in {language}. "
-        f"Extract ALL key facts, concepts, and details without omitting important information. "
-        f"Do not add introductions or conclusions. Return ONLY the summary.\n\n"
-        f"Text to summarize:\n---\n{chunk_text}\n---\n\n"
-        f"Summary:"
-    )
-    
-    payload: Dict[str, Any] = {
-        "model": OLLAMA_GENERATION_MODEL,
-        "prompt": prompt,
-    }
-    
-    prompt_chars = len(prompt)
-    logger.info(
-        "[TRACE][MAP_CHUNK] model=%s prompt_chars=%d chunk_input_chars=%d timeout=%d",
-        OLLAMA_GENERATION_MODEL, prompt_chars, len(chunk_text), timeout,
-    )
-    
-    for attempt in range(retries):
-        attempt_start = time.perf_counter()
-        try:
-            generated_text = _stream_ollama_generate(payload, timeout=timeout, material_type="map_summary")
-            attempt_ms = int((time.perf_counter() - attempt_start) * 1000)
-            if generated_text and generated_text.strip():
-                logger.info(
-                    "[TRACE][MAP_CHUNK] attempt=%d/%d duration_ms=%d output_chars=%d",
-                    attempt + 1, retries, attempt_ms, len(generated_text),
-                )
-                return generated_text.strip()
-        except Exception as e:
-            attempt_ms = int((time.perf_counter() - attempt_start) * 1000)
-            logger.warning(
-                "[TRACE][MAP_CHUNK] attempt=%d/%d FAILED duration_ms=%d error=%s",
-                attempt + 1, retries, attempt_ms, e,
-            )
-            if attempt == retries - 1:
-                return ""
-            time.sleep(OLLAMA_REQUEST_RETRY_DELAY_SECONDS)
-    return ""
-
-
-def generate_map_summaries(
-    chunks: List[str],
-    language: str = "en",
-    timeout: int = OLLAMA_GENERATION_TIMEOUT,
-    retries: int = OLLAMA_REQUEST_RETRIES,
-    max_chunks: Optional[int] = None,
-) -> List[str]:
-    """MAP stage: summarize chunks with bounded concurrency via ThreadPoolExecutor."""
-    map_stage_start = time.perf_counter()
-    cap = max_chunks or MAP_MAX_CHUNKS
-    eligible = [c for c in chunks if len(c.strip()) >= 100]
-    total_input_chars = sum(len(c) for c in eligible)
-    concurrency = min(len(eligible), MAP_CONCURRENCY) if eligible else 1
-    logger.info(
-        "[TRACE][MAP_START] total_chunks=%d eligible_chunks=%d total_input_chars=%d cap=%d concurrency=%d model=%s",
-        len(chunks), len(eligible), total_input_chars, cap, concurrency, OLLAMA_GENERATION_MODEL,
-    )
-    if len(eligible) > cap:
-        logger.warning(
-            "[TRACE][MAP] capping %d eligible chunks to %d",
-            len(eligible), cap,
-        )
-        eligible = eligible[:cap]
-
-    if not eligible:
-        return []
-
-    # Concurrent execution — each chunk runs in its own thread
-    results = [None] * len(eligible)
-    chunk_timings = [0] * len(eligible)
-
-    def _run_chunk(idx_chunk):
-        idx, chunk = idx_chunk
-        chunk_start = time.perf_counter()
-        logger.info("[TRACE][MAP] chunk %d/%d chars=%d", idx + 1, len(eligible), len(chunk))
-        summary = _map_summarize_chunk(chunk, language, timeout, retries)
-        chunk_ms = int((time.perf_counter() - chunk_start) * 1000)
-        if summary:
-            logger.info("[TRACE][MAP] chunk %d/%d DONE duration_ms=%d output_chars=%d", idx + 1, len(eligible), chunk_ms, len(summary))
-        else:
-            logger.warning("[TRACE][MAP] chunk %d/%d EMPTY duration_ms=%d", idx + 1, len(eligible), chunk_ms)
-        return idx, summary or "", chunk_ms
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = pool.map(_run_chunk, enumerate(eligible))
-        for idx, summary, chunk_ms in futures:
-            results[idx] = summary
-            chunk_timings[idx] = chunk_ms
-
-    mapped_summaries = [s for s in results if s]
-    map_total_ms = int((time.perf_counter() - map_stage_start) * 1000)
-    valid_timings = [t for t in chunk_timings if t > 0]
-    avg_ms = int(sum(valid_timings) / len(valid_timings)) if valid_timings else 0
-    logger.info(
-        "[TRACE][MAP_END] processed=%d/%d total_ms=%d avg_chunk_ms=%d min_ms=%d max_ms=%d output_summaries=%d concurrency=%d",
-        len(eligible), len(chunks), map_total_ms, avg_ms,
-        min(valid_timings) if valid_timings else 0,
-        max(valid_timings) if valid_timings else 0,
-        len(mapped_summaries), concurrency,
-    )
-    return mapped_summaries
-
-
-async def _async_map_summaries(
-    chunks: List[str],
-    language: str = "en",
-    timeout: int = OLLAMA_GENERATION_TIMEOUT,
-    retries: int = OLLAMA_REQUEST_RETRIES,
-    max_chunks: Optional[int] = None,
-) -> List[str]:
-    """Async MAP stage with bounded concurrency for the streaming path.
-
-    Uses asyncio.Semaphore + run_in_executor so the event loop stays
-    responsive (emitting keepalives) while MAP work proceeds in threads.
-
-    WARNING — LEGACY PATH:
-    This function is used only by generate_study_material_stream() for
-    non-summary material types (quiz, flashcards, exam).  It calls the
-    local _map_summarize_chunk() which does NOT accept a ``difficulty``
-    parameter.
-
-    Summary streaming MUST use summary_pipeline._async_map_summaries()
-    instead, which supports difficulty-aware MAP prompts.
-    api.py /generate/stream already routes summary correctly.
-    Do NOT call this function for material_type="summary".
-    """
-    cap = max_chunks or STREAM_MAP_MAX_CHUNKS
-    eligible = [c for c in chunks if len(c.strip()) >= 100]
-    if len(eligible) > cap:
-        eligible = eligible[:cap]
-
-    if not eligible:
-        return []
-
-    map_start = time.perf_counter()
-    concurrency = min(len(eligible), MAP_CONCURRENCY)
-    sem = asyncio.Semaphore(concurrency)
-    loop = asyncio.get_running_loop()
-
-    logger.info(
-        "[TRACE][ASYNC_MAP_START] eligible=%d cap=%d concurrency=%d",
-        len(eligible), cap, concurrency,
-    )
-
-    async def _map_one(idx: int, chunk: str):
-        async with sem:
-            result = await loop.run_in_executor(
-                None, _map_summarize_chunk, chunk, language, timeout, retries,
-            )
-            return idx, result or ""
-
-    tasks = [_map_one(i, c) for i, c in enumerate(eligible)]
-    gathered = await asyncio.gather(*tasks, return_exceptions=True)
-
-    ordered = [None] * len(eligible)
-    for item in gathered:
-        if isinstance(item, Exception):
-            logger.warning("[TRACE][ASYNC_MAP] chunk failed: %s", item)
-            continue
-        idx, summary = item
-        ordered[idx] = summary
-
-    mapped = [s for s in ordered if s]
-    map_ms = int((time.perf_counter() - map_start) * 1000)
-    logger.info(
-        "[TRACE][ASYNC_MAP_END] total_ms=%d input=%d output=%d concurrency=%d",
-        map_ms, len(eligible), len(mapped), concurrency,
-    )
-    return mapped
 
 
 def _build_generation_context(chunks: List[str]) -> str:
@@ -620,6 +495,7 @@ async def generate_study_material_stream(
         language,
         count=count,
         difficulty_override=difficulty_override,
+        options=request_options,
     )
 
     payload: Dict[str, Any] = {
@@ -892,26 +768,39 @@ def generate_study_material(
     user_id: Optional[str] = None,
     count: Optional[int] = None,
     difficulty: Optional[str] = None,
-    subject_id: Optional[str] = None
+    subject_id: Optional[str] = None,
+    options: Optional[Dict[str, Any]] = None
 ) -> Union[str, Dict[str, Any]]:
     """Combine chunks into context and call Ollama to generate study material."""
     if not chunks:
         return "Not enough context to generate material."
 
     if material_type == "summary":
-        logger.info("Initiating MAP stage for %d chunks", len(chunks))
-        mapped_chunks = generate_map_summaries(chunks, language, timeout, retries)
-        if mapped_chunks:
-            chunks = mapped_chunks
+        # Summaries should be routed through summary_pipeline.generate_summary
+        # This block is kept for safety but should ideally not be reached for summaries.
+        from .summary_pipeline import generate_summary
+        return generate_summary(
+            chunks,
+            topic=topic,
+            language=language,
+            difficulty=difficulty,
+            summary_mode=(options or {}).get("summary_mode") or (options or {}).get("generation_options", {}).get("summary_mode")
+        )
 
     context = _build_generation_context(chunks)
 
     student_profile: Optional[Dict[str, Any]] = None
-    if material_type == "quiz" and user_id:
+    if material_type in ("quiz", "exam") and user_id:
         try:
             from .student_model import get_student
 
             student_profile = get_student(user_id)
+            logger.info(
+                "[ADAPTIVE] Loaded student profile for user_id=%s type=%s accuracy=%.3f weak_topics=%s",
+                user_id, material_type,
+                float(student_profile.get("accuracy", 0.5)),
+                student_profile.get("weak_topics", []),
+            )
         except Exception as e:
             logger.warning("Student profile lookup failed for user_id=%s: %s", user_id, e)
 
@@ -929,6 +818,7 @@ def generate_study_material(
         difficulty_override=difficulty,
         student_profile=student_profile,
         difficulty=difficulty,
+        options=options,
     )
 
     payload: Dict[str, Any] = {
@@ -968,7 +858,8 @@ def generate_study_material(
                 difficulty_override=difficulty,
                 student_profile=student_profile,
                 difficulty=difficulty,
-                existing_items=existing_titles if existing_titles else None
+                existing_items=existing_titles if existing_titles else None,
+                options=options
             )
 
             payload["prompt"] = prompt

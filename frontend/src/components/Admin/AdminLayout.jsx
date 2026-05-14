@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { adminService } from '@/features/admin/services/AdminService';
 import { formatDistanceToNow } from 'date-fns';
+import logo from '@/assets/logo.png';
 
 const AdminLayout = ({ children }) => {
     const { user, logout } = useAuth();
@@ -113,12 +114,12 @@ const AdminLayout = ({ children }) => {
                     <div className={`h-20 flex items-center border-b border-gray-50/50 ${isSidebarCollapsed ? 'justify-center' : 'px-8 justify-between'}`}>
                         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
                             <Link to="/admin" className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-gray-900 rounded-2xl flex items-center justify-center shadow-2xl shadow-indigo-200/50 rotate-3 group-hover:rotate-0 transition-transform duration-300">
-                                    <span className="text-white text-lg font-black italic">C</span>
+                                <div className="w-10 h-10 flex items-center justify-center">
+                                    <img src={logo} alt="Cognify" className="w-full h-full object-contain" />
                                 </div>
                                 {!isSidebarCollapsed && (
-                                    <span className="text-xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-500">
-                                        Cognify
+                                    <span className="text-xl font-black tracking-tight text-[#2d3a74]">
+                                        Cognify <span className="text-[#8ce0c9]">Admin</span>
                                     </span>
                                 )}
                             </Link>
