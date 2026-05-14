@@ -12,7 +12,7 @@ from core.normalization.input_normalizer import SUPPORTED_MATERIAL_TYPES, normal
 from streaming.stream_core import stream_llm_response
 from tasks import task_generate_material
 from .._route_utils import _stage_error_response, get_db
-from ..generation import generate_study_material_stream
+from ..generation import generate_study_material_stream, normalize_to_canonical
 from ..summary_pipeline import generate_summary_stream, MAP_MAX_CHUNKS, SUMMARY_MAX_CONTEXT_CHARS
 from ..retrieval import retrieve_chunks_by_topic, retrieve_sequential_chunks
 from ..schemas import GenerateRequest
@@ -157,15 +157,28 @@ async def generate_stream_route(body: GenerateRequest):
                 mat = db.query(Material).filter(Material.id == body.material_id).first()
                 if mat:
                     logger.info("[TRACE][STREAM_PERSIST] Saving final output for material_id=%s", body.material_id)
-                    # Contract-compatible JSON structure
-                    payload = {
-                        "type": material_type,
-                        "content": final_content,
-                        "metadata": {
-                            "model": OLLAMA_GENERATION_MODEL,
-                            "processed_at": datetime.now().isoformat()
+                    # Normalize the raw streamed text before persisting so the frontend
+                    # always receives a consistent {type, content: {cards/questions/...}} shape.
+                    try:
+                        raw_parsed = json.loads(final_content)
+                        payload = normalize_to_canonical(
+                            raw_parsed,
+                            material_type,
+                            model=OLLAMA_GENERATION_MODEL,
+                            topic=body.topic,
+                            subject_id=str(body.subject_id) if body.subject_id else None,
+                        )
+                        payload["metadata"]["processed_at"] = datetime.now().isoformat()
+                    except Exception as norm_err:
+                        logger.warning("[TRACE][STREAM_PERSIST_NORM_FAIL] Normalization failed (%s), saving raw payload", norm_err)
+                        payload = {
+                            "type": material_type,
+                            "content": final_content,
+                            "metadata": {
+                                "model": OLLAMA_GENERATION_MODEL,
+                                "processed_at": datetime.now().isoformat()
+                            }
                         }
-                    }
                     mat.ai_generated_content = json.dumps(payload, ensure_ascii=False)
                     mat.status = "COMPLETED"
                     mat.completed_at = datetime.now()

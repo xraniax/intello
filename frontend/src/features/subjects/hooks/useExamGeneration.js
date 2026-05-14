@@ -71,12 +71,12 @@ export const useExamGeneration = ({
 
             setTabs(prev => [
                 ...prev.filter(t => t.type !== 'exam_session'),
-                { 
-                    id: tabId, 
-                    title: exam.title || 'Mock Exam', 
+                {
+                    id: tabId,
+                    title: exam.title || 'Mock Exam',
                     type: 'exam_session',
-                    material: { id: tabId, type: 'exam_session', ai_generated_content: exam }, 
-                    pinned: false 
+                    material: { id: exam.id, type: 'exam_session', ai_generated_content: exam },
+                    pinned: false
                 },
             ]);
             setActiveTabId(tabId);

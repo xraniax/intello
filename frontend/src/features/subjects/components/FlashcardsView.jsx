@@ -253,23 +253,8 @@ const validateCards = (rawCards, expectedCountFromStore) => {
         ? expectedCountFromStore 
         : (cards.length > 0 ? cards.length : 10);
     
-    if (cards.length > expectedCount) {
+    if (cards.length > expectedCount && expectedCount > 0) {
         cards = cards.slice(0, expectedCount);
-    }
-    
-    // 3. Padding (if too few)
-    if (cards.length < expectedCount && cards.length > 0) {
-        const missing = expectedCount - cards.length;
-        console.warn(`[Flashcards] Padding missing ${missing} cards to enforce N=${expectedCount}`);
-        const extra = [];
-        for (let i = 0; i < missing; i++) {
-            const baseCard = cards[i % cards.length];
-            extra.push({ 
-                question: `${baseCard.question} (Review)`, 
-                answer: baseCard.answer 
-            });
-        }
-        cards = [...cards, ...extra];
     }
     
     console.log("FINAL VALIDATED CARDS COUNT:", cards.length);
@@ -338,12 +323,17 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
     const animating = useRef(false);
     const lastReviewedAt = useRef({});
 
-    // Hard reset all session state when the data source changes
-    const prevDataRef = useRef(null);
+    // Hard reset all session state when the material ID changes.
+    // Intentionally uses materialId (stable string primitive) not flashcardsData object
+    // identity — the parent re-creates the parsed object on every render (JSON.parse),
+    // so referential equality would fire this on every render and cause an update loop.
+    const prevMaterialIdRef = useRef(null);
+    const cardsRef = useRef(cards);
+    cardsRef.current = cards;
     useEffect(() => {
-        if (prevDataRef.current !== flashcardsData) {
-            prevDataRef.current = flashcardsData;
-            console.log("[Flashcards] NEW SESSION — resetting state. Cards:", cards.length);
+        if (prevMaterialIdRef.current !== materialId) {
+            prevMaterialIdRef.current = materialId;
+            console.log("[Flashcards] NEW SESSION — resetting state. Cards:", cardsRef.current.length);
             setCurrentIndex(0);
             setIsRevealed(false);
             setRatings({});
@@ -354,9 +344,9 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
             setElapsed(0);
             setDirection(0);
             setShuffled(false);
-            setShuffleOrder(cards.map((_, i) => i));
+            setShuffleOrder(cardsRef.current.map((_, i) => i));
         }
-    }, [flashcardsData, cards]);
+    }, [materialId]);
     
     // ── Reactive Progress Sensing ──
     const setMaterialUIState = useMaterialStore(s => s.actions.setMaterialUIState);
@@ -411,12 +401,6 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
         };
     }, [showSummary]);
 
-    // Ensure shuffle order matches card count safely
-    useEffect(() => {
-        if (cards.length > 0 && Math.max(...shuffleOrder, -1) >= cards.length) {
-            setShuffleOrder(cards.map((_, i) => i));
-        }
-    }, [cards.length, shuffleOrder]);
 
     // Completion detection
     const ratedCount = Object.keys(ratings).length;
@@ -843,7 +827,7 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: -direction * 50, opacity: 0 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 40, mass: 1 }}
-                    className="mb-8 relative"
+                    className="mb-8 relative h-[420px] w-full max-w-2xl mx-auto"
                     style={{ perspective: "2000px" }}
                 >
                     <motion.div
@@ -883,7 +867,7 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                                     <span className="inline-block text-[10px] font-black uppercase tracking-[0.3em] px-5 py-2 rounded-2xl bg-indigo-50 text-indigo-500 border-2 border-white shadow-sm">The Challenge</span>
                                 </div>
 
-                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-12">
+                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-12 z-10">
                                     <h3 className={cn(
                                         "font-black leading-tight tracking-tight text-indigo-950 text-center",
                                         isExpanded ? 'text-4xl' : 'text-3xl',
@@ -930,14 +914,14 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                                     <span className="inline-block text-[10px] font-black uppercase tracking-[0.3em] px-5 py-2 rounded-2xl bg-pink-50 text-pink-500 border-2 border-white shadow-sm">Crystal Clear</span>
                                 </div>
 
-                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-12">
+                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-12 z-10">
                                     <p className={cn(
                                         "font-black leading-relaxed tracking-tight text-gray-800 text-center",
                                         isExpanded ? 'text-3xl' : 'text-2xl',
                                         card?.answer?.length > 120 && (isExpanded ? 'text-2xl' : 'text-xl'),
                                         card?.answer?.length > 250 && (isExpanded ? 'text-xl' : 'text-lg')
                                     )}>
-                                        {card?.answer}
+                                        {card?.answer || "No Answer Content"}
                                     </p>
                                 </div>
 

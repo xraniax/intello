@@ -259,11 +259,24 @@ const TabContent = ({
 
     // Use robust extraction utility to handle nested AI payloads
     const contentToParse = isLiveGenerating ? genResult : (material.ai_generated_content || material.content || '');
-    let parsedContent = extractExamData(contentToParse);
+    const isFlashcardType = tab.type === 'flashcards' || material.type === 'flashcards';
+    
+    // Skip extractExamData for flashcards — it recursively unpacks data.content (looking for
+    // 'questions') and returns null for the canonical { type, content: { cards: [] } } shape.
+    // FlashcardsView has its own robust extractCards() that handles all flashcard shapes.
+    let parsedContent;
+    if (isFlashcardType) {
+        try {
+            parsedContent = typeof contentToParse === 'string' ? JSON.parse(contentToParse) : contentToParse;
+        } catch {
+            parsedContent = contentToParse;
+        }
+    } else {
+        parsedContent = extractExamData(contentToParse);
+    }
 
     if (typeof parsedContent === 'object' && parsedContent) {
-        parsedContent.id = material.id;
-        parsedContent.title = parsedContent.title || material.title || '';
+        parsedContent = { ...parsedContent, id: material.id, title: parsedContent.title || material.title || '' };
     }
 
     if (tab.type === 'quiz' || material.type === 'quiz') {

@@ -340,14 +340,23 @@ const regenerateQuestions = async ({
     return regenerated.slice(0, missing);
 };
 
+const buildTypeDistribution = (types, total) => {
+    const base = Math.floor(total / types.length);
+    const remainder = total % types.length;
+    return types.map((t, i) => ({ type: t, count: base + (i < remainder ? 1 : 0) }));
+};
+
 const buildPrompt = ({ numberOfQuestions, difficulty, topics, types, existingQuestions, context }) => {
     const contextStr = context ? `Use the following context to generate questions:\n---\n${context}\n---\n` : '';
     const blocked = existingQuestions.length > 0
         ? `Avoid duplicating these already accepted questions:\n${existingQuestions.map((q) => `- ${q}`).join('\n')}\n`
         : '';
 
+    const distribution = buildTypeDistribution(types, numberOfQuestions);
+    const distributionStr = distribution.map(({ type, count }) => `  - ${count} question${count !== 1 ? 's' : ''} of type "${type}"`).join('\n');
+
     const systemInstruction = `You are a strict JSON generator for an exam testing system.
-You MUST output ONLY a valid JSON object matching the requested schema. 
+You MUST output ONLY a valid JSON object matching the requested schema.
 Do not output any conversational text, formatting, or markdown code blocks around the JSON.
 Your JSON must strictly use double quotes for keys and string values.
 If you are unsure of a field, provide a sensible default rather than omitting it.`;
@@ -355,9 +364,9 @@ If you are unsure of a field, provide a sensible default rather than omitting it
     const userPrompt = `
 Generate EXACTLY ${numberOfQuestions} exam questions as strict JSON.
 
-Allowed types: ${types.join(', ')}
-Only use the following types EXACTLY: ${types.join(', ')}.
-Do NOT generate any other types.
+You MUST spread questions across ALL of the following types using this exact distribution:
+${distributionStr}
+Do NOT generate any other types. Do NOT use only one type.
 Difficulty: ${difficulty}
 Topics: ${topics.join(', ')}
 

@@ -37,7 +37,7 @@ OLLAMA_GENERATION_MODEL = get_ollama_generation_model(required=True)
 
 OLLAMA_GENERATION_TIMEOUT = int(os.getenv("OLLAMA_GENERATION_TIMEOUT", "300"))
 OLLAMA_CHAT_TIMEOUT = int(os.getenv("OLLAMA_CHAT_TIMEOUT", "120"))
-OLLAMA_MAX_CONTEXT_CHARS = int(os.getenv("OLLAMA_MAX_CONTEXT_CHARS", "15000"))
+OLLAMA_MAX_CONTEXT_CHARS = int(os.getenv("OLLAMA_MAX_CONTEXT_CHARS", "12000"))
 OLLAMA_REQUEST_RETRIES = int(os.getenv("OLLAMA_REQUEST_RETRIES", "4"))
 OLLAMA_REQUEST_RETRY_DELAY_SECONDS = float(os.getenv("OLLAMA_REQUEST_RETRY_DELAY_SECONDS", "2"))
 MAP_MAX_CHUNKS = int(os.getenv("MAP_MAX_CHUNKS", "80"))
@@ -341,22 +341,23 @@ def build_prompt(
         )
 
     elif material_type == "flashcards":
-        card_count = count if isinstance(count, int) and count > 0 else None
-        if card_count is not None:
-            base_instructions = f"Create exactly {card_count} flashcards (Front/Back) in {language}."
-        else:
-            base_instructions = f"Create between 5 and 10 flashcards (Front/Back) in {language}."
-            
+        card_count = count if isinstance(count, int) and count > 0 else 5
+        # Build a numbered list placeholder so the model understands it must fill each slot
+        placeholder_cards = [{"front": f"term {i}", "back": f"definition {i}"} for i in range(1, card_count + 1)]
         json_structure = {
             "type": "flashcards",
             "content": {
-                "cards": [
-                    {"front": "term", "back": "definition"}
-                ]
+                "cards": placeholder_cards
             },
-            "metadata": {"difficulty": "intermediate", "count": card_count or 5, "version": "v1"}
+            "metadata": {"difficulty": "intermediate", "count": card_count, "version": "v1"}
         }
-        base_instructions += f"\nOutput MUST be a single JSON object with this exact structure: {json.dumps(json_structure)}"
+        base_instructions = (
+            f"Create EXACTLY {card_count} flashcard entries in {language}. "
+            f"You MUST produce ALL {card_count} cards — do not stop early. "
+            f"Each card has a 'front' (term or question) and a 'back' (definition or answer). "
+            f"Output MUST be a single JSON object. The 'content.cards' array MUST contain exactly {card_count} items. "
+            f"Template structure (replace all placeholder values with real content): {json.dumps(json_structure)}"
+        )
 
     elif material_type == "exam":
         exam_count = count if isinstance(count, int) and count > 0 else 5
@@ -498,11 +499,22 @@ async def generate_study_material_stream(
         options=request_options,
     )
 
+    # Scale num_predict based on item count so the model doesn't stop early.
+    # Rule of thumb: ~150 tokens per card/question, 256 token base overhead.
+    # Capped at 4096 to stay within qwen2.5:3b's comfortable window.
+    items_count = count or 5
+    dynamic_num_predict = min(4096, 256 + items_count * 150)
+
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
         "stream": True,
         "format": "json",
+        "options": {
+            "num_ctx": 8192,
+            "num_predict": dynamic_num_predict,
+            "temperature": 0.7,
+        },
     }
 
     reduce_prompt_chars = len(prompt)
@@ -620,10 +632,29 @@ def normalize_to_canonical(
     elif isinstance(raw_payload, dict):
         # 2. Map Whitelisted Hallucinations
         content = raw_payload.get("content")
-        
+
+        # When the LLM serializes the content field as a JSON string instead of an object,
+        # try to parse it back and use it if it contains the expected keys.
+        if isinstance(content, str):
+            try:
+                parsed_content = json.loads(content)
+                if isinstance(parsed_content, dict):
+                    if material_type == "flashcards" and isinstance(parsed_content.get("cards"), list):
+                        content = parsed_content
+                        logger.info("[REPAIR] Decoded string content to flashcard dict with cards")
+                    elif material_type in ["exam", "quiz"] and isinstance(parsed_content.get("questions"), list):
+                        content = parsed_content
+                        logger.info("[REPAIR] Decoded string content to exam/quiz dict with questions")
+                    else:
+                        # Parsed but not useful — treat as absent so whitelist/root search kicks in
+                        logger.warning("[REPAIR] String content decoded but lacks expected keys (%s): %s", material_type, list(parsed_content.keys()))
+                        content = None
+            except (json.JSONDecodeError, ValueError):
+                content = None
+
         # Candidate keys that we know LLMs use for 'content'
         whitelist = ["examJSON", "examJson", "exam_json", "exam", "quizJSON", "quiz_json", "quiz", "flashcardsJSON", "flashcards", "questions"]
-        
+
         for key in whitelist:
             if key in raw_payload and not content:
                 val = raw_payload[key]
@@ -821,12 +852,16 @@ def generate_study_material(
         options=options,
     )
 
+    # Scale num_predict based on requested count (base 512 + 150/q)
+    items_count = count if count and count > 0 else 5
+    dynamic_num_predict = min(4096, 512 + items_count * 150)
+
     payload: Dict[str, Any] = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
         "options": {
             "num_ctx": 16384,
-            "num_predict": 2048,
+            "num_predict": dynamic_num_predict,
             "temperature": 0.7,
         }
     }
