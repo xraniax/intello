@@ -229,32 +229,63 @@ def build_student_quiz_view(quiz_payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"type": "quiz", "questions": safe_questions}
 
 
+def detect_french(text: str) -> bool:
+    """Robust French detection using weighted markers and accented characters."""
+    # Strong signals - common French stop words and particles
+    fr_indicators = [
+        " le ", " la ", " les ", " de ", " du ", " des ", " et ", " en ", 
+        " est ", " sont ", " pour ", " avec ", " dans ", " sur ", " une ", 
+        " qui ", " que ", " se ", " ce ", " au ", " aux "
+    ]
+    # Unique French accents
+    fr_accents = ['é', 'à', 'è', 'ê', 'î', 'ï', 'ô', 'û', 'ù', 'ç']
+    
+    # Normalize with spaces to detect particles correctly
+    text_lower = f" {' '.join(text.lower().split())} "
+    
+    # 1. Accent count (High weight)
+    accent_count = sum(text_lower.count(a) for a in fr_accents)
+    
+    # 2. Indicator count
+    indicator_count = sum(1 for ind in fr_indicators if ind in text_lower)
+    
+    # Heuristic: 1 accent or 1 indicator is often enough for a fragment
+    total_score = (accent_count * 2.0) + (indicator_count * 1.0)
+    is_fr = total_score >= 1.5
+    
+    return is_fr
+
 def build_prompt(
     material_type: str,
     context: str,
-    topic: Optional[str],
-    language: str,
-    count: Optional[int] = None,
-    difficulty_override: Optional[str] = None,
-    student_profile: Optional[Dict[str, Any]] = None,
+    topic: Optional[str] = None,
+    language: str = "en",
+    count: int = 5,
     difficulty: str = "intermediate",
-    existing_items: Optional[List[str]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    weak_topics: Optional[List[str]] = None,
+    job_id: Optional[str] = None,
+    **kwargs
 ) -> str:
     """Build a structured prompt for the LLM based on material type."""
-    
+    is_fr = detect_french(context)
+    logger.info(f"[LANG_SERVICE] detected_french={is_fr} type={material_type} len={len(context)}")
+
     json_format_instructions = "Return ONLY valid JSON. Do not include any markdown formatting, pre-amble, or post-amble."
+    if is_fr:
+        json_format_instructions = "Répondez UNIQUEMENT avec du JSON valide. Ne pas inclure de texte explicatif."
 
     additive_instruction = ""
-    if existing_items:
-        titles = ", ".join([f"'{t}'" for t in existing_items[:20]]) # Cap to avoid overfilling prompt
+    if kwargs.get("existing_items"):
+        titles = ", ".join([f"'{t}'" for t in kwargs["existing_items"][:20]]) # Cap to avoid overfilling prompt
         additive_instruction = (
             f"\nIMPORTANT: I already have these questions/items: {titles}. "
             f"DO NOT repeat any of these. Generate {count} NEW and UNIQUE items from different parts of the context."
         )
 
     if material_type == "summary":
-        lang_phrase = f" Write in {language}." if language and language.lower() != "en" else ""
+        lang_phrase = " The summary MUST be in the SAME LANGUAGE as the source text."
+        if is_fr:
+            lang_phrase = " Le résumé DOIT être EXCLUSIVEMENT en FRANÇAIS (French)."
 
         # Difficulty-aware depth instructions
         if difficulty in ("introductory", "beginner", "easy"):
@@ -277,18 +308,21 @@ def build_prompt(
             )
 
         prompt = (
-            f"{depth_instruction}{lang_phrase}\n\n"
+            f"{depth_instruction}{lang_phrase}\n"
+            f"CONTENT FILTERING: IGNORE administrative metadata (contacts, syllabi, objectives). Focus ONLY on the core academic content.\n\n"
             f"Text to summarize:\n---\n{context}\n---\n\n"
             f"Summary:"
         )
+        if is_fr:
+            prompt += "\n(Rappel: Résumé en Français)"
         return prompt
 
     elif material_type == "quiz":
         accuracy = None
         avg_response_time = None
-        weak_topics: List[str] = []
         difficulty = "medium"
 
+        student_profile = kwargs.get("student_profile")
         if student_profile:
             try:
                 accuracy = float(student_profile.get("accuracy", 0.5))
@@ -309,16 +343,41 @@ def build_prompt(
                 difficulty = "hard"
 
         question_count = count if isinstance(count, int) and count > 0 else 5
+        difficulty_override = kwargs.get("difficulty_override")
         if difficulty_override and str(difficulty_override).strip():
             difficulty = str(difficulty_override).strip()
 
+        json_structure = {
+            "type": "quiz",
+            "content": {
+                "questions": [
+                    {
+                        "id": 1,
+                        "question": "...",
+                        "options": ["A", "B", "C", "D"],
+                        "correct_answer": "...",
+                        "explanation": "..."
+                    }
+                ]
+            },
+            "metadata": {"detected_language": "...", "count": question_count}
+        }
+        
+        header = f"### CRITICAL MANDATE: GENERATE EXACTLY {question_count} QUIZ QUESTIONS"
+        lang_rule = "LANGUAGE: Match context language. If FRENCH, use FRENCH. NO ENGLISH."
+        if is_fr:
+            header = f"### MANDAT CRITIQUE: GÉNÉRER EXACTEMENT {question_count} QUESTIONS DE QUIZ"
+            lang_rule = "LANGUE: Répondez EXCLUSIVEMENT en FRANÇAIS (French). Ne JAMAIS utiliser l'Anglais."
+
         base_instructions = (
-            f"Generate a multiple-choice or short-answer quiz in {language}. "
-            f"Include exactly {question_count} questions. Each question must include options (for MCQ), correct_answer, and explanation.\n"
-            f"Difficulty: {difficulty}.\n"
+            f"{header}\n"
+            f"1. {lang_rule}\n"
+            f"2. COUNT: Generate EXACTLY {question_count} unique questions.\n"
+            f"3. FORMAT: Single JSON object following the structure below.\n"
+            f"4. QUALITY: Challenging distractors, clear explanations. No metadata/syllabi.\n"
+            f"\nTemplate Structure:\n{json.dumps(json_structure, indent=2)}\n"
+            f"Fill in exactly {question_count} items in the 'questions' array."
         )
-        if weak_topics:
-            base_instructions += f"Targeted topics: {', '.join(weak_topics)}.\n"
             
         json_structure = {
             "type": "quiz",
@@ -339,34 +398,52 @@ def build_prompt(
             f"Output MUST be a single JSON object with this exact structure: {json.dumps(json_structure)}\n"
             "All questions must be inside the 'content.questions' list."
         )
+        if is_fr:
+            base_instructions += "\nRAPPEL: Tout le contenu doit être en FRANÇAIS."
 
     elif material_type == "flashcards":
         card_count = count if isinstance(count, int) and count > 0 else 5
-        # Build a numbered list placeholder so the model understands it must fill each slot
-        placeholder_cards = [{"front": f"term {i}", "back": f"definition {i}"} for i in range(1, card_count + 1)]
         json_structure = {
             "type": "flashcards",
             "content": {
-                "cards": placeholder_cards
+                "cards": [
+                    {"question": "Question 1", "answer": "Answer 1"},
+                    {"question": "Question 2", "answer": "Answer 2"},
+                    "... more cards up to count ..."
+                ]
             },
-            "metadata": {"difficulty": "intermediate", "count": card_count, "version": "v1"}
+            "metadata": {"detected_language": "...", "count": card_count}
         }
+        
+        header = f"### CRITICAL MANDATE: GENERATE EXACTLY {card_count} FLASHCARDS"
+        lang_rule = "LANGUAGE: Match context language. If FRENCH, use FRENCH. NO ENGLISH."
+        if is_fr:
+            header = f"### MANDAT CRITIQUE: GÉNÉRER EXACTEMENT {card_count} CARTES MÉMOIRE"
+            lang_rule = "LANGUE: Répondez EXCLUSIVEMENT en FRANÇAIS (French). Ne JAMAIS utiliser l'Anglais."
+            
         base_instructions = (
-            f"Create EXACTLY {card_count} flashcard entries in {language}. "
-            f"You MUST produce ALL {card_count} cards — do not stop early. "
-            f"Each card has a 'front' (term or question) and a 'back' (definition or answer). "
-            f"Output MUST be a single JSON object. The 'content.cards' array MUST contain exactly {card_count} items. "
-            f"Template structure (replace all placeholder values with real content): {json.dumps(json_structure)}"
+            f"{header}\n"
+            f"1. {lang_rule}\n"
+            f"2. COUNT: Generate EXACTLY {card_count} unique flashcards. DO NOT STOP at 1.\n"
+            f"3. FORMAT: Single JSON object following the template below.\n"
+            f"4. PEDAGOGY: Active Recall (questions). No tautologies.\n"
+            f"5. FILTERING: Ignore administrative metadata (syllabi, contacts).\n"
+            f"\nTemplate Structure (ensure array has {card_count} items):\n{json.dumps(json_structure, indent=2)}\n"
         )
+        if is_fr:
+            base_instructions += f"\nRAPPEL: Les {card_count} questions et réponses doivent être en FRANÇAIS."
+        else:
+            base_instructions += f"\nREMINDER: All {card_count} cards must be unique."
 
     elif material_type == "exam":
         exam_count = count if isinstance(count, int) and count > 0 else 5
 
         # ── Adaptive difficulty resolution ──────────────────────────────────
-        # Priority: explicit user override > student profile accuracy > fallback
         adaptive_difficulty = difficulty or "intermediate"
         adaptive_weak_topics: List[str] = []
 
+        student_profile = kwargs.get("student_profile")
+        difficulty_override = kwargs.get("difficulty_override")
         if student_profile and not difficulty_override:
             try:
                 accuracy = float(student_profile.get("accuracy", 0.5))
@@ -391,44 +468,84 @@ def build_prompt(
             adaptive_difficulty = str(difficulty_override).strip()
 
         # ── Question Type Distribution Resolution ──────────────────────────
-        # Extract requested question types from GPS distribution
-        distribution = (options or {}).get("generation_options", {}).get("distribution", [])
+        options = kwargs.get("options") or {}
+        # options is already the generation_options dict (has distribution at top level)
+        distribution = options.get("distribution", [])
         if not distribution and options:
-             # Fallback to direct types if distribution is missing
              distribution = [{"type": t, "count": 1} for t in options.get("types", [])]
 
+        TYPE_FORMAT_RULES = (
+            "Type-specific JSON rules:\n"
+            "  - single_choice: 'options' list with 4 items; exactly 1 correct answer. (Must use type: 'single_choice')\n"
+            "  - multiple_select: 'options' list with 4 items; 2 or more correct answers specified in the answer sheet. (Must use type: 'multiple_select')\n"
+            "  - short_answer: 'options' must be empty list []. Student provides a text response. (Must use type: 'short_answer')\n"
+            "  - problem: 'options' must be empty list []. Multi-step calculation, logic puzzle, or reasoning task. (Must use type: 'problem')\n"
+            "  - fill_blank: 'options' must be empty list []. The 'question' string must contain '___' where the word is missing. (Must use type: 'fill_blank')\n"
+            "  - matching: 'options' must be empty list []. Include a 'pairs' list: [{\"left\": \"term\", \"right\": \"definition\"}, ...]. (Must use type: 'matching')"
+        )
         type_instructions = ""
         if distribution:
             type_counts = [f"{d.get('count', '')}x {d.get('type')}" for d in distribution if d.get("type")]
             if type_counts:
-                type_instructions = f"\n6. QUESTION MIX: Use this specific distribution of question types: " + ", ".join(type_counts) + "."
+                type_instructions = (
+                    f"\n8. DIVERSE QUESTION MIX: You MUST use this EXACT distribution of question types:\n"
+                    + "   " + "\n   ".join(type_counts)
+                    + f"\n\n9. {TYPE_FORMAT_RULES}"
+                )
+
+        header = "### CRITICAL MANDATE: GENERATE COMPREHENSIVE MOCK EXAM"
+        lang_rule = f"LANGUAGE: {language.upper()}. If context is in another language, translate/generate in {language.upper()}."
+        if not language or language.lower() == "auto":
+            lang_rule = "LANGUAGE: Use the SAME LANGUAGE as the context below. If context is French, write in French."
+            
+        if is_fr:
+            header = "### MANDAT CRITIQUE: GÉNÉRER UN EXAMEN BLANC COMPLET"
+            lang_rule = "LANGUE: Utilisez EXCLUSIVEMENT le FRANÇAIS (French). Ne pas utiliser l'Anglais."
 
         base_instructions = (
-            f"Generate a COMPREHENSIVE mock exam in {language} based ONLY on the provided context.\n"
-            f"Requirements:\n"
-            f"1. Include EXACTLY {exam_count} unique and challenging questions.\n"
-            f"2. Each question MUST be grounded in the provided facts.\n"
-            f"3. Difficulty level: {adaptive_difficulty}.\n"
-            f"4. Format: Return a single JSON object with 'type', 'content', and 'metadata'.\n"
-            f"5. Structure: 'content' must have 'questions' (list of {{id, question, type, options, answer_space}}) and 'answer_sheet' (list of {{question_id, answer, explanation}})."
-            f"{type_instructions}"
+            f"{header}\n"
+            f"1. {lang_rule}\n"
+            f"2. COUNT: Include EXACTLY {exam_count} unique questions. DO NOT truncate.\n"
+            f"3. DIFFICULTY: {adaptive_difficulty}.\n"
+            f"4. FORMAT: Return a single JSON object with 'type', 'content', and 'metadata'.\n"
+            f"5. STRUCTURE: 'content' must have 'questions' (list) and 'answer_sheet' (list).\n"
+            f"6. FILTERING: Ignore administrative metadata (syllabi/contacts).\n"
+            f"7. PEDAGOGY: High-order thinking, challenging distractors."
         )
+        if type_instructions:
+            base_instructions += type_instructions
         if adaptive_weak_topics:
-            base_instructions += (
-                f"\n7. PRIORITY FOCUS: Emphasize questions on these topics where the student has shown weakness: "
-                + ", ".join(adaptive_weak_topics) + "."
-            )
+            base_instructions += f"\nPRIORITY FOCUS (Weak Topics): {', '.join(adaptive_weak_topics)}."
 
-        # Use a minimal, non-conversational schema hint to avoid triggering "echoing"
+        type_to_schema = {
+            "single_choice": {"id": "1", "question": "Single choice question?", "type": "single_choice", "options": ["A", "B", "C", "D"], "answer_space": "__________"},
+            "multiple_select": {"id": "2", "question": "Multiple select question?", "type": "multiple_select", "options": ["A", "B", "C", "D"], "answer_space": "__________"},
+            "short_answer": {"id": "3", "question": "Short answer question?", "type": "short_answer", "options": [], "answer_space": "Write your answer here..."},
+            "problem": {"id": "4", "question": "Problem solving question?", "type": "problem", "options": [], "answer_space": "Show your work here..."},
+            "fill_blank": {"id": "5", "question": "The capital of France is ___.", "type": "fill_blank", "options": [], "answer_space": "__________"},
+            "matching": {"id": "6", "question": "Match each term to its definition.", "type": "matching", "options": [], "pairs": [{"left": "Term", "right": "Definition"}], "answer_space": "__________"}
+        }
+
+        hint_questions = []
+        if distribution:
+            for i, d in enumerate(distribution):
+                q_type = d.get("type")
+                if q_type in type_to_schema:
+                    hint_q = dict(type_to_schema[q_type])
+                    hint_q["id"] = str(i + 1)
+                    hint_questions.append(hint_q)
+        else:
+            hint_questions = list(type_to_schema.values())
+
         schema_hint = {
             "type": "exam",
             "content": {
-                "questions": [{"id": "1", "question": "...", "type": "mcq", "options": ["A", "B"], "answer_space": "__________"}],
+                "questions": hint_questions,
                 "answer_sheet": [{"question_id": "1", "answer": "...", "explanation": "..."}]
             },
             "metadata": {"difficulty": adaptive_difficulty, "count": exam_count}
         }
-        base_instructions += f"\nTemplate structure: {json.dumps(schema_hint)}"
+        base_instructions += f"\nTemplate structure (this is just an example format, adjust array sizes to respect requested COUNT):\n{json.dumps(schema_hint)}"
     else:
         base_instructions = f"Process the given context and generate {material_type} in {language}."
 
@@ -475,9 +592,16 @@ async def generate_study_material_stream(
         yield "[ERROR] Not enough context to generate material."
         return
 
+    # Context Slicing: Small models (3b) hallucinate or cut off when overwhelmed.
+    # Cap retrieval depth to high-quality fragments (Top 10) for non-exam types.
+    if material_type in ("flashcards", "quiz"):
+        if len(chunks) > 10:
+            logger.info("[STABILITY] Slicing context from %d to 10 chunks for %s", len(chunks), material_type)
+            chunks = chunks[:10]
+
     request_options = options if isinstance(options, dict) else {}
     raw_count = request_options.get("count") or request_options.get("total_count")
-    count = raw_count if isinstance(raw_count, int) and raw_count > 0 else None
+    count = raw_count if isinstance(raw_count, int) and raw_count > 0 else 5
     raw_difficulty = request_options.get("difficulty")
     difficulty_override = str(raw_difficulty).strip() if raw_difficulty is not None else None
     if difficulty_override == "":
@@ -486,23 +610,27 @@ async def generate_study_material_stream(
         logger.info(f"[EXAM COUNT] {count}")
 
     # Stability patch: dynamic timeout based on question count
-    dynamic_timeout = get_dynamic_timeout(count or 5)
+    dynamic_timeout = get_dynamic_timeout(count)
 
     context = _build_generation_context(chunks)
+    if not context.strip():
+        logger.warning(f"[GEN] Empty context for material {material_type}")
+        return # Or handle error
+        
     prompt = build_prompt(
         material_type,
         context,
-        topic,
-        language,
+        topic=topic,
+        language=language,
         count=count,
-        difficulty_override=difficulty_override,
+        difficulty=difficulty or "intermediate",
         options=request_options,
     )
 
     # Scale num_predict based on item count so the model doesn't stop early.
     # Rule of thumb: ~150 tokens per card/question, 256 token base overhead.
     # Capped at 4096 to stay within qwen2.5:3b's comfortable window.
-    items_count = count or 5
+    items_count = count
     dynamic_num_predict = min(4096, 256 + items_count * 150)
 
     payload: Dict[str, Any] = {
@@ -719,6 +847,19 @@ def normalize_to_canonical(
                 qid = str(uuid.uuid4())
             q["id"] = str(qid)
 
+            # Map legacy types or hallucinations to canonical frontend types
+            q_type = str(q.get("type") or "").strip().lower()
+            if q_type in ["mcq", "multiple_choice"]:
+                q["type"] = "single_choice"
+            elif q_type in ["essay", "long_answer"]:
+                q["type"] = "short_answer"
+            elif q_type in ["fill-in-the-blank", "fill_blank_space"]:
+                q["type"] = "fill_blank"
+            elif not q_type:
+                q["type"] = "single_choice"
+            else:
+                q["type"] = q_type
+
             # Strict default for missing required fields (let Pydantic decide if error)
             if "difficulty" not in q: q["difficulty"] = difficulty
             
@@ -840,16 +981,19 @@ def generate_study_material(
         logger.info(f"[CAP] Reducing requested exam count from {count} to 10")
         count = 10
 
+    gen_options = options or {}
     prompt = build_prompt(
         material_type,
         context,
-        topic,
-        language,
-        count=count,
-        difficulty_override=difficulty,
+        topic=topic,
+        language=language,
+        count=count or 5,
+        difficulty=difficulty or "intermediate",
+        difficulty_override=gen_options.get("difficulty"),
         student_profile=student_profile,
-        difficulty=difficulty,
-        options=options,
+        job_id=None,
+        top_k=10,
+        gen_options=gen_options
     )
 
     # Scale num_predict based on requested count (base 512 + 150/q)
@@ -964,7 +1108,7 @@ def generate_study_material(
             if attempt < retries - 1:
                 continue
             if not (final_questions or final_cards):
-                raise
+                raise NonRetriableGenerationError(f"Generation failed after {retries} attempts: {str(e)}")
 
     # Final Assembly and Re-indexing
     result_content = {}

@@ -738,31 +738,23 @@ class MaterialService {
     };
 
     if (taskType === 'mock_exam') {
-      const rawTypes = options.examTypes || ['single_choice', 'multiple_select', 'short_answer'];
-      const types =
-        Array.isArray(rawTypes) && rawTypes.length > 0
-          ? rawTypes
-          : ['single_choice', 'multiple_select', 'short_answer'];
-      const countPerType = Math.floor(gps.total_count / types.length);
-      const typeMapping = {
-        single_choice: 'mcq',
-        multiple_select: 'mcq',
-        short_answer: 'essay',
-        problem: 'essay',
-        scenario: 'essay',
-        fill_blank: 'fill_blank',
-        matching: 'matching',
-      };
-      gps.distribution = types.map((type, idx) => ({
-        type: typeMapping[type] || 'mcq',
+      const VALID_EXAM_TYPES = ['single_choice', 'multiple_select', 'short_answer', 'problem', 'fill_blank', 'matching'];
+      const rawTypes = options.examTypes || ['single_choice', 'short_answer'];
+      const types = [...new Set(
+        Array.isArray(rawTypes) && rawTypes.length > 0 ? rawTypes : ['single_choice', 'short_answer']
+      )].filter(t => VALID_EXAM_TYPES.includes(t));
+      const finalTypes = types.length > 0 ? types : ['single_choice', 'short_answer'];
+      const countPerType = Math.floor(gps.total_count / finalTypes.length);
+      gps.distribution = finalTypes.map((type, idx) => ({
+        type,
         count:
-          idx === types.length - 1
-            ? gps.total_count - countPerType * (types.length - 1)
+          idx === finalTypes.length - 1
+            ? gps.total_count - countPerType * (finalTypes.length - 1)
             : countPerType,
       }));
     } else {
-      const typeMapping = { quiz: 'mcq', flashcards: 'mcq', mock_exam: 'mcq', summary: 'mcq' };
-      gps.distribution = [{ type: typeMapping[taskType] || 'mcq', percentage: 100 }];
+      const typeMapping = { quiz: 'single_choice', flashcards: 'single_choice', mock_exam: 'single_choice', summary: 'single_choice' };
+      gps.distribution = [{ type: typeMapping[taskType] || 'single_choice', percentage: 100 }];
     }
     return gps;
   }
@@ -836,6 +828,18 @@ class MaterialService {
       // Ignore errors if job doesn't exist
     }
     return await Material.delete(materialId, userId);
+  }
+
+  static async bulkDelete(ids, userId) {
+    if (!ids || ids.length === 0) return 0;
+
+    // 1. Cancel active jobs for all materials
+    await Promise.allSettled(
+      ids.map((id) => this.cancelJob(userId, id).catch(() => {}))
+    );
+
+    // 2. Perform bulk soft delete
+    return await Material.deleteByIds(ids, userId);
   }
 
   static async getTrash(userId, pagination = null) {

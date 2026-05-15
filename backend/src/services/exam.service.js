@@ -361,6 +361,30 @@ Do not output any conversational text, formatting, or markdown code blocks aroun
 Your JSON must strictly use double quotes for keys and string values.
 If you are unsure of a field, provide a sensible default rather than omitting it.`;
 
+    const typeToSchema = {
+        "single_choice": {"id": "1", "question": "Single choice question?", "type": "single_choice", "options": ["A", "B", "C", "D"], "correctAnswers": [0], "explanation": "..." },
+        "multiple_select": {"id": "2", "question": "Multiple select question?", "type": "multiple_select", "options": ["A", "B", "C", "D"], "correctAnswers": [0, 1], "explanation": "..." },
+        "short_answer": {"id": "3", "question": "Short answer question?", "type": "short_answer", "acceptedAnswers": ["Answer text"], "explanation": "..." },
+        "problem": {"id": "4", "question": "Problem solving question?", "type": "problem", "acceptedAnswers": ["Answer text"], "explanation": "..." },
+        "fill_blank": {"id": "5", "question": "The capital of France is ___.", "type": "fill_blank", "blankAnswers": ["Paris"], "explanation": "..." },
+        "matching": {"id": "6", "question": "Match each term to its definition.", "type": "matching", "pairs": [{"left": "Term", "right": "Definition"}], "explanation": "..." }
+    };
+
+    let hintQuestions = [];
+    if (distribution && distribution.length > 0) {
+        distribution.forEach((d, i) => {
+            if (typeToSchema[d.type]) {
+                hintQuestions.push({ ...typeToSchema[d.type], id: String(i + 1) });
+            }
+        });
+    } else {
+        hintQuestions = Object.values(typeToSchema);
+    }
+
+    const schemaHint = {
+        questions: hintQuestions
+    };
+
     const userPrompt = `
 Generate EXACTLY ${numberOfQuestions} exam questions as strict JSON.
 
@@ -370,32 +394,8 @@ Do NOT generate any other types. Do NOT use only one type.
 Difficulty: ${difficulty}
 Topics: ${topics.join(', ')}
 
-Output format:
-{
-  "questions": [
-    {
-      "type": "TYPE_FROM_ALLOWED_TYPES",
-      "question": "Detailed question based ONLY on the provided context",
-
-      // For single_choice or multiple_select ONLY:
-      "options": ["Option 1", "Option 2"],
-      "correctAnswers": [0],
-
-      // For short_answer / problem / scenario ONLY:
-      "acceptedAnswers": ["Answer text"],
-
-      // For fill_blank ONLY:
-      "blankAnswers": ["Answer for blank"],
-
-      // For matching ONLY:
-      "pairs": [{"left": "Concept", "right": "Definition"}],
-
-      "explanation": "Short pedagogic explanation based on context",
-      "difficulty": "easy | medium | hard",
-      "topic": "Topic name"
-    }
-  ]
-}
+Output format (this is just an example template, adjust array sizes to respect requested COUNT):
+${JSON.stringify(schemaHint, null, 2)}
 
 Rules:
 1) Return ONLY JSON, no markdown.
@@ -476,7 +476,36 @@ class ExamService {
 
         // Extract answer sheet
         const answerSheet = content.answer_sheet || (content.result && content.result.answer_sheet) || [];
-        
+
+        // Helper: Convert text or mixed answers into canonical indices
+        const _resolveAnswerToIndices = (q, rawAnswer) => {
+            if (rawAnswer === undefined || rawAnswer === null) return null;
+            const answers = Array.isArray(rawAnswer) ? rawAnswer : [rawAnswer];
+
+            // If it's not a choice-based question, indices don't apply.
+            if (!['single_choice', 'multiple_select'].includes(q.type)) return answers;
+
+            const indices = answers.map(val => {
+                // 1. If it's a string, try to find it in options as a VALUE first
+                if (typeof val === 'string' && q.options) {
+                    const normOpt = q.options.map(o => String(o).trim().toLowerCase());
+                    const idx = normOpt.indexOf(val.trim().toLowerCase());
+                    if (idx !== -1) return idx;
+                }
+                
+                // 2. If it's a number or a string that's a number, try it as an INDEX
+                const num = Number(val);
+                if (Number.isInteger(num) && num >= 0 && num < (q.options?.length || 0)) {
+                    return num;
+                }
+                
+                return null;
+            }).filter(v => v !== null);
+
+
+            return indices.length > 0 ? indices : null;
+        };
+
         // Merge answer sheet into questions (Source of Truth for Grading)
         if (Array.isArray(answerSheet) && answerSheet.length > 0) {
             const sheetMap = new Map(answerSheet.map(a => [String(a.question_id || a.id), a]));
@@ -486,11 +515,9 @@ class ExamService {
                     return {
                         ...q,
                         // Priority: answer_sheet > existing correctAnswers
-                        correctAnswers: sheetItem.answer !== undefined 
-                            ? (Array.isArray(sheetItem.answer) ? sheetItem.answer : [sheetItem.answer]) 
-                            : q.correctAnswers,
-                        acceptedAnswers: sheetItem.answer !== undefined 
-                            ? (Array.isArray(sheetItem.answer) ? sheetItem.answer : [sheetItem.answer]) 
+                        correctAnswers: _resolveAnswerToIndices(q, sheetItem.answer) || q.correctAnswers,
+                        acceptedAnswers: !['single_choice', 'multiple_select'].includes(q.type)
+                            ? (Array.isArray(sheetItem.answer) ? sheetItem.answer : [sheetItem.answer])
                             : q.acceptedAnswers,
                         explanation: sheetItem.explanation || q.explanation
                     };

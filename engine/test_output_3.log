@@ -1,0 +1,69 @@
+[1;33m========================================[0m
+[1;33mExam Generation Pipeline E2E Tests[0m
+[1;33m========================================[0m
+[1;33mUsing model:[0m qwen2.5:7b-instruct
+[1;33mDatabase URL:[0m postgresql://localhost/cognify
+
+[1;33mRunning tests...[0m
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.3, pluggy-1.6.0 -- /home/rania/cognify/engine/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/rania/cognify/engine
+configfile: pytest.ini
+plugins: asyncio-1.3.0, langsmith-0.7.22, anyio-4.12.1, cov-7.1.0, mock-3.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 41 items
+
+tests/test_exam_generation_e2e.py::TestRequestValidation::test_initialize_workspace_config_valid PASSED [  2%]
+tests/test_exam_generation_e2e.py::TestRequestValidation::test_initialize_workspace_config_repairs_missing_types PASSED [  4%]
+tests/test_exam_generation_e2e.py::TestRequestValidation::test_initialize_workspace_config_repairs_invalid_count PASSED [  7%]
+tests/test_exam_generation_e2e.py::TestRequestValidation::test_initialize_workspace_config_version_upgrade PASSED [  9%]
+tests/test_exam_generation_e2e.py::TestPromptBuilding::test_exam_prompt_includes_count_constraint PASSED [ 12%]
+tests/test_exam_generation_e2e.py::TestPromptBuilding::test_exam_prompt_includes_answer_space_requirement PASSED [ 14%]
+tests/test_exam_generation_e2e.py::TestPromptBuilding::test_exam_prompt_structure_requirement PASSED [ 17%]
+tests/test_exam_generation_e2e.py::TestPromptBuilding::test_exam_prompt_json_format_instruction PASSED [ 19%]
+tests/test_exam_generation_e2e.py::TestPromptBuilding::test_exam_prompt_topic_focus PASSED [ 21%]
+tests/test_exam_generation_e2e.py::TestPromptBuilding::test_exam_prompt_language_setting PASSED [ 24%]
+tests/test_exam_generation_e2e.py::TestJsonProcessing::test_strip_markdown_fences_json PASSED [ 26%]
+tests/test_exam_generation_e2e.py::TestJsonProcessing::test_strip_markdown_fences_generic PASSED [ 29%]
+tests/test_exam_generation_e2e.py::TestJsonProcessing::test_strip_markdown_fences_no_fences PASSED [ 31%]
+tests/test_exam_generation_e2e.py::TestJsonProcessing::test_extract_json_payload_valid PASSED [ 34%]
+tests/test_exam_generation_e2e.py::TestJsonProcessing::test_extract_json_payload_with_extra_text PASSED [ 36%]
+tests/test_exam_generation_e2e.py::TestJsonProcessing::test_extract_json_payload_empty_raises PASSED [ 39%]
+tests/test_exam_generation_e2e.py::TestJsonProcessing::test_extract_json_payload_no_json_raises PASSED [ 41%]
+tests/test_exam_generation_e2e.py::TestSchemaValidation::test_exam_output_schema_valid PASSED [ 43%]
+tests/test_exam_generation_e2e.py::TestSchemaValidation::test_exam_output_schema_missing_questions_raises PASSED [ 46%]
+tests/test_exam_generation_e2e.py::TestSchemaValidation::test_exam_output_schema_missing_answer_sheet_raises PASSED [ 48%]
+tests/test_exam_generation_e2e.py::TestSchemaValidation::test_exam_output_schema_mismatched_ids_raises PASSED [ 51%]
+tests/test_exam_generation_e2e.py::TestSchemaValidation::test_exam_output_question_types PASSED [ 53%]
+tests/test_exam_generation_e2e.py::TestModeSpecificConstraints::test_exam_repairs_missing_answer_space PASSED [ 56%]
+tests/test_exam_generation_e2e.py::TestModeSpecificConstraints::test_exam_repairs_mismatched_ids PASSED [ 58%]
+tests/test_exam_generation_e2e.py::TestModeSpecificConstraints::test_exam_non_empty_content_valid PASSED [ 60%]
+tests/test_exam_generation_e2e.py::TestModeSpecificConstraints::test_exam_empty_questions_warning PASSED [ 63%]
+tests/test_exam_generation_e2e.py::TestModeSpecificConstraints::test_exam_empty_answer_sheet_warning PASSED [ 65%]
+tests/test_exam_generation_e2e.py::TestResultNormalization::test_normalize_exam_result PASSED [ 68%]
+tests/test_exam_generation_e2e.py::TestResultNormalization::test_normalize_rejects_mixed_contract PASSED [ 70%]
+tests/test_exam_generation_e2e.py::TestResultNormalization::test_normalize_string_output PASSED [ 73%]
+tests/test_exam_generation_e2e.py::TestExamGenerationE2E::test_full_generation_pipeline_success PASSED [ 75%]
+tests/test_exam_generation_e2e.py::TestExamGenerationE2E::test_generation_with_markdown_fences PASSED [ 78%]
+tests/test_exam_generation_e2e.py::TestExamGenerationE2E::test_generation_parses_list_response PASSED [ 80%]
+tests/test_exam_generation_e2e.py::TestExamGenerationE2E::test_generation_retry_on_invalid_json PASSED [ 82%]
+tests/test_exam_generation_e2e.py::TestExamGenerationE2E::test_generation_retry_on_empty_content PASSED [ 85%]
+tests/test_exam_generation_e2e.py::TestExamGenerationE2E::test_generation_all_retries_fail PASSED [ 87%]
+tests/test_exam_generation_e2e.py::TestEdgeCases::test_empty_chunks_returns_error PASSED [ 90%]
+tests/test_exam_generation_e2e.py::TestEdgeCases::test_large_context_truncation PASSED [ 92%]
+tests/test_exam_generation_e2e.py::TestEdgeCases::test_exam_count_one PASSED [ 95%]
+tests/test_exam_generation_e2e.py::TestEdgeCases::test_exam_count_fifty PASSED [ 97%]
+tests/test_exam_generation_e2e.py::TestEdgeCases::test_generation_repairs_examJson_payload PASSED [100%]
+
+=============================== warnings summary ===============================
+venv/lib/python3.12/site-packages/PyPDF2/__init__.py:21
+  /home/rania/cognify/engine/venv/lib/python3.12/site-packages/PyPDF2/__init__.py:21: DeprecationWarning: PyPDF2 is deprecated. Please move to the pypdf library instead.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 41 passed, 1 warning in 2.67s =========================
+
+[0;32m✓ All tests passed![0m
+[0;32m========================================[0m

@@ -29,7 +29,7 @@ const SubjectDetail = () => {
         tabs, setTabs, activeTabId, setActiveTabId,
         selectedUploads, toggleSelection,
         showUploadModal, setShowUploadModal, handleUploadSuccess,
-        handleDeleteUpload, handleRenameMaterial,
+        handleDeleteUpload, handleTrashSelected, handleRenameMaterial,
         chatMessages, currentQuestion, setCurrentQuestion,
         handleChat, handleNewChat, handleSwitchSession, stopGeneration,
         handleFeedback, handleBookmark, handleCopyMessage,
@@ -193,6 +193,7 @@ const SubjectDetail = () => {
                         selectedMaterials={selectedUploads}
                         toggleSelection={toggleSelection}
                         onDelete={handleDeleteUpload}
+                        onTrashSelected={handleTrashSelected}
                         onRename={handleRenameMaterial}
                         onGenerate={handleGenerate}
                         onOpenUpload={() => requireAuth(() => setShowUploadModal(true))}

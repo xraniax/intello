@@ -20,6 +20,7 @@ export const MaterialService = {
     },
     rename: (id, title) => api.patch(`/materials/${id}`, { title }),
     delete: (id) => api.delete(`/materials/${id}`),
+    bulkDelete: (ids) => api.post('/materials/bulk-delete', { ids }),
     restore: (id) => api.post(`/materials/${id}/restore`),
     permanentDelete: (id) => api.delete(`/materials/${id}/permanent`),
     emptyTrash: () => api.delete('/materials/trash'),

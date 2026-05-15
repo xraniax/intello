@@ -29,6 +29,7 @@ const FilePanel = ({
     selectedMaterials,
     toggleSelection,
     onDelete,
+    onTrashSelected,
     onRename,
     onGenerate,
     onOpenUpload,
@@ -36,6 +37,9 @@ const FilePanel = ({
     isPublic
 }) => {
     const user = useAuthStore((state) => state.data.user);
+    const selectedCount = selectedMaterials.length;
+    const [selectionMode, setSelectionMode] = useState(false);
+
     const [uploadsOpen, setUploadsOpen] = useState(() => {
         const saved = localStorage.getItem('cognify_panel_uploads_open');
         return saved !== null ? JSON.parse(saved) : true;
@@ -93,7 +97,38 @@ const FilePanel = ({
             {/* Panel Header */}
             <div className="panel-header flex-shrink-0 px-6 py-5 bg-white/80 backdrop-blur-md sticky top-0 z-10 transition-all border-b-2 border-fuchsia-50 shadow-sm">
                 <div className="flex items-center justify-between w-full">
-                    <span className="panel-title font-black uppercase tracking-[0.2em] text-[10px] text-gray-400">Subject Materials</span>
+                    <div className="flex flex-col gap-1">
+                        <span className="panel-title font-black uppercase tracking-[0.2em] text-[10px] text-gray-400">Subject Materials</span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => {
+                                    setSelectionMode(!selectionMode);
+                                    if (selectionMode) {
+                                        // Clear selection when canceling mode?
+                                        // User might want to keep it, but usually "Cancel" clears.
+                                        // However, selectedUploads is managed by parent.
+                                    }
+                                }}
+                                className={`text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg transition-all ${selectionMode ? 'bg-fuchsia-600 text-white' : 'bg-fuchsia-50 text-fuchsia-600 hover:bg-fuchsia-100'}`}
+                            >
+                                {selectionMode ? 'Cancel Selection' : 'Select Multiple'}
+                            </button>
+                            <AnimatePresence>
+                                {selectionMode && selectedCount > 0 && (
+                                    <motion.button
+                                        initial={{ opacity: 0, scale: 0.8 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.8 }}
+                                        onClick={onTrashSelected}
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-all shadow-sm"
+                                    >
+                                        <Trash2 className="w-3 h-3" />
+                                        <span className="text-[10px] font-black uppercase tracking-wider">Delete {selectedCount}</span>
+                                    </motion.button>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    </div>
                     <button
                         onClick={onCollapse}
                         className="p-2 rounded-2xl transition-all hover:bg-fuchsia-50 text-fuchsia-400 hover:text-fuchsia-600 hover:scale-110 active:scale-90"
@@ -165,19 +200,39 @@ const FilePanel = ({
                                                                 ? 'cursor-wait opacity-80 border-transparent bg-gray-50'
                                                                 : 'border-white bg-white hover:border-fuchsia-200 hover:shadow-xl hover:shadow-fuchsia-900/5 hover:-translate-y-1'
                                                         }`}
-                                                    onClick={() => !isProcessing && window.dispatchEvent(new CustomEvent('open-material', { detail: { id: m.id, type: m.type } }))}
+                                                    onClick={() => {
+                                                        if (isProcessing) return;
+                                                        if (selectionMode) {
+                                                            toggleSelection(m.id);
+                                                        } else {
+                                                            window.dispatchEvent(new CustomEvent('open-material', { detail: { id: m.id, type: m.type } }));
+                                                        }
+                                                    }}
+                                                    onDoubleClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (isProcessing) return;
+                                                        toggleSelection(m.id);
+                                                        setSelectionMode(true);
+                                                    }}
                                                 >
-                                                    <div
-                                                        className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10`}
-                                                        style={{
-                                                            background: isSelected ? 'var(--c-primary)' : 'var(--c-surface-alt)',
-                                                            color: isSelected ? 'white' : 'var(--c-text-muted)'
-                                                        }}
-                                                        onClick={(e) => { e.stopPropagation(); !isProcessing && toggleSelection(m.id); }}
-                                                        title={isSelected ? "Deselect for Generation" : "Select for Generation"}
-                                                    >
-                                                        {isSelected ? <CheckCircle2 className="w-4 h-4" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current opacity-50" />}
-                                                    </div>
+                                                    <AnimatePresence>
+                                                        {selectionMode && (
+                                                            <motion.div
+                                                                initial={{ opacity: 0, scale: 0.5 }}
+                                                                animate={{ opacity: 1, scale: 1 }}
+                                                                exit={{ opacity: 0, scale: 0.5 }}
+                                                                className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10`}
+                                                                style={{
+                                                                    background: isSelected ? 'var(--c-primary)' : 'var(--c-surface-alt)',
+                                                                    color: isSelected ? 'white' : 'var(--c-text-muted)'
+                                                                }}
+                                                                onClick={(e) => { e.stopPropagation(); !isProcessing && toggleSelection(m.id); }}
+                                                                title={isSelected ? "Deselect" : "Select"}
+                                                            >
+                                                                {isSelected ? <CheckCircle2 className="w-4 h-4" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current opacity-50" />}
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
                                                     <div className="min-w-0 flex-grow">
                                                         <div className="flex items-center justify-between gap-2 overflow-hidden">
                                                             {editingId === m.id ? (
@@ -280,6 +335,7 @@ const FilePanel = ({
                                     <AnimatePresence initial={false}>
                                         {generated.map((m, index) => {
                                             const isProcessing = normalizeStatus(m.status) === PROCESSING;
+                                            const isSelected = selectedMaterials.includes(m.id);
                                             const isNew = m.created_at && (Date.now() - new Date(m.created_at).getTime() < 15000);
 
                                             const TYPE_CONFIG = {
@@ -298,14 +354,46 @@ const FilePanel = ({
                                                     initial={{ opacity: 0, y: 10 }}
                                                     animate={{ opacity: 1, y: 0, transition: { delay: index * 0.05 } }}
                                                     exit={{ opacity: 0, height: 0 }}
-                                                    className={`group relative border transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 rounded-[1.25rem] p-4 hover:shadow-md ${isNew ? 'ring-1' : ''}`}
+                                                    className={`group relative border transition-all duration-300 cursor-pointer mb-3 flex items-start gap-3 rounded-[1.25rem] p-4 hover:shadow-md ${isNew ? 'ring-1' : ''} ${isSelected ? 'ring-2 ring-fuchsia-500 bg-fuchsia-50/30' : ''}`}
                                                     style={{ 
-                                                        background: 'var(--c-surface)', 
-                                                        borderColor: isNew ? config.color : config.borderColor,
+                                                        background: isSelected ? 'var(--c-accent-light)' : 'var(--c-surface)', 
+                                                        borderColor: isNew ? config.color : isSelected ? 'var(--c-accent)' : config.borderColor,
                                                         boxShadow: isNew ? `0 0 15px ${config.borderColor}` : 'var(--shadow-sm)'
                                                     }}
-                                                    onClick={() => !isProcessing && window.dispatchEvent(new CustomEvent('open-material', { detail: { id: m.id, type: m.type } }))}
+                                                    onClick={() => {
+                                                        if (isProcessing) return;
+                                                        if (selectionMode) {
+                                                            toggleSelection(m.id);
+                                                        } else {
+                                                            window.dispatchEvent(new CustomEvent('open-material', { detail: { id: m.id, type: m.type } }));
+                                                        }
+                                                    }}
+                                                    onDoubleClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (isProcessing) return;
+                                                        toggleSelection(m.id);
+                                                        setSelectionMode(true);
+                                                    }}
                                                 >
+                                                    <AnimatePresence>
+                                                        {selectionMode && (
+                                                            <motion.div
+                                                                initial={{ opacity: 0, scale: 0.5 }}
+                                                                animate={{ opacity: 1, scale: 1 }}
+                                                                exit={{ opacity: 0, scale: 0.5 }}
+                                                                className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10`}
+                                                                style={{
+                                                                    background: isSelected ? 'var(--c-accent)' : 'var(--c-surface-alt)',
+                                                                    color: isSelected ? 'white' : 'var(--c-text-muted)'
+                                                                }}
+                                                                onClick={(e) => { e.stopPropagation(); !isProcessing && toggleSelection(m.id); }}
+                                                                title={isSelected ? "Deselect" : "Select"}
+                                                            >
+                                                                {isSelected ? <CheckCircle2 className="w-3.5 h-3.5" /> : <div className="w-3 h-3 rounded-full border-2 border-current opacity-50" />}
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
+                                                    
                                                     <div className={`mt-1 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all`} style={{ background: config.bg, color: config.color }}>
                                                         <Icon className="w-4 h-4" />
                                                     </div>
@@ -333,19 +421,14 @@ const FilePanel = ({
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center justify-between mt-1">
-                                                            <p className={`text-[9px] uppercase font-black tracking-widest opacity-0 group-hover:opacity-100 transition-opacity`} style={{ color: config.color }}>
+                                                            <p className={`text-[9px] uppercase font-black tracking-widest ${selectionMode ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'} transition-opacity`} style={{ color: config.color }}>
                                                                 Open {m.type.replace('_', ' ')}
                                                             </p>
                                                             <span className="text-[10px] opacity-40 font-medium whitespace-nowrap" style={{ color: 'var(--c-text-muted)' }}>
                                                                 {new Date(m.created_at).toLocaleDateString()}
-                                                                {import.meta.env.DEV && m.started_at && m.completed_at && (
-                                                                    <span className="ml-1 text-sky-400/80 font-black">
-                                                                        ({((new Date(m.completed_at) - new Date(m.started_at)) / 1000).toFixed(1)}s)
-                                                                    </span>
-                                                                )}
                                                             </span>
                                                         </div>
-                                                        <div className="flex gap-2 transition-all ml-auto mt-2 justify-end">
+                                                        <div className={`flex gap-2 transition-all ml-auto mt-2 justify-end ${selectionMode ? 'hidden' : ''}`}>
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); requireAuth(() => onDelete(m.id, m.title)); }}
                                                                 className={`p-1.5 hover:text-red-500 hover:bg-white rounded-lg transition-all ${isProcessing ? 'opacity-40' : 'opacity-0 group-hover:opacity-100'}`}

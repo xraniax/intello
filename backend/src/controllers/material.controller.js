@@ -283,6 +283,21 @@ class MaterialController {
       message: 'Document moved to trash successfully',
     });
   });
+ 
+  static bulkDelete = asyncHandler(async (req, res) => {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      res.status(400);
+      throw new Error('At least one ID is required for bulk deletion');
+    }
+ 
+    const count = await MaterialService.bulkDelete(ids, req.user.id);
+ 
+    res.status(200).json({
+      status: 'success',
+      message: `${count} document(s) moved to trash successfully`,
+    });
+  });
 
   static getTrash = asyncHandler(async (req, res) => {
     // Only paginate when explicitly requested via query params

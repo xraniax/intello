@@ -247,6 +247,23 @@ class Material {
   }
 
   /**
+   * Delete multiple materials (Bulk Soft Delete).
+   * user_id enforced for IDOR protection.
+   */
+  static async deleteByIds(ids, userId) {
+    if (!ids || ids.length === 0) return 0;
+    const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const validIds = ids.filter((id) => typeof id === 'string' && UUID_PATTERN.test(id));
+    if (validIds.length === 0) return 0;
+
+    const result = await query(
+      'UPDATE materials SET deleted_at = NOW() WHERE id = ANY($1) AND user_id = $2 AND deleted_at IS NULL RETURNING id',
+      [validIds, userId]
+    );
+    return result.rowCount;
+  }
+
+  /**
    * Soft-delete all active materials in a subject.
    */
   static async deleteBySubject(subjectId, userId) {

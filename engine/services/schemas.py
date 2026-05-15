@@ -139,7 +139,7 @@ class UnifiedChatResponse(BaseModel):
 class ExamQuestion(BaseModel):
     id: str
     question: str
-    type: Optional[str] = "mcq"  # e.g., mcq, essay, fill_blank, matching
+    type: str = Field(default="single_choice", description="Question type: single_choice, multiple_select, short_answer, problem, fill_blank, matching")
     options: List[str] = Field(default_factory=list)
     answer: Optional[str] = None
     answer_space: Optional[str] = None

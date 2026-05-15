@@ -27,11 +27,11 @@ import {
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useMaterialStore } from '@/store/useMaterialStore';
+import Confetti from 'react-confetti';
 
 function cn(...inputs) {
     return twMerge(clsx(inputs));
 }
-import Confetti from 'react-confetti';
 
 // ---------------------------------------------------------------------------
 // Audio Synthesis
@@ -827,7 +827,7 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: -direction * 50, opacity: 0 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 40, mass: 1 }}
-                    className="mb-8 relative h-[420px] w-full max-w-2xl mx-auto"
+                    className="mb-8 relative min-h-[420px] w-full max-w-2xl mx-auto"
                     style={{ perspective: "2000px" }}
                 >
                     <motion.div
@@ -839,7 +839,7 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                             mass: 1
                         }}
                         style={{ transformStyle: "preserve-3d" }}
-                        className="w-full h-full relative"
+                        className="w-full h-full min-h-[420px] relative"
                     >
                         {/* Front Side */}
                         <div
@@ -851,7 +851,7 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                             }}
                             onClick={toggleFlip}
                         >
-                            <div className="h-full w-full relative rounded-[3.5rem] overflow-hidden shadow-[0_30px_60px_-15px_rgba(124,92,252,0.3)] border-8 border-white bg-white cursor-pointer group transition-transform hover:scale-[1.02]">
+                            <div className="min-h-[420px] h-full w-full relative rounded-[3.5rem] overflow-hidden shadow-[0_30px_60px_-15px_rgba(124,92,252,0.3)] border-8 border-white bg-white cursor-pointer group transition-transform hover:scale-[1.02] flex flex-col">
                                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 pointer-events-none" />
                                 <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-100/30 rounded-full blur-3xl pointer-events-none" />
                                 
@@ -867,12 +867,16 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                                     <span className="inline-block text-[10px] font-black uppercase tracking-[0.3em] px-5 py-2 rounded-2xl bg-indigo-50 text-indigo-500 border-2 border-white shadow-sm">The Challenge</span>
                                 </div>
 
-                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-12 z-10">
+                                <div className={cn(
+                                    "relative flex-grow overflow-y-auto custom-scrollbar flex flex-col z-10",
+                                    card?.question?.length > 150 ? "pt-28 pb-20 px-8" : "items-center justify-center p-12"
+                                )}>
                                     <h3 className={cn(
                                         "font-black leading-tight tracking-tight text-indigo-950 text-center",
                                         isExpanded ? 'text-4xl' : 'text-3xl',
                                         card?.question?.length > 80 && (isExpanded ? 'text-3xl' : 'text-2xl'),
-                                        card?.question?.length > 150 && (isExpanded ? 'text-2xl' : 'text-xl')
+                                        card?.question?.length > 150 && (isExpanded ? 'text-2xl' : 'text-xl'),
+                                        card?.question?.length > 300 && 'text-lg'
                                     )}>
                                         {card?.question}
                                     </h3>
@@ -898,7 +902,7 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                             }}
                             onClick={toggleFlip}
                         >
-                            <div className="h-full w-full relative rounded-[3.5rem] overflow-hidden shadow-[0_30px_60px_-15px_rgba(244,63,94,0.3)] border-8 border-white bg-white cursor-pointer group transition-transform hover:scale-[1.02]">
+                            <div className="min-h-[420px] h-full w-full relative rounded-[3.5rem] overflow-hidden shadow-[0_30px_60px_-15px_rgba(244,63,94,0.3)] border-8 border-white bg-white cursor-pointer group transition-transform hover:scale-[1.02] flex flex-col">
                                 <div className="absolute inset-0 bg-gradient-to-br from-pink-50/50 via-white to-rose-50/50 pointer-events-none" />
                                 <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-pink-100/30 rounded-full blur-3xl pointer-events-none" />
                                 
@@ -914,12 +918,16 @@ const FlashcardsView = ({ flashcardsData, subjectId, isExpanded = false }) => {
                                     <span className="inline-block text-[10px] font-black uppercase tracking-[0.3em] px-5 py-2 rounded-2xl bg-pink-50 text-pink-500 border-2 border-white shadow-sm">Crystal Clear</span>
                                 </div>
 
-                                <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-12 z-10">
+                                <div className={cn(
+                                    "relative flex-grow overflow-y-auto custom-scrollbar flex flex-col z-10",
+                                    card?.answer?.length > 250 ? "pt-28 pb-20 px-8" : "items-center justify-center p-12"
+                                )}>
                                     <p className={cn(
                                         "font-black leading-relaxed tracking-tight text-gray-800 text-center",
                                         isExpanded ? 'text-3xl' : 'text-2xl',
                                         card?.answer?.length > 120 && (isExpanded ? 'text-2xl' : 'text-xl'),
-                                        card?.answer?.length > 250 && (isExpanded ? 'text-xl' : 'text-lg')
+                                        card?.answer?.length > 250 && (isExpanded ? 'text-xl' : 'text-lg'),
+                                        card?.answer?.length > 500 && 'text-base'
                                     )}>
                                         {card?.answer || "No Answer Content"}
                                     </p>

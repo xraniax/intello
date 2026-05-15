@@ -39,10 +39,12 @@ const DIFFICULTIES = [
 ];
 
 const EXAM_TYPES = [
-    { id: 'mcq',        label: 'Multiple Choice' },
-    { id: 'essay',      label: 'Written Response' },
-    { id: 'fill_blank', label: 'Fill in the Blank' },
-    { id: 'matching',   label: 'Matching' },
+    { id: 'single_choice',   label: 'Single Choice' },
+    { id: 'multiple_select', label: 'Multiple Select' },
+    { id: 'short_answer',    label: 'Short Answer' },
+    { id: 'problem',         label: 'Problem Solving' },
+    { id: 'fill_blank',      label: 'Fill in the Blank' },
+    { id: 'matching',        label: 'Matching' },
 ];
 
 const COLOR_MAP = {
@@ -63,7 +65,7 @@ const StudyGenerator = ({
 }) => {
     const [difficulty, setDifficulty] = React.useState('Inter');
     const [count, setCount] = React.useState(10);
-    const [examTypes, setExamTypes] = React.useState(['mcq', 'essay']);
+    const [examTypes, setExamTypes] = React.useState(['single_choice', 'short_answer']);
 
     const maxQuestions = genType === 'mock_exam' ? 10 : 50;
 

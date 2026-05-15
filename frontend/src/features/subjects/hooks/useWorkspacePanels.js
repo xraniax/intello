@@ -145,7 +145,35 @@ export const useWorkspacePanels = ({ subjectId, materials }) => {
             },
         });
         setIsModalOpen(true);
-    }, [fetchMaterials]);
+    }, [fetchMaterials, clearMaterialMetadata]);
+
+    const handleBulkDelete = useCallback(() => {
+        const count = selectedUploads.length;
+        if (count === 0) return;
+
+        setModalConfig({
+            title: 'Move Multiple to Trash?',
+            message: `Are you sure you want to move ${count} selected item${count !== 1 ? 's' : ''} to the trash? They can be recovered later.`,
+            type: 'warning',
+            confirmText: 'Move all to Trash',
+            onConfirm: async () => {
+                try {
+                    await MaterialService.bulkDelete(selectedUploads);
+                    selectedUploads.forEach(id => clearMaterialMetadata(id));
+                    await fetchMaterials();
+                    setSelectedUploads([]);
+                    toast.success(`${count} documents removed`);
+                } catch {
+                    toast.error('Failed to delete materials');
+                } finally {
+                    setIsModalOpen(false);
+                }
+            },
+        });
+        setIsModalOpen(true);
+    }, [selectedUploads, fetchMaterials, clearMaterialMetadata]);
+
+    const handleTrashSelected = handleBulkDelete;
 
     // ── Panel visibility ──────────────────────────────────────────────────────
     const [filePanelCollapsed, setFilePanelCollapsed] = useState(false);
@@ -183,6 +211,8 @@ export const useWorkspacePanels = ({ subjectId, materials }) => {
         setIsModalOpen,
         modalConfig,
         handleDeleteUpload,
+        handleDeleteUpload,
+        handleTrashSelected,
         // Panel visibility
         filePanelCollapsed,
         setFilePanelCollapsed,

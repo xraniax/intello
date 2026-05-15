@@ -19,6 +19,7 @@ router.post('/upload', aiLimiter, documentUpload, validate(uploadMaterialSchema)
 router.get('/history', MaterialController.getHistory);
 router.post('/chat-combined', aiLimiter, validate(chatCombinedSchema), MaterialController.chatCombined);
 router.post('/generate-combined', aiLimiter, validate(generateCombinedSchema), MaterialController.generateCombined);
+router.post('/bulk-delete', MaterialController.bulkDelete);
 router.post('/generate-combined/stream', aiLimiter, validate(generateCombinedSchema), MaterialController.generateCombinedStream);
 router.get('/:id', MaterialController.getOne);
 router.get('/:id/sync', MaterialController.syncStatus);
