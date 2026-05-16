@@ -4,7 +4,6 @@ import { Menu, X, LayoutDashboard, UserCircle, LogOut, Shield, Sparkles, Zap, Tr
 import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
-import logo from '../assets/logo.png';
 
 const Navbar = () => {
     const user     = useAuthStore((s) => s.data.user);
@@ -43,34 +42,69 @@ const Navbar = () => {
 
     return (
         <motion.header
-            className="h-[58px] px-5 flex items-center justify-between sticky top-0 z-50"
+            className="h-[60px] px-6 flex items-center justify-between sticky top-0 z-50 transition-all border-b"
             style={{
-                background: `rgba(247, 245, 255, ${bgOpacity.get()})`,
+                background: `rgba(255, 255, 255, ${bgOpacity.get() > 0.9 ? 0.9 : bgOpacity.get()})`,
                 backdropFilter: `blur(${backdropBlur.get()}px)`,
                 WebkitBackdropFilter: `blur(${backdropBlur.get()}px)`,
-                borderBottom: `1px solid rgba(124, 92, 252, ${borderOpacity.get()})`,
-                boxShadow: `0 1px 0 rgba(124,92,252,0.06), 0 4px 20px rgba(124,92,252,${shadowOpacity.get()})`,
+                borderColor: `rgba(0, 0, 0, ${borderOpacity.get() * 0.5})`,
+                boxShadow: `0 1px 2px rgba(0,0,0,${shadowOpacity.get() * 0.2}), 0 8px 30px rgba(0,0,0,${shadowOpacity.get() * 0.1})`,
             }}
         >
-            {/* Logo */}
-            <Link to="/" className="flex items-center gap-3 group">
-                <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    transition={{ duration: 0.5, type: 'spring', damping: 8 }}
-                    className="w-10 h-10 flex items-center justify-center relative"
-                >
-                    <img
-                        src={logo}
-                        alt="Cognify"
-                        className="w-full h-full object-contain"
-                    />
-                </motion.div>
-                <span
-                    className="text-lg font-black tracking-tight"
-                    style={{ color: '#2d3a74', letterSpacing: '-0.025em' }}
-                >
-                    Cogni<span style={{ color: '#8ce0c9' }}>fy</span>
-                </span>
+            {/* Logo: Artistic Monolith C */}
+            <Link to="/" className="flex items-center gap-4 group">
+                <div className="relative w-10 h-10 flex items-center justify-center">
+                    {/* The "Monoliths" - Custom Geometric Brand Mark */}
+                    <motion.div
+                        className="flex items-end gap-1"
+                        initial="initial"
+                        animate="animate"
+                        variants={{
+                            animate: { transition: { staggerChildren: 0.1 } }
+                        }}
+                    >
+                        {/* Shard 1: Deep Base (Left) */}
+                        <motion.div
+                            variants={{
+                                initial: { y: 10, opacity: 0 },
+                                animate: { y: 0, opacity: 1 }
+                            }}
+                            className="w-2 h-7 rounded-sm"
+                            style={{ background: 'var(--c-text)', opacity: 0.8 }}
+                        />
+                        {/* Shard 2: Primary Core (Center) */}
+                        <motion.div
+                            variants={{
+                                initial: { y: 15, opacity: 0 },
+                                animate: { y: 0, opacity: 1 }
+                            }}
+                            className="w-2 h-9 rounded-sm shadow-lg shadow-primary/20"
+                            style={{ background: 'var(--c-primary)' }}
+                        />
+                        {/* Shard 3: Accent High (Right) */}
+                        <motion.div
+                            variants={{
+                                initial: { y: 5, opacity: 0 },
+                                animate: { y: 0, opacity: 1 }
+                            }}
+                            className="w-2 h-5 rounded-sm"
+                            style={{ background: 'var(--c-rose)' }}
+                        />
+                    </motion.div>
+                    
+                    {/* Abstract "C" connector (Optional/Subtle) */}
+                    <div className="absolute inset-0 border-2 border-transparent border-l-primary/10 border-t-primary/10 rounded-lg group-hover:border-primary/20 transition-colors" />
+                </div>
+                
+                <div className="flex flex-col leading-tight">
+                    <span
+                        className="text-xl font-black tracking-tighter uppercase"
+                        style={{ color: 'var(--c-text-secondary)', letterSpacing: '0.02em' }}
+                    >
+                        Cogni<span style={{ color: 'var(--c-primary)' }}>fy</span>
+                    </span>
+                    <span className="text-[9px] font-black tracking-[0.3em] uppercase opacity-40 -mt-1 ml-0.5">Intelligence</span>
+                </div>
             </Link>
 
             {/* Desktop nav */}
@@ -83,7 +117,7 @@ const Navbar = () => {
                                     <button
                                         key={link.label}
                                         onClick={toggleGoals}
-                                        className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-colors duration-150"
+                                        className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-bold transition-all duration-150"
                                         style={{
                                             color: goalsOpen ? 'var(--c-primary)' : 'var(--c-text-muted)',
                                         }}
@@ -91,9 +125,9 @@ const Navbar = () => {
                                         {goalsOpen && (
                                             <motion.span
                                                 layoutId="nav-pill"
-                                                className="absolute inset-0 rounded-xl"
-                                                style={{ background: 'var(--c-primary-ultra)', border: '1.5px solid var(--c-primary-light)' }}
-                                                transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+                                                className="absolute inset-0 rounded-lg"
+                                                style={{ background: 'var(--c-primary-ultra)', border: '1.5px solid var(--c-primary)' }}
+                                                transition={{ type: 'spring', damping: 25, stiffness: 400 }}
                                             />
                                         )}
                                         <link.icon className="w-3.5 h-3.5 relative z-10" />
@@ -102,21 +136,21 @@ const Navbar = () => {
                                 );
                             }
                             return (
-                                <Link
-                                    key={link.path}
-                                    to={link.path}
-                                    className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-colors duration-150"
+                                    <Link
+                                        key={link.path}
+                                        to={link.path}
+                                        className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-bold transition-all duration-150"
                                     style={{
                                         color: isActive(link.path) ? 'var(--c-primary)' : 'var(--c-text-muted)',
                                     }}
                                 >
                                     {isActive(link.path) && (
-                                        <motion.span
-                                            layoutId="nav-pill"
-                                            className="absolute inset-0 rounded-xl"
-                                            style={{ background: 'var(--c-primary-ultra)', border: '1.5px solid var(--c-primary-light)' }}
-                                            transition={{ type: 'spring', damping: 26, stiffness: 300 }}
-                                        />
+                                            <motion.span
+                                                layoutId="nav-pill"
+                                                className="absolute inset-0 rounded-lg"
+                                                style={{ background: 'var(--c-primary-ultra)', border: '1.5px solid var(--c-primary)' }}
+                                                transition={{ type: 'spring', damping: 25, stiffness: 400 }}
+                                            />
                                     )}
                                     <link.icon className="w-3.5 h-3.5 relative z-10" />
                                     <span className="relative z-10">{link.label}</span>
@@ -127,11 +161,11 @@ const Navbar = () => {
                         {user.role === 'admin' && (
                             <Link
                                 to="/admin"
-                                className="ml-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all"
+                                className="ml-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all"
                                 style={{
-                                    background: isActive('/admin') ? 'var(--grad-candy)' : 'var(--c-rose-light)',
+                                    background: isActive('/admin') ? 'var(--c-rose)' : 'var(--c-rose-light)',
                                     color: isActive('/admin') ? 'white' : 'var(--c-rose)',
-                                    boxShadow: isActive('/admin') ? 'var(--shadow-rose)' : 'none',
+                                    boxShadow: isActive('/admin') ? '0 4px 12px rgba(244,63,94,0.3)' : 'none',
                                 }}
                             >
                                 <Shield className="w-3 h-3" />
@@ -144,7 +178,7 @@ const Navbar = () => {
                         <div className="flex items-center gap-1.5">
                             <Link
                                 to="/profile"
-                                className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] font-semibold transition-all duration-150 group"
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-bold transition-all duration-150 group"
                                 style={{
                                     color:      isActive('/profile') ? 'var(--c-primary)' : 'var(--c-text-muted)',
                                     background: isActive('/profile') ? 'var(--c-primary-ultra)' : 'transparent',
@@ -153,14 +187,14 @@ const Navbar = () => {
                                 {/* Avatar with pulse ring on active */}
                                 <motion.div
                                     className="relative"
-                                    whileHover={{ scale: 1.12 }}
-                                    transition={{ type: 'spring', damping: 12, stiffness: 260 }}
+                                    whileHover={{ scale: 1.1 }}
+                                    transition={{ type: 'spring', damping: 15, stiffness: 300 }}
                                 >
                                     <div
-                                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
+                                        className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
                                         style={{
-                                            background: 'var(--grad-primary)',
-                                            boxShadow: isActive('/profile') ? 'var(--shadow-primary)' : 'none',
+                                            background: 'var(--c-primary)',
+                                            boxShadow: isActive('/profile') ? '0 4px 10px rgba(99,91,255,0.3)' : 'none',
                                         }}
                                     >
                                         {initials}
@@ -168,10 +202,10 @@ const Navbar = () => {
                                     {/* Soft pulse ring when on profile */}
                                     {isActive('/profile') && (
                                         <motion.div
-                                            className="absolute -inset-1 rounded-full"
-                                            style={{ border: '2px solid var(--c-primary)', opacity: 0.4 }}
-                                            animate={{ scale: [1, 1.3, 1], opacity: [0.4, 0, 0.4] }}
-                                            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                                            className="absolute -inset-1 rounded-lg"
+                                            style={{ border: '2px solid var(--c-primary)', opacity: 0.5 }}
+                                            animate={{ scale: [1, 1.25, 1], opacity: [0.5, 0, 0.5] }}
+                                            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
                                         />
                                     )}
                                 </motion.div>
@@ -216,7 +250,8 @@ const Navbar = () => {
                         </Link>
                         <Link
                             to="/register"
-                            className="btn btn-sm btn-solid flex items-center gap-1.5"
+                            className="btn btn-sm btn-solid flex items-center gap-1.5 !rounded-lg !px-4 !h-9 !py-0 shadow-md hover:shadow-lg transition-all"
+                            style={{ background: 'var(--c-primary)', color: 'white' }}
                         >
                             <Zap className="w-3 h-3" />
                             Get started
@@ -229,7 +264,7 @@ const Navbar = () => {
             <motion.button
                 whileTap={{ scale: 0.88 }}
                 onClick={() => setMobileOpen(!mobileOpen)}
-                className="md:hidden p-2 rounded-xl transition-colors"
+                className="md:hidden p-2 rounded-lg transition-colors"
                 style={{
                     background: mobileOpen ? 'var(--c-primary-ultra)' : 'transparent',
                     color: mobileOpen ? 'var(--c-primary)' : 'var(--c-text-muted)',
@@ -277,21 +312,28 @@ const Navbar = () => {
                         >
                             {/* Drawer header */}
                             <div
-                                className="flex items-center justify-between px-5 pt-5 pb-5"
-                                style={{ background: 'var(--grad-primary)' }}
+                                className="flex items-center justify-between px-5 pt-8 pb-6"
+                                style={{ background: 'var(--c-canvas)' }}
                             >
-                                <div className="flex items-center gap-2">
-                                    <div className="w-7 h-7 rounded-[9px] bg-white/20 flex items-center justify-center">
-                                        <Sparkles className="w-3.5 h-3.5 text-white" />
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-end gap-0.5 scale-75 origin-left">
+                                        <div className="w-1.5 h-6 rounded-sm bg-text opacity-80" style={{ background: 'var(--c-text)' }} />
+                                        <div className="w-1.5 h-8 rounded-sm bg-primary" style={{ background: 'var(--c-primary)' }} />
+                                        <div className="w-1.5 h-4 rounded-sm bg-rose-500" style={{ background: 'var(--c-rose)' }} />
                                     </div>
-                                    <span className="text-sm font-bold text-white tracking-tight">Cognify</span>
+                                    <div className="flex flex-col">
+                                        <span className="text-lg font-black text-text tracking-tighter uppercase" style={{ color: 'var(--c-text-secondary)' }}>
+                                            Cogni<span style={{ color: 'var(--c-primary)' }}>fy</span>
+                                        </span>
+                                    </div>
                                 </div>
                                 <motion.button
                                     whileTap={{ scale: 0.88 }}
                                     onClick={() => setMobileOpen(false)}
-                                    className="p-1.5 rounded-lg bg-white/15 text-white"
+                                    className="p-2 rounded-lg bg-surface-alt border border-border-soft"
+                                    style={{ background: 'var(--c-surface-alt)', color: 'var(--c-text-muted)' }}
                                 >
-                                    <X className="w-4 h-4" />
+                                    <X className="w-5 h-5" />
                                 </motion.button>
                             </div>
 
@@ -334,11 +376,11 @@ const Navbar = () => {
                                                             setMobileOpen(false);
                                                             toggleGoals();
                                                         }}
-                                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all"
+                                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all"
                                                         style={{
                                                             background: goalsOpen ? 'var(--c-primary-ultra)' : 'transparent',
                                                             color:      goalsOpen ? 'var(--c-primary)'       : 'var(--c-text)',
-                                                            border: goalsOpen ? '1.5px solid var(--c-primary-light)' : '1.5px solid transparent',
+                                                            border: goalsOpen ? '1.5px solid var(--c-primary)' : '1.5px solid transparent',
                                                         }}
                                                     >
                                                         <link.icon className="w-4 h-4" />
@@ -348,11 +390,11 @@ const Navbar = () => {
                                                     <Link
                                                         to={link.path}
                                                         onClick={() => setMobileOpen(false)}
-                                                        className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all"
+                                                        className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all"
                                                         style={{
                                                             background: isActive(link.path) ? 'var(--c-primary-ultra)' : 'transparent',
                                                             color:      isActive(link.path) ? 'var(--c-primary)'       : 'var(--c-text)',
-                                                            border: isActive(link.path) ? '1.5px solid var(--c-primary-light)' : '1.5px solid transparent',
+                                                            border: isActive(link.path) ? '1.5px solid var(--c-primary)' : '1.5px solid transparent',
                                                         }}
                                                     >
                                                         <link.icon className="w-4 h-4" />
@@ -369,11 +411,11 @@ const Navbar = () => {
                                             <Link
                                                 to="/profile"
                                                 onClick={() => setMobileOpen(false)}
-                                                className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all"
+                                                className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all"
                                                 style={{
                                                     background: isActive('/profile') ? 'var(--c-primary-ultra)' : 'transparent',
                                                     color:      isActive('/profile') ? 'var(--c-primary)'       : 'var(--c-text)',
-                                                    border: isActive('/profile') ? '1.5px solid var(--c-primary-light)' : '1.5px solid transparent',
+                                                    border: isActive('/profile') ? '1.5px solid var(--c-primary)' : '1.5px solid transparent',
                                                 }}
                                             >
                                                 <UserCircle className="w-4 h-4" />
@@ -389,11 +431,11 @@ const Navbar = () => {
                                                 <Link
                                                     to="/admin"
                                                     onClick={() => setMobileOpen(false)}
-                                                    className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold"
+                                                    className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-black uppercase tracking-wider"
                                                     style={{
                                                         background: 'var(--c-rose-light)',
                                                         color: 'var(--c-rose)',
-                                                        border: '1.5px solid rgba(244,63,94,0.15)',
+                                                        border: '1.5px solid rgba(244,63,94,0.2)',
                                                     }}
                                                 >
                                                     <Shield className="w-4 h-4" />
@@ -407,7 +449,7 @@ const Navbar = () => {
                                         <Link
                                             to="/login"
                                             onClick={() => setMobileOpen(false)}
-                                            className="px-4 py-3 rounded-2xl text-sm font-semibold text-center"
+                                            className="px-4 py-3 rounded-lg text-sm font-bold text-center"
                                             style={{ background: 'var(--c-surface-alt)', color: 'var(--c-text)' }}
                                         >
                                             Log in
@@ -415,8 +457,8 @@ const Navbar = () => {
                                         <Link
                                             to="/register"
                                             onClick={() => setMobileOpen(false)}
-                                            className="btn btn-md btn-solid text-center"
-                                            style={{ borderRadius: 'var(--radius-2xl)' }}
+                                            className="btn btn-md btn-solid text-center !rounded-lg !font-black !h-12 flex items-center justify-center shadow-lg"
+                                            style={{ background: 'var(--c-primary)', color: 'white' }}
                                         >
                                             Get started
                                         </Link>
@@ -429,7 +471,7 @@ const Navbar = () => {
                                     <motion.button
                                         whileTap={{ scale: 0.96 }}
                                         onClick={handleLogout}
-                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all"
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all"
                                         style={{ color: 'var(--c-danger)' }}
                                         onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--c-danger-light)'; }}
                                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
